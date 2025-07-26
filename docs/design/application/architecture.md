@@ -200,7 +200,7 @@ requirements.
 2. **Job Queue**: Asset loading job queued with appropriate priority
 3. **Disk Loading**: Worker thread loads raw asset data from file system
 4. **Format Processing**: Decode/process asset data (decompress textures, parse models, etc.)
-5. **Resource Transfer**: 
+5. **Resource Transfer**:
    - **GPU Assets**: Transfer to render thread for WebGPU resource creation
    - **Audio Assets**: Transfer to audio thread for SDL3 audio resource creation
    - **Data Assets**: Process and validate for game thread consumption
@@ -310,7 +310,7 @@ requirements.
 - **Scope**: Memory pool recreation only applies to game state entity/component pools and render/audio packet buffers
 - **Job System Isolation**: Per-job growing arena allocators unaffected by hot reload (jobs are transient with independent memory)
 - **Pool Recreation**: Game Thread entity pools recreated when struct sizes change
-- **Packet Buffers**: Render/Audio packet buffers resized if packet structures change  
+- **Packet Buffers**: Render/Audio packet buffers resized if packet structures change
 - **Transition Safety**: Temporary dual allocation during pool transitions for thread safety
 
 **Fragmentation Mitigation**:
@@ -348,7 +348,7 @@ requirements.
 
 #### Hot Reload Safety
 
-- Shared library compatibility validation before loading  
+- Shared library compatibility validation before loading
 - Serialization compatibility checking before reload
 - Reload cancellation for state preservation during validation failures
 - **No Rollback Complexity**: Once validation passes, commit to new code (runtime crashes are development issues to fix)
@@ -373,7 +373,7 @@ requirements.
 **Per-Thread Performance Collectors**:
 - **Main Thread**: SDL3 event processing time, window management overhead
 - **Game Thread**: Simulation step timing, input processing duration, memory allocations
-- **Render Thread**: Frame render time, GPU resource usage, WebGPU operation timing  
+- **Render Thread**: Frame render time, GPU resource usage, WebGPU operation timing
 - **Audio Thread**: Audio mixing time, buffer underruns, SDL3 audio latency
 - **Job System**: Worker utilization, job queue depths, completion rates
 
