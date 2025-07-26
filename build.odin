@@ -1,61 +1,67 @@
 package build
 
+import "core:flags"
 import "core:log"
-import "core:strings"
-import "core:slice"
-import "core:path/filepath"
 import os "core:os/os2"
+import "core:path/filepath"
+import "core:slice"
+import "core:strings"
+
+
+Options :: struct {
+	release:  bool `usage:Produce a release build`,
+	develop:  bool `usage:Produce a development build`,
+	game_lib: bool `usage:Build the game code as a dynamic library`,
+}
 
 main :: proc() {
-  context.logger = log.create_console_logger()
+	context.logger = log.create_console_logger()
 
-DIR :: "bin"
-  EXE :: "eel-pool"
-  OUT :: EXE + ".exe" when ODIN_OS == .Windows else EXE
-	run_str("mkdir -p " + DIR)
-  run_str("odin build src -debug -out:" + DIR + "/" + OUT + " -error-pos-style:unix")
+	opt: Options
+	flags.parse_or_exit(&opt, os.args)
 
-  // files, err := os.read_all_directory_by_path("content/shaders/src", context.temp_allocator)
-  // if err != nil {
-  //   log.errorf("Error reading shader sources: {}", err)
-  //   os.exit(1)
-  // }
-  // for file in files {
-  //   shadercross(file, "spv")
-  //   shadercross(file, "dxil")
-  //   shadercross(file, "msl")
-  //   shadercross(file, "json")
-  // }
+	if !opt.release && !opt.develop && !opt.game_lib {
+		log.errorf("No build option specified. Use -release, -develop, or -game_lib.")
+		return
+	}
 
-  if slice.contains(os.args, "run") do run({OUT})
+	if opt.release {
+		log.info("Building a release build")
+
+		run("mkdir -p bin/release")
+		run("odin build src -out:bin/release/eel-pool")
+	}
+
+	if opt.develop {
+		log.info("Building a development build")
+
+		run("mkdir -p bin/develop")
+		run("odin build src -out:bin/release/eel-pool -debug")
+	}
+
+	if opt.game_lib {
+		log.info("Building the game as a dynamic library")
+
+		run("mkdir -p bin/game_lib")
+	}
 }
 
-// shadercross :: proc(file: os.File_Info, format: string) {
-//   basename := filepath.stem(file.name)
-//   outfile := filepath.join({"content/shaders/out", strings.concatenate({basename, ".", format})})
-//   run({"shadercross", file.fullpath, "-o", outfile, "-I", "content/shaders/include"})
-// }
+run :: proc(cmd: string) -> (int, os.Error) {
+	log.infof("Running: {}", cmd)
 
-run_str :: proc(cmd: string) {
-  run(strings.split(cmd, " "))
-}
+	code, err := exec(strings.split(cmd, " "))
+	if err != nil {log.errorf("Executing process: {}", err)}
+	if code != 0 {log.errorf("Process exited with non-zero code: {}", code)}
 
-run :: proc(cmd: []string) {
-  log.infof("Running {}", cmd)
-  code, err := exec(cmd)
-  if err != nil {
-    log.errorf("Error executing process: {}", err)
-    os.exit(1)
-  }
-  if code != 0 {
-    log.errorf("Process exited with non-zero code {}", code)
-    os.exit(1)
-  }
+	return code, err
 }
 
 exec :: proc(cmd: []string) -> (code: int, error: os.Error) {
-  process := os.process_start({ command = cmd, stdin = os.stdin, stdout = os.stdout, stderr = os.stderr }) or_return
-  state := os.process_wait(process) or_return
-  os.process_close(process) or_return
-  return state.exit_code, nil
+	process := os.process_start(
+		{command = cmd, stdin = os.stdin, stdout = os.stdout, stderr = os.stderr},
+	) or_return
+	state := os.process_wait(process) or_return
+	os.process_close(process) or_return
+	return state.exit_code, nil
 }
+
