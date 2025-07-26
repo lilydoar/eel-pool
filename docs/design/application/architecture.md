@@ -2,7 +2,10 @@
 
 ## Overview
 
-This document outlines the architecture for a multi-threaded Odin-based graphics application using SDL3 and WebGPU. The architecture prioritizes rapid development iteration through hot reloading, clean separation of concerns, and robust parallel processing.
+This document outlines the architecture for a multi-threaded Odin-based graphics
+application using SDL3 and WebGPU. The architecture prioritizes rapid
+development iteration through hot reloading, clean separation of concerns, and
+robust parallel processing.
 
 ### Core Design Principles
 
@@ -22,7 +25,7 @@ The application uses a 4+N thread architecture:
 2. **Game Thread**: Pure game logic simulation and state management
 3. **Render Thread**: WebGPU operations and frame generation
 4. **Audio Thread**: Sound processing and SDL3 audio output
-5. **Job System**: N worker threads for async operations
+5. **Job System**: N job system threads for async operations
 
 #### Thread Communication Strategy
 
@@ -42,7 +45,10 @@ The application uses a 4+N thread architecture:
   - Data Reload Trigger: Atomic flag (Any Thread → Main Thread)
   - Code Reload Trigger: Atomic flag (Any Thread → Main Thread)
 
-**Rationale**: Prioritize implementation simplicity over performance for non-critical paths while maintaining thread independence to prevent cascade delays. This approach balances development complexity with performance requirements.
+**Rationale**: Prioritize implementation simplicity over performance for
+non-critical paths while maintaining thread independence to prevent cascade
+delays. This approach balances development complexity with performance
+requirements.
 
 ### Component Architecture
 
@@ -111,9 +117,10 @@ The application uses a 4+N thread architecture:
 
 **Render Thread Architecture**
 - Independent frame timing (decoupled from game thread)
-- WebGPU resource management and cleanup
+- WebGPU rendering operations using device/surface created by Main Thread
 - Shader compilation and caching
 - Frame buffer management and presentation
+- GPU resource management (textures, buffers, shaders)
 
 **Render Packet Processing**
 - **Latest Packet Consumption**: Render thread always processes the most recent render packet, discarding older ones
@@ -125,11 +132,10 @@ The application uses a 4+N thread architecture:
 - **Asset ID → GPU Resource Resolution**: Convert game asset references to actual GPU resources
 - **Command Buffer Generation**: Build WebGPU command sequences for frame rendering
 
-**GPU Resource Management**
-- Texture and buffer lifecycle
-- Memory pool allocation strategies
-- Resource sharing with asset loading jobs
-- Cleanup coordination during hot reloads
+**WebGPU Division of Responsibilities**
+- **Main Thread**: WebGPU device creation, surface management, context lifecycle
+- **Render Thread**: Frame rendering operations, texture/buffer management, shader operations
+- **Coordination**: Thread-safe sharing of WebGPU device handle for rendering operations
 
 **Shader Hot Reloading**:
 - **Asset Treatment**: Shaders treated as resources identical to models, textures, and sounds
@@ -158,11 +164,6 @@ The application uses a 4+N thread architecture:
 - 3D audio positioning and attenuation
 - Volume control and channel management
 - Synchronization during hot reloads
-
-**Open Questions**:
-- Audio streaming strategy for large files?
-- 3D audio library integration approach?
-- Audio event priority system design?
 
 #### Job System
 
@@ -194,6 +195,19 @@ The application uses a 4+N thread architecture:
 - Game save/load operations
 - Long-running calculations (pathfinding, AI planning, terrain generation)
 
+**Asset Loading Pipeline**:
+1. **Game Request**: Game thread requests asset by ID (textures, models, shaders, sounds)
+2. **Job Queue**: Asset loading job queued with appropriate priority
+3. **Disk Loading**: Worker thread loads raw asset data from file system
+4. **Format Processing**: Decode/process asset data (decompress textures, parse models, etc.)
+5. **Resource Transfer**: 
+   - **GPU Assets**: Transfer to render thread for WebGPU resource creation
+   - **Audio Assets**: Transfer to audio thread for SDL3 audio resource creation
+   - **Data Assets**: Process and validate for game thread consumption
+6. **Registry Update**: Update asset registry with loaded resource handles
+7. **Completion Notification**: Notify game thread of successful loading via job result system
+8. **Error Handling**: Failed loads logged and retry policies applied based on asset type
+
 **Job Result Handling**
 - **Pull-Based Event Log**: Job system maintains event log (created, started, completed, failed) that other threads query at controlled intervals
 - **Game Thread Timing Control**: Game thread chooses when to check for job results during update phases, maintaining deterministic simulation
@@ -212,7 +226,7 @@ The application uses a 4+N thread architecture:
 - **Simplicity Benefits**: Keeps job system as simple priority queue + workers, no complex dependency resolution
 
 **Job Memory Allocation Strategy**:
-- **Per-Job Dynamic Allocators**: Each job receives its own growing arena allocator at creation
+- **Per-Job Growing Arena Allocators**: Each job receives its own growing arena allocator at creation
 - **Growing Arena Design**: Allocator starts small and grows as needed, avoiding fixed size categories
 - **Perfect Fit**: Large jobs (texture loading) can allocate gigabytes, small jobs (AI decisions) use kilobytes as needed
 - **Automatic Cleanup**: Job completion or failure triggers cleanup of entire job allocator in single operation
@@ -220,6 +234,7 @@ The application uses a 4+N thread architecture:
 - **No Memory Categories**: Eliminates need to predict or hard-code job memory requirements
 - **Leak Prevention**: Failed jobs automatically release all allocated memory without partial cleanup logic
 - **Pipeline Job Isolation**: Each sub-job within pipeline gets own allocator for independent cleanup
+- **Hot Reload Isolation**: Job allocators completely independent of game state - no special handling needed during hot reload
 
 **Job Cancellation Mechanism**:
 - **Simplified by Memory Strategy**: Per-job dynamic allocators eliminate complex partial cleanup logic
@@ -270,9 +285,10 @@ The application uses a 4+N thread architecture:
 - Feedback on reload success/failure
 
 **Configuration Separation**
-- **Application Settings**: Engine config, not hot reloadable
-- **Game Settings**: Gameplay data, subject to hot reloading
-- Clear isolation to prevent engine state corruption
+- **Application Settings**: Engine config stored in JSON format, not hot reloadable
+- **Game Settings**: Gameplay data stored in JSON format, subject to hot reloading
+- **Consistent Format**: Both use JSON for uniform parsing and human readability
+- **Clear isolation**: Prevents engine state corruption during development
 
 ### Memory Architecture
 
@@ -291,9 +307,11 @@ The application uses a 4+N thread architecture:
 **Asset References**: Share read-only IDs, copy mutable state
 
 **Hot Reload Memory Management**:
-- Memory pool recreation for changed structure sizes
-- Temporary dual allocation during transitions
-- Safe cleanup coordination across threads
+- **Scope**: Memory pool recreation only applies to game state entity/component pools and render/audio packet buffers
+- **Job System Isolation**: Per-job growing arena allocators unaffected by hot reload (jobs are transient with independent memory)
+- **Pool Recreation**: Game Thread entity pools recreated when struct sizes change
+- **Packet Buffers**: Render/Audio packet buffers resized if packet structures change  
+- **Transition Safety**: Temporary dual allocation during pool transitions for thread safety
 
 **Fragmentation Mitigation**:
 - **Generational Handles**: Entity and resource references use generational handles to detect stale references
@@ -310,17 +328,31 @@ The application uses a 4+N thread architecture:
 
 #### Thread Failure Recovery
 
-- Health monitoring per thread with coordinator reporting
+**Core Thread Failure Strategy (Clean Exit)**:
+- **Main Thread failure**: Immediate application shutdown with error logging
+- **Game Thread failure**: Save current state, display error message, exit application
+- **Render Thread failure**: Log graphics error details, exit application gracefully
+- **Audio Thread failure**: Log audio error details, exit application gracefully
+- **Rationale**: Core thread failures indicate fundamental system issues requiring user attention
+
+**Job System Worker Failure Strategy (Graceful Recovery)**:
+- **Worker Thread failure**: Catch exceptions, log failure details, restart worker thread
+- **Job failure handling**: Apply retry policies (immediate, exponential backoff, or fail)
+- **Work redistribution**: Redistribute failed job work to healthy job system threads
+- **Graceful degradation**: Continue operation with reduced worker pool if needed
+
+**Health Monitoring**:
+- Per-thread health reporting to coordinator
+- Failure detection through heartbeat system
 - Safe shutdown coordination without data loss
-- Recovery restart procedures for failed threads
 
 #### Hot Reload Safety
 
-- Shared library compatibility validation
+- Shared library compatibility validation before loading  
 - Serialization compatibility checking before reload
-- Reload cancellation for state preservation
-- Rollback mechanisms for crashed new code
-- Clear error reporting with specific failure reasons
+- Reload cancellation for state preservation during validation failures
+- **No Rollback Complexity**: Once validation passes, commit to new code (runtime crashes are development issues to fix)
+- Clear error reporting with specific failure reasons for validation failures
 
 #### Diagnostics and Logging
 
@@ -336,11 +368,32 @@ The application uses a 4+N thread architecture:
 - Pre-crash game state serialization
 - Diagnostic data for failed reload attempts
 
-**Performance Monitoring Strategy**:
-- **Span Data**: Collect timing spans for key operations (render frame, game simulation step, asset loading)
-- **Thread Metrics**: Standard per-thread performance data (CPU usage, memory allocation, queue depths)
-- **Telemetry Best Practices**: Industry-standard metrics for high-quality performance analysis
-- **Implementation Details**: Specific metrics and collection methods to be defined during implementation
+**Performance Monitoring System**:
+
+**Per-Thread Performance Collectors**:
+- **Main Thread**: SDL3 event processing time, window management overhead
+- **Game Thread**: Simulation step timing, input processing duration, memory allocations
+- **Render Thread**: Frame render time, GPU resource usage, WebGPU operation timing  
+- **Audio Thread**: Audio mixing time, buffer underruns, SDL3 audio latency
+- **Job System**: Worker utilization, job queue depths, completion rates
+
+**Central Telemetry Aggregator** (Development Build Only):
+- Collect metrics from all per-thread collectors via lock-free buffers
+- Aggregate timing data, calculate averages and percentiles
+- Detect performance anomalies and bottlenecks
+- Export formatted data for external analysis tools
+
+**Development UI Integration**:
+- **Real-Time Metrics Display**: Live frame times, thread utilization, memory usage
+- **Performance Graphs**: Historical performance data visualization
+- **Bottleneck Detection**: Automatic identification of performance issues
+- **Configurable Views**: Customizable metric displays for different debugging scenarios
+
+**Metric Export Capabilities**:
+- **JSON Export**: Human-readable performance data for analysis
+- **CSV Export**: Time-series data for external graphing tools
+- **Live Streaming**: Real-time metric streaming to external monitoring tools
+- **Configurable Sampling**: Adjustable collection rates to minimize performance impact
 
 ### Development Tools Integration
 
@@ -357,7 +410,7 @@ The application uses a 4+N thread architecture:
 - State snapshot comparison
 - Automated testing scenario creation
 
-#### Snapshot System
+#### Snapshot System (Development Build Only)
 
 **Capabilities**:
 - On-demand complete game state capture
@@ -369,6 +422,8 @@ The application uses a 4+N thread architecture:
 - Before/after hot reload comparisons
 - Debugging state analysis
 - Regression testing data generation
+
+**Build Exclusion**: Completely excluded from release builds through conditional compilation
 
 ## Data Design
 
@@ -402,14 +457,14 @@ The application uses a 4+N thread architecture:
 
 **Render Packet Structure**:
 - **Renderable Entities**: Post-culling entity rendering data
-- **Asset References**: Texture, mesh, and shader IDs
+- **Asset References**: Texture, model, shader, and sound IDs
 - **Camera State**: View and projection matrices
 - **Lighting Data**: Light positions, colors, and parameters
 
 **Audio Packet Structure**:
 - **Sound Events**: Individual sound triggers with positioning
 - **Audio State**: Volume levels, listener position and orientation
-- **Asset References**: Audio file IDs and streaming parameters
+- **Asset References**: Sound file IDs and streaming parameters
 
 **Input Packet Structure**:
 - **Keyboard State**: Key press/release events with timing
@@ -450,9 +505,10 @@ The application uses a 4+N thread architecture:
 - **State Serialization Interface**: Game state preservation protocols
 
 **Job System Interface**:
-- **Job Submission**: Priority-based task queuing
-- **Result Retrieval**: Completion notification and data marshaling
-- **Resource Management**: Asset loading and cleanup coordination
+- **Job Submission**: Priority-based task queuing for all async operations
+- **Result Retrieval**: Completion notification and data marshaling via pull-based event log
+- **Asset Loading Pipeline**: Complete 8-step pipeline from game request to resource availability
+- **Resource Management**: Asset loading, processing, and cleanup coordination across threads
 
 ## Component Design
 
@@ -483,12 +539,11 @@ The application uses a 4+N thread architecture:
 - **Separate Entry Points**: Development and release builds use different main entry points and code files
 - **Hot Reload Infrastructure**: Only included in development builds - hot reload managers, file watchers, and related systems
 - **Clean Separation**: Release builds contain no hot reload logic, preventing accidental activation
-- **Future Requirements**: Detailed dev vs release build specifications needed in requirements.md
 
 **Debug Interface**:
-- **Performance Metrics**: Real-time display of frame times and thread health
+- **Performance Metrics**: Integrated with Performance Monitoring System for real-time display of frame times, thread health, and bottleneck detection
 - **State Inspector**: Runtime examination of game state structures
-- **Memory Usage**: Per-thread allocation tracking and leak detection
+- **Memory Usage**: Per-thread allocation tracking and leak detection integrated with telemetry collectors
 
 **Development Tools UI**:
 - **Recording Controls**: Start/stop/replay game session recording
@@ -503,7 +558,7 @@ The application uses a 4+N thread architecture:
 - **Status Bar**: Basic application state and performance indicators
 
 **Configuration Interface**:
-- **Settings Files**: Human-readable configuration management
+- **Settings Files**: JSON format for both application and game configuration (consistent with data files)
 - **Runtime Adjustment**: Limited runtime configuration changes
 - **Profile Management**: Different configuration sets for development scenarios and release
 
@@ -548,34 +603,52 @@ The application uses a 4+N thread architecture:
 
 ## Glossary of Terms
 
-**Game Thread**: Dedicated thread for pure functional game logic execution
-
-**Hot Reload**: Dynamic replacement of code or data without application restart
-
-**Render Packet**: Data structure containing all information needed for frame rendering
-
-**Audio Packet**: Data structure containing sound events and audio state
-
-**Job System**: Thread pool for executing asynchronous operations
+**Arena Allocator**: Memory allocation strategy using contiguous memory blocks for efficient allocation and bulk deallocation
 
 **Asset ID**: Unique identifier for game assets, avoiding direct asset data storage
 
-**Lock-Free**: Concurrent data structures that don't use mutex synchronization
+**Audio Packet**: Data structure containing sound events and audio state
 
-**Pure Function**: Function with no side effects, given same input always produces same output
-
-**Game State**: Complete data representation of current game simulation state
-
-**Development Tools**: Hot reload, recording/replay, and debugging utilities built into the application
-
-**Thread Coordinator**: Component responsible for managing thread lifecycle and communication
-
-**WebGPU Context**: Graphics API context for rendering operations
-
-**SDL3**: Cross-platform library for window management, input, and audio
+**Audio Thread**: Dedicated thread for sound processing and SDL3 audio output
 
 **Circular Buffer**: Ring buffer data structure for efficient producer-consumer communication
 
+**Culling**: Process of removing non-visible objects before rendering to optimize performance
+
+**Development Tools**: Hot reload, recording/replay, and debugging utilities built into the application
+
 **Double Buffering**: Technique using two buffers to avoid data races between producer and consumer
 
+**Fingerprint**: Layout hash used for struct compatibility checking during hot reload operations
+
 **Frame Labeling**: Tagging input events with frame numbers for proper game thread sequencing
+
+**Game State**: Complete data representation of current game simulation state
+
+**Game Thread**: Dedicated thread for pure functional game logic execution
+
+**Generational Handle**: Reference system using generation counters to detect stale references after memory reuse
+
+**Hot Reload**: Dynamic replacement of code or data without application restart
+
+**Job System**: Thread pool for executing asynchronous operations
+
+**Lock-Free**: Concurrent data structures that don't use mutex synchronization
+
+**Main Thread**: Primary application thread handling SDL3 events, window management, and thread coordination
+
+**Pipeline Job**: Job that coordinates multiple sub-jobs internally, presenting simple interface to game thread
+
+**Pure Function**: Function with no side effects, given same input always produces same output
+
+**Render Packet**: Data structure containing all information needed for frame rendering
+
+**Render Thread**: Dedicated thread for WebGPU operations and frame generation
+
+**SDL3**: Cross-platform library for window management, input, and audio
+
+**Thread Coordinator**: Component responsible for managing thread lifecycle and communication
+
+**Triple Buffering**: Extension of double buffering using three buffers to eliminate blocking between producer and consumer
+
+**WebGPU Context**: Graphics API context for rendering operations

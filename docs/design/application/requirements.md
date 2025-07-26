@@ -149,13 +149,72 @@
 - Consistent behavior regardless of timing variations
 - Clear error handling and recovery mechanisms
 
+## Build Configuration Requirements
+
+### Development Build Features
+
+**Development-Specific Components:**
+- Hot reloading system for game logic and data files
+- Game looping/recording system for rapid iteration
+- Snapshot system for state capture and debugging
+- Development UI and debugging tools
+- Extended logging and diagnostic information
+- File watcher integration for automatic reload triggers
+- Memory leak detection and profiling tools
+- Performance metrics collection and display
+
+**Development Build Characteristics:**
+- Larger binary size due to development tooling
+- Higher memory usage for debugging structures
+- Debug symbols and extended error information
+- Relaxed performance constraints to accommodate tooling overhead
+- Development-specific configuration file loading
+- Detailed crash reporting and recovery mechanisms
+
+### Release Build Features
+
+**Release-Specific Optimizations:**
+- Compiled game logic directly into executable (no dynamic loading)
+- Minimal memory footprint through stripped debugging structures
+- Optimized asset loading and memory management
+- Production logging levels with essential information only
+- Release-specific configuration validation
+
+**Release Build Characteristics:**
+- Smaller binary size with stripped development features
+- Optimized performance without development overhead
+- Essential error handling only (no development diagnostics)
+- Production-ready resource management
+- Minimal external dependencies
+- Release configuration file validation
+
+### Build System Requirements
+
+**Conditional Compilation:**
+- Separate build targets in build.odin script
+- Use Odin build flags to separate development vs release features
+- Compile-time feature toggles for development tooling inclusion
+- Clear separation between dev-only and production code paths
+
+**Configuration Management:**
+- Development builds load from dev-specific config files
+- Release builds use production configuration with validation
+- Build-time configuration file generation for release
+- Environment-specific build parameters
+
+**Asset Pipeline Differences:**
+- Development: Live asset loading and hot reloading support
+- Release: Pre-processed and optimized asset bundles
+- Development: Asset validation and detailed error reporting
+- Release: Minimal asset validation for performance
+
 ## Technical Constraints
 
 - Target platform: Desktop
 - Graphics API: WebGPU (context created through SDL3)
 - Platform API: SDL3 for windowing, events, sound, and WebGPU context management
 - Programming Language: Odin with data files in structured format (JSON)
-- Performance: Maintain 60+ FPS during development workflow
+- Performance: Maintain 60+ FPS during development workflow, optimize for release
 - Dependencies: Keep external dependencies minimal and well-documented
 
 ## Design Philosophy
