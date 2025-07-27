@@ -54,11 +54,17 @@ requirements.
 
 #### Application Layer
 
-**Application Manager**
+**Application Manager** (`src/app/app.odin`)
 - SDL3 subsystem initialization and teardown
 - Window lifecycle management
 - WebGPU context creation and surface management
 - Main event loop coordination
+
+**Game API Interface** (`src/app/game_api.odin`)
+- Dynamic library loading and management
+- Game function pointer management
+- Cross-platform shared library handling (.dll/.dylib/.so)
+- Library versioning through UUID-based file copying
 
 **Thread Coordinator**
 - Thread lifecycle management (creation, monitoring, termination)
@@ -89,17 +95,19 @@ requirements.
 
 #### Game Engine Core
 
-**Game State Manager**
+**Game State Manager** (`src/game/game.odin`)
 - Pure data container for all game state
 - State versioning for hot reload compatibility
 - Serialization/deserialization for game restarts
 - Memory layout optimization for cache efficiency
+- Exported interface functions: `game_state()`, `game_state_fingerprint()`
 
-**Game Logic Processor**
+**Game Logic Processor** (`src/game/game.odin`)
 - Dynamic library loading and management
 - Function pointer swapping during hot reload
 - Pure functional game update execution
 - Timing measurement and performance monitoring
+- Exported interface functions: `game_init()`, `game_deinit()`, `game_update()`
 
 **Render Packet Generator**
 - Game state --> render data translation
@@ -652,3 +660,132 @@ requirements.
 **Triple Buffering**: Extension of double buffering using three buffers to eliminate blocking between producer and consumer
 
 **WebGPU Context**: Graphics API context for rendering operations
+
+## Game Dynamic Library Interface
+
+### Overview
+
+The game logic is compiled as a dynamic library (.dll/.so/.dylib) to enable hot
+reloading during development. The library exports a standardized interface that
+the application uses to interact with game logic while maintaining complete
+separation between engine and game code.
+
+### Core Design Principles
+
+**State Ownership**: Game library owns and manages all game state data structures
+**Opaque State**: Application treats game state as opaque pointer - no knowledge of internal structure
+**Pure Functions**: All exported functions are pure - no global state modification outside provided parameters
+**Version Compatibility**: Interface includes version checking to prevent incompatible library loading
+**Memory Management**: Game library responsible for its own memory allocation using provided allocators
+**Asset References**: Game logic works with asset IDs only, never raw asset data
+
+### Exported Function Interface
+
+The game library exports a minimal, clean interface focused on essential functionality:
+
+**`game_init()`**
+- Called once after library loading to initialize game systems
+- Game manages its own memory allocation and configuration loading
+- No return value - initialization failure can be detected via other means
+
+**`game_deinit()`**
+- Called before library unloading to clean up game-specific resources
+- Game releases all internally allocated memory and resources
+- Ensures clean library unloading without memory leaks
+
+**`game_update()`**
+- Primary game simulation function called each frame by Game Thread
+- Game manages input processing, state updates, and render/audio data internally
+- All game logic, physics, AI, and simulation happens here
+
+**`game_state() -> rawptr`**
+- Returns opaque pointer to current game state
+- Application uses this pointer for hot reload state preservation
+- Game state structure is completely opaque to application
+
+**`game_state_fingerprint() -> string`**
+- Returns fingerprint/version string of current game state structure
+- Used by hot reload system to detect incompatible state changes
+- Changes when struct layout, field types, or sizes change
+- Enables automatic detection of when game restart is required
+
+### Interface Simplicity
+
+The interface intentionally avoids exposing complex data structures:
+- **No Parameter Passing**: Game functions take no parameters - the game manages input, configuration, and memory internally
+- **Minimal State Exposure**: Only the opaque state pointer and fingerprint are exposed
+- **Self-Contained**: Game library handles all complexity internally, presenting clean interface to application
+
+### Function Pointer Management
+
+#### Hot Reload Function Swapping
+**Application Side**:
+- Maintains function pointers to all exported game functions
+- Atomically updates function pointers after successful library reload
+- Falls back to stub functions if library loading fails
+- Coordinates function swapping with Game Thread timing
+
+**Game Library Side**:
+- Exports functions with C calling convention for cross-platform compatibility
+- Maintains internal state through provided allocators only
+- Must handle being called during function pointer transition gracefully
+- No assumptions about application-side function caching
+
+### Error Handling and Safety
+
+#### Library Loading Safety
+- Version compatibility checked before any function calls
+- Initialization failure prevents library usage
+- Memory allocation failures handled gracefully with error returns
+- State serialization failures prevent hot reload from proceeding
+
+#### Runtime Error Handling
+- All functions return status codes or null pointers on failure
+- No exceptions or longjmp used (not compatible with C interface)
+- Error conditions logged through application's logging system
+- Failed operations leave game state in consistent state
+
+#### Memory Safety
+- Game library never retains pointers to application memory
+- All inter-thread communication through copying, not shared pointers
+- Asset references use IDs only, never direct pointers to application assets
+- Allocator interfaces prevent game from accessing application memory pools
+
+### Platform Considerations
+
+#### Shared Library Naming
+- **Windows**: `game_logic.dll`
+- **macOS**: `game_logic.dylib`
+- **Linux**: `game_logic.so`
+- All platforms use same function export names for consistency
+
+#### Calling Convention
+- All exported functions use C calling convention (`extern "C"` equivalent)
+- Simple parameter types (primitives, pointers, slices)
+- No complex Odin-specific types in interface
+- Cross-platform compatibility maintained through standardized interface
+
+#### Symbol Export
+- Explicit symbol export for all interface functions
+- No internal game functions exported to prevent accidental usage
+- Export definitions managed through build system configuration
+- Development builds may export additional debugging functions
+
+### Integration with Hot Reload System
+
+#### Reload Trigger Response
+1. **Compatibility Check**: New library version validated against current application
+2. **State Serialization**: Current game state serialized for preservation
+3. **Library Unload**: Old library shutdown and unloaded safely
+4. **Library Load**: New library loaded and initialized
+5. **State Restoration**: Serialized state deserialized into new library
+6. **Function Update**: Application function pointers updated atomically
+7. **Resume Operation**: Game Thread resumes with new library functions
+
+#### Fallback Behavior
+- **Compilation Failure**: Continue with current library, display error message
+- **Loading Failure**: Rollback to previous working library if available
+- **Initialization Failure**: Restart game portion with default initial state
+- **State Incompatibility**: Restart game portion, losing current progress but preserving application
+
+This interface design ensures clean separation between engine and game code while enabling robust hot reloading functionality essential for rapid development iteration.

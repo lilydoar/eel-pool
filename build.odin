@@ -9,11 +9,12 @@ import "core:strings"
 
 
 Options :: struct {
-	release: bool `usage:Produce a release build`,
-	develop: bool `usage:Produce a development build`,
-	gamelib: bool `usage:Build the game code as a dynamic library`,
-	clean:   bool `usage:Clean the build directory`,
-	verbose: bool `usage:Enable verbose output`,
+	release: bool `usage:"Produce a release build"`,
+	develop: bool `usage:"Produce a development build"`,
+	gamelib: bool `usage:"Build the game code as a dynamic library"`,
+	verbose: bool `usage:"Enable verbose output"`,
+	clean:   bool `usage:"Clean the build directory before building"`,
+	watch:   bool `usage:"Watch for changes and rebuild automatically (game library only)"`,
 }
 
 main :: proc() {
@@ -31,7 +32,7 @@ main :: proc() {
 	}
 
 	if !opt.release && !opt.develop && !opt.gamelib && !opt.clean {
-		log.errorf("No build option specified. Use -release, -develop, or -gamelib.")
+		log.errorf("No build option specified. Use -release or -develop")
 		return
 	}
 
@@ -39,21 +40,30 @@ main :: proc() {
 		log.info("Building a release build")
 
 		run("mkdir -p bin/release")
-		run("odin build src/entry/release -out:bin/release/eel-pool")
+		run(
+			"odin build src/entry/release -out:bin/release/eel-pool -disable-assert -o:speed -warnings-as-errors",
+		)
 	}
 
 	if opt.develop {
 		log.info("Building a development build")
 
 		run("mkdir -p bin/develop")
-		run("odin build src/entry/develop -out:bin/develop/eel-pool -debug")
+		run("odin build src/entry/develop -out:bin/develop/eel-pool -debug -ignore-warnings")
 	}
 
 	if opt.gamelib {
 		log.info("Building the game as a dynamic library")
 
 		run("mkdir -p bin/gamelib")
-		run("odin build src/game -out:bin/gamelib/game -debug -build-mode:shared")
+		run("odin build src/game -out:bin/gamelib/game -debug -build-mode:dynamic")
+	}
+
+	if opt.watch {
+		log.info("Watching for changes in the game library")
+
+		watch_cmd := "odin build src/game -out:bin/gamelib/game -debug -build-mode:shared -watch"
+		run(watch_cmd)
 	}
 }
 

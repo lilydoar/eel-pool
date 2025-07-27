@@ -153,8 +153,12 @@
 
 ### Development Build Features
 
+**Development Entry Point** (`src/entry/develop/main.odin`)
+- Hot reloading system for game logic and data files via dynamic library loading
+- Game API interface with function pointer swapping
+- Development-specific game library management
+
 **Development-Specific Components:**
-- Hot reloading system for game logic and data files
 - Game looping/recording system for rapid iteration
 - Snapshot system for state capture and debugging
 - Development UI and debugging tools
@@ -173,8 +177,12 @@
 
 ### Release Build Features
 
-**Release-Specific Optimizations:**
+**Release Entry Point** (`src/entry/release/main.odin`)
 - Compiled game logic directly into executable (no dynamic loading)
+- Direct static linking to game module functions
+- Simplified main loop without hot reload infrastructure
+
+**Release-Specific Optimizations:**
 - Minimal memory footprint through stripped debugging structures
 - Optimized asset loading and memory management
 - Production logging levels with essential information only

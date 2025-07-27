@@ -2,21 +2,27 @@
 
 ## Build
 
-Build the build script
+First, build the build script:
 
 ```bash
 odin build build.odin -file
 ```
 
-Build the game
+Then use the build script for different targets:
 
 ```bash
-# Build the game in release mode
-./build -release
-
-# Build the game in development mode
+# Development build with hot reload support
 ./build -develop
 
-# Build the game code as a dynamic library
+# Release build with static linking
+./build -release
+
+# Game logic as a dynamic library (for hot reloading)
 ./build -gamelib
+
+# Clean the build directory before building
+./build -clean
+
+# Enable verbose output
+./build -verbose
 ```
