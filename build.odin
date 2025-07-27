@@ -15,7 +15,6 @@ Options :: struct {
 	test:    bool `usage:"Build and run all test functions"`,
 	verbose: bool `usage:"Enable verbose output"`,
 	clean:   bool `usage:"Clean the build directory before building"`,
-	watch:   bool `usage:"Watch for changes and rebuild automatically (game library only)"`,
 }
 
 main :: proc() {
@@ -36,8 +35,8 @@ main :: proc() {
 		log.info("Building all targets")
 		opt.release = true
 		opt.develop = true
-		opt.test = true
 		opt.gamelib = true
+		opt.test = true
 	}
 
 	if opt.release {
@@ -75,16 +74,6 @@ main :: proc() {
 			must_run([]string{"odin", "test", path})
 		}
 	}
-
-	// TODO
-	// Maybe I want the watching portion in the app code instead
-	// Have it call to build.odin
-	// if opt.watch {
-	// 	log.info("Watching for changes in the game library")
-	//
-	// 	watch_cmd := "odin build src/game -out:bin/gamelib/game -debug -build-mode:shared -watch"
-	// 	must_run(watch_cmd)
-	// }
 }
 
 run :: proc {
