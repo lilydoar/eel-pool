@@ -9,19 +9,29 @@ import "core:strings"
 
 
 Options :: struct {
-	release:  bool `usage:Produce a release build`,
-	develop:  bool `usage:Produce a development build`,
-	game_lib: bool `usage:Build the game code as a dynamic library`,
+	release: bool `usage:Produce a release build`,
+	develop: bool `usage:Produce a development build`,
+	gamelib: bool `usage:Build the game code as a dynamic library`,
+	clean:   bool `usage:Clean the build directory`,
+	verbose: bool `usage:Enable verbose output`,
 }
 
 main :: proc() {
-	context.logger = log.create_console_logger()
-
 	opt: Options
 	flags.parse_or_exit(&opt, os.args)
 
-	if !opt.release && !opt.develop && !opt.game_lib {
-		log.errorf("No build option specified. Use -release, -develop, or -game_lib.")
+	level := log.Level.Info
+	if opt.verbose {level = log.Level.Debug}
+	context.logger = log.create_console_logger(level)
+
+	if opt.clean {
+		log.info("Cleaning the build directory")
+
+		run("rm -rf bin")
+	}
+
+	if !opt.release && !opt.develop && !opt.gamelib && !opt.clean {
+		log.errorf("No build option specified. Use -release, -develop, or -gamelib.")
 		return
 	}
 
@@ -29,25 +39,26 @@ main :: proc() {
 		log.info("Building a release build")
 
 		run("mkdir -p bin/release")
-		run("odin build src -out:bin/release/eel-pool")
+		run("odin build src/entry/release -out:bin/release/eel-pool")
 	}
 
 	if opt.develop {
 		log.info("Building a development build")
 
 		run("mkdir -p bin/develop")
-		run("odin build src -out:bin/release/eel-pool -debug")
+		run("odin build src/entry/develop -out:bin/develop/eel-pool -debug")
 	}
 
-	if opt.game_lib {
+	if opt.gamelib {
 		log.info("Building the game as a dynamic library")
 
-		run("mkdir -p bin/game_lib")
+		run("mkdir -p bin/gamelib")
+		run("odin build src/game -out:bin/gamelib/game -debug -build-mode:shared")
 	}
 }
 
 run :: proc(cmd: string) -> (int, os.Error) {
-	log.infof("Running: {}", cmd)
+	log.debugf("Running: {}", cmd)
 
 	code, err := exec(strings.split(cmd, " "))
 	if err != nil {log.errorf("Executing process: {}", err)}

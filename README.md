@@ -18,5 +18,5 @@ Build the game
 ./build -develop
 
 # Build the game code as a dynamic library
-./build -game-lib
+./build -gamelib
 ```
