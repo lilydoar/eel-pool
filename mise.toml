@@ -1,0 +1,20 @@
+[tools]
+"asdf:jtakakura/asdf-odin" = "dev-2025-07"
+
+[tasks.bootstrap]
+run = 'odin build build.odin -file'
+
+[tasks.check]
+run = './check-build.sh'
+
+[tasks.release]
+depends = ["check"]
+run = './build -release'
+
+[tasks.develop]
+depends = ["check"]
+run = './build -develop'
+
+[tasks.test]
+depends = ["check"]
+run = './build -test -verbose'
