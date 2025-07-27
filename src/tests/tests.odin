@@ -17,12 +17,7 @@ check_latest_release :: proc(t: ^testing.T) {
 	must_run([]string{RELEASE_EXE, "-check"})
 }
 
-run :: proc {
-	run_slice,
-	run_string,
-}
-
-run_slice :: proc(cmd: []string) -> bool {
+run :: proc(cmd: []string) -> bool {
 	a := context.allocator
 	defer context.allocator = a
 
@@ -47,15 +42,7 @@ run_slice :: proc(cmd: []string) -> bool {
 	return true
 }
 
-run_string :: proc(cmd: string) -> bool {return run_slice(strings.split(cmd, " "))}
-
-must_run :: proc {
-	must_run_slice,
-	must_run_string,
-}
-
-must_run_slice :: proc(cmd: []string) {assert(run(cmd), "Process failed")}
-must_run_string :: proc(cmd: string) {assert(run(cmd), "Process failed")}
+must_run :: proc(cmd: []string) {assert(run(cmd), "Process failed")}
 
 // fd, open_error := os.open("test_data")
 // if !testing.expect_value(t, open_error, os.ERROR_NONE) {

@@ -12,6 +12,7 @@ Options :: struct {
 	release: bool `usage:"Produce a release build"`,
 	develop: bool `usage:"Produce a development build"`,
 	gamelib: bool `usage:"Build the game code as a dynamic library"`,
+	docs:    bool `usage:"Generate documentation"`,
 	test:    bool `usage:"Build and run all test functions"`,
 	verbose: bool `usage:"Enable verbose output"`,
 	clean:   bool `usage:"Clean the build directory before building"`,
@@ -29,6 +30,9 @@ GAMELIB_DIR: string : BUILD_DIR + "gamelib/"
 
 TEST_DIR: string : BUILD_DIR + "test"
 
+DOCS_DIR: string : "docs/"
+DOCS_GEN_DIR: string : DOCS_DIR + "gen/"
+
 main :: proc() {
 	opt: Options
 	flags.parse_or_exit(&opt, os.args)
@@ -41,6 +45,7 @@ main :: proc() {
 		log.info("Cleaning the build directory")
 
 		must_run([]string{"rm", "-rf", BUILD_DIR})
+		must_run([]string{"rm", "-rf", DOCS_GEN_DIR})
 	}
 
 	if opt.all {
@@ -48,6 +53,7 @@ main :: proc() {
 		opt.release = true
 		opt.develop = true
 		opt.gamelib = true
+		opt.docs = true
 		opt.test = true
 	}
 
@@ -100,6 +106,29 @@ main :: proc() {
 		must_run(gamelib_cmd)
 	}
 
+	if opt.docs {
+		log.info("Generating documentation")
+
+		must_run([]string{"mkdir", "-p", DOCS_GEN_DIR})
+
+		path := filepath.join({DOCS_GEN_DIR, strings.concatenate({"build", ".odin-doc"})})
+		file, err := os.create(path);assert(err == os.ERROR_NONE, "Create doc file")
+		defer os.close(file)
+
+		doc_cmd := []string{"odin", "doc", "build.odin", "-file"}
+		must_run(doc_cmd, stdout = file)
+
+		dirs: []string = {"app", "game", "tests"}
+		for dir in dirs {
+			path := filepath.join({DOCS_GEN_DIR, strings.concatenate({dir, ".odin-doc"})})
+			file, err := os.create(path);assert(err == os.ERROR_NONE, "Create doc file")
+			defer os.close(file)
+
+			doc_cmd := []string{"odin", "doc", filepath.join({"src", dir})}
+			must_run(doc_cmd, stdout = file)
+		}
+	}
+
 	if opt.test {
 		log.info("Running tests")
 
@@ -129,18 +158,13 @@ main :: proc() {
 	}
 }
 
-run :: proc {
-	run_slice,
-	run_string,
-}
-
-run_slice :: proc(cmd: []string) -> bool {
+run :: proc(cmd: []string, stdout: ^os.File = os.stdout, stderr: ^os.File = os.stderr) -> bool {
 	context.allocator = context.temp_allocator
 
 	log.debugf("Running: {}", strings.join(cmd, " "))
 
 	process, err_start := os.process_start(
-		{command = cmd, stdin = os.stdin, stdout = os.stdout, stderr = os.stderr},
+		{command = cmd, stdin = os.stdin, stdout = stdout, stderr = stderr},
 	)
 	if err_start != os.ERROR_NONE {
 		log.errorf("Failed to start process: {}", err_start)
@@ -156,13 +180,9 @@ run_slice :: proc(cmd: []string) -> bool {
 	return true
 }
 
-run_string :: proc(cmd: string) -> bool {return run_slice(strings.split(cmd, " "))}
-
-must_run :: proc {
-	must_run_slice,
-	must_run_string,
-}
-
-must_run_slice :: proc(cmd: []string) {assert(run(cmd), "Process failed")}
-must_run_string :: proc(cmd: string) {assert(run(cmd), "Process failed")}
+must_run :: proc(
+	cmd: []string,
+	stdout: ^os.File = os.stdout,
+	stderr: ^os.File = os.stderr,
+) {assert(run(cmd, stdout, stderr), "Process failed")}
 
