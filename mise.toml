@@ -1,20 +1,24 @@
 [tools]
 "asdf:jtakakura/asdf-odin" = "dev-2025-07"
 
-[tasks.bootstrap]
-run = 'odin build build.odin -file'
+[env]
+# How to prepend PATH instead of replacing?
+"PATH" = "bin"
 
-[tasks.check]
-run = './check-build.sh'
+[tasks.bootstrap]
+run = 'odin build build.odin -file -out:bin/build'
 
 [tasks.release]
-depends = ["check"]
+depends = ["bootstrap"]
 run = './build -release'
 
 [tasks.develop]
-depends = ["check"]
+depends = ["bootstrap"]
 run = './build -develop'
 
 [tasks.test]
-depends = ["check"]
+depends = ["bootstrap"]
 run = './build -test -verbose'
+
+[tasks.check]
+run = './build -check'
