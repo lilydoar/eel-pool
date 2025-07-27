@@ -17,6 +17,18 @@ Options :: struct {
 	clean:   bool `usage:"Clean the build directory before building"`,
 }
 
+BUILD_DIR: string : "bin/"
+
+RELEASE_DIR: string : BUILD_DIR + "release/"
+RELEASE_EXE: string : RELEASE_DIR + "eel-pool"
+
+DEVELOP_DIR: string : BUILD_DIR + "develop"
+DEVELOP_EXE: string : DEVELOP_DIR + "eel-pool"
+
+GAMELIB_DIR: string : BUILD_DIR + "gamelib/"
+
+TEST_DIR: string : BUILD_DIR + "test"
+
 main :: proc() {
 	opt: Options
 	flags.parse_or_exit(&opt, os.args)
@@ -28,7 +40,7 @@ main :: proc() {
 	if opt.clean {
 		log.info("Cleaning the build directory")
 
-		must_run("rm -rf bin")
+		must_run([]string{"rm", "-rf", BUILD_DIR})
 	}
 
 	if opt.all {
@@ -42,36 +54,77 @@ main :: proc() {
 	if opt.release {
 		log.info("Building a release build")
 
-		must_run("mkdir -p bin/release")
-		must_run(
-			"odin build src/entry/release -out:bin/release/eel-pool -disable-assert -o:speed -warnings-as-errors",
-		)
+		must_run([]string{"mkdir", "-p", RELEASE_DIR})
+
+		release_cmd := []string {
+			"odin",
+			"build",
+			"src/entry/release",
+			"-out:" + RELEASE_EXE,
+			"-disable-assert",
+			"-o:speed",
+			"-warnings-as-errors",
+		}
+		must_run(release_cmd)
 	}
 
 	if opt.develop {
 		log.info("Building a development build")
 
-		must_run("mkdir -p bin/develop")
-		must_run("odin build src/entry/develop -out:bin/develop/eel-pool -debug -ignore-warnings")
+		must_run([]string{"mkdir", "-p", DEVELOP_DIR})
+
+		develop_cmd := []string {
+			"odin",
+			"build",
+			"src/entry/develop",
+			"-out:" + DEVELOP_EXE,
+			"-debug",
+		}
+		must_run(develop_cmd)
 	}
 
 	if opt.gamelib {
 		log.info("Building the game as a dynamic library")
 
-		must_run("mkdir -p bin/gamelib")
-		must_run("odin build src/game -out:bin/gamelib/game -debug -build-mode:dynamic")
+		must_run([]string{"mkdir", "-p", GAMELIB_DIR})
+
+		gamelib_out := filepath.join({GAMELIB_DIR, "game"})
+		gamelib_cmd := []string {
+			"odin",
+			"build",
+			"src/game",
+			strings.concatenate({"-out:", gamelib_out}),
+			"-debug",
+			"-build-mode:dll",
+		}
+		must_run(gamelib_cmd)
 	}
 
 	if opt.test {
 		log.info("Running tests")
 
-		must_run("mkdir -p bin/test")
-		must_run("odin build build.odin -file -out:bin/test/build")
+		must_run([]string{"mkdir", "-p", TEST_DIR})
+
+		test_build_cmd := []string {
+			"odin",
+			"build",
+			"build.odin",
+			"-file",
+			strings.concatenate({"-out:", filepath.join({TEST_DIR, "build"})}),
+		}
+		must_run(test_build_cmd)
 
 		dirs: []string = {"tests"}
 		for dir in dirs {
-			path := strings.join({"src", dir}, "/")
-			must_run([]string{"odin", "test", path})
+			test_cmd := []string {
+				"odin",
+				"test",
+				filepath.join({"src", dir}),
+				strings.concatenate({"-out:", filepath.join({BUILD_DIR, "test", dir})}),
+				"-debug",
+				"-warnings-as-errors",
+			}
+			must_run(test_cmd)
 		}
 	}
 }

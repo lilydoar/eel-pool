@@ -23,6 +23,9 @@ run :: proc {
 }
 
 run_slice :: proc(cmd: []string) -> bool {
+	a := context.allocator
+	defer context.allocator = a
+
 	context.allocator = context.temp_allocator
 
 	log.debugf("Running: {}", strings.join(cmd, " "))
