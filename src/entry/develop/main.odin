@@ -6,12 +6,12 @@ import "core:dynlib"
 import "core:encoding/uuid"
 import "core:fmt"
 import "core:log"
-import "core:os"
-import "core:os/os2"
 import "core:strings"
 
 main :: proc() {
 	context.logger = log.create_console_logger()
+
+	app.cli_parse()
 
 	state: app.AppState
 
@@ -24,6 +24,11 @@ main :: proc() {
 
 	game_init(game)
 	defer game_deinit(game)
+
+	if app.cli_options().check {
+		log.info("App initialized successfully, exiting.")
+		return
+	}
 
 	for {
 		if quit := app.sdl_poll_events(); quit {break}

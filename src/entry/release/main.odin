@@ -9,6 +9,8 @@ import sdl "vendor:sdl3"
 main :: proc() {
 	context.logger = log.create_console_logger()
 
+	app.cli_parse()
+
 	state: app.AppState
 
 	app.sdl_init()
@@ -16,6 +18,11 @@ main :: proc() {
 
 	game_init()
 	defer game_deinit()
+
+	if app.cli_options().check {
+		log.info("App initialized successfully, exiting.")
+		return
+	}
 
 	for {
 		if quit := app.sdl_poll_events(); quit {break}

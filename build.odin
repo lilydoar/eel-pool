@@ -7,11 +7,12 @@ import "core:path/filepath"
 import "core:slice"
 import "core:strings"
 
-
 Options :: struct {
+	all:     bool `usage:"Build all targets"`,
 	release: bool `usage:"Produce a release build"`,
 	develop: bool `usage:"Produce a development build"`,
 	gamelib: bool `usage:"Build the game code as a dynamic library"`,
+	test:    bool `usage:"Build and run all test functions"`,
 	verbose: bool `usage:"Enable verbose output"`,
 	clean:   bool `usage:"Clean the build directory before building"`,
 	watch:   bool `usage:"Watch for changes and rebuild automatically (game library only)"`,
@@ -28,19 +29,22 @@ main :: proc() {
 	if opt.clean {
 		log.info("Cleaning the build directory")
 
-		run("rm -rf bin")
+		must_run("rm -rf bin")
 	}
 
-	if !opt.release && !opt.develop && !opt.gamelib && !opt.clean {
-		log.errorf("No build option specified. Use -release or -develop")
-		return
+	if opt.all {
+		log.info("Building all targets")
+		opt.release = true
+		opt.develop = true
+		opt.test = true
+		opt.gamelib = true
 	}
 
 	if opt.release {
 		log.info("Building a release build")
 
-		run("mkdir -p bin/release")
-		run(
+		must_run("mkdir -p bin/release")
+		must_run(
 			"odin build src/entry/release -out:bin/release/eel-pool -disable-assert -o:speed -warnings-as-errors",
 		)
 	}
@@ -48,41 +52,75 @@ main :: proc() {
 	if opt.develop {
 		log.info("Building a development build")
 
-		run("mkdir -p bin/develop")
-		run("odin build src/entry/develop -out:bin/develop/eel-pool -debug -ignore-warnings")
+		must_run("mkdir -p bin/develop")
+		must_run("odin build src/entry/develop -out:bin/develop/eel-pool -debug -ignore-warnings")
 	}
 
 	if opt.gamelib {
 		log.info("Building the game as a dynamic library")
 
-		run("mkdir -p bin/gamelib")
-		run("odin build src/game -out:bin/gamelib/game -debug -build-mode:dynamic")
+		must_run("mkdir -p bin/gamelib")
+		must_run("odin build src/game -out:bin/gamelib/game -debug -build-mode:dynamic")
 	}
 
-	if opt.watch {
-		log.info("Watching for changes in the game library")
+	if opt.test {
+		log.info("Running tests")
 
-		watch_cmd := "odin build src/game -out:bin/gamelib/game -debug -build-mode:shared -watch"
-		run(watch_cmd)
+		must_run("mkdir -p bin/test")
+		must_run("odin build build.odin -file -out:bin/test/build")
+
+		dirs: []string = {"tests"}
+		for dir in dirs {
+			path := strings.join({"src", dir}, "/")
+			must_run([]string{"odin", "test", path})
+		}
 	}
+
+	// TODO
+	// Maybe I want the watching portion in the app code instead
+	// Have it call to build.odin
+	// if opt.watch {
+	// 	log.info("Watching for changes in the game library")
+	//
+	// 	watch_cmd := "odin build src/game -out:bin/gamelib/game -debug -build-mode:shared -watch"
+	// 	must_run(watch_cmd)
+	// }
 }
 
-run :: proc(cmd: string) -> (int, os.Error) {
-	log.debugf("Running: {}", cmd)
-
-	code, err := exec(strings.split(cmd, " "))
-	if err != nil {log.errorf("Executing process: {}", err)}
-	if code != 0 {log.errorf("Process exited with non-zero code: {}", code)}
-
-	return code, err
+run :: proc {
+	run_slice,
+	run_string,
 }
 
-exec :: proc(cmd: []string) -> (code: int, error: os.Error) {
-	process := os.process_start(
+run_slice :: proc(cmd: []string) -> bool {
+	context.allocator = context.temp_allocator
+
+	log.debugf("Running: {}", strings.join(cmd, " "))
+
+	process, err_start := os.process_start(
 		{command = cmd, stdin = os.stdin, stdout = os.stdout, stderr = os.stderr},
-	) or_return
-	state := os.process_wait(process) or_return
-	os.process_close(process) or_return
-	return state.exit_code, nil
+	)
+	if err_start != os.ERROR_NONE {
+		log.errorf("Failed to start process: {}", err_start)
+		return false
+	}
+
+	state, err_wait := os.process_wait(process)
+	if err_wait != os.ERROR_NONE {
+		log.errorf("Failed to wait for process: {}", err_wait)
+		return false
+	}
+
+	return true
 }
+
+run_string :: proc(cmd: string) -> bool {return run_slice(strings.split(cmd, " "))}
+
+must_run :: proc {
+	must_run_slice,
+	must_run_string,
+}
+
+must_run_slice :: proc(cmd: []string) {assert(run(cmd), "Process failed")}
+must_run_string :: proc(cmd: string) {assert(run(cmd), "Process failed")}
 

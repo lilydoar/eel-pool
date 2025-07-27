@@ -11,18 +11,26 @@ odin build build.odin -file
 Then use the build script for different targets:
 
 ```bash
-# Development build with hot reload support
-./build -develop
+-all      | Build all targets
+-clean    | Clean the build directory before building
+-develop  | Produce a development build
+-gamelib  | Build the game code as a dynamic library
+-release  | Produce a release build
+-test     | Build and run all test functions
+```
 
-# Release build with static linking
-./build -release
+Common examples:
 
-# Game logic as a dynamic library (for hot reloading)
-./build -gamelib
+```bash
+# Build all targets
+./build -all
 
-# Clean the build directory before building
-./build -clean
+# Clean the build directory before building a release
+./build -clean -release
 
-# Enable verbose output
-./build -verbose
+# Run tests with verbose output
+./build -test -verbose
+
+# Display all options
+./build -help
 ```
