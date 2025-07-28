@@ -100,8 +100,16 @@ main :: proc() {
 	if opt.check {
 		log.info("Checking code for compilation errors")
 
-		check_cmd := []string{"odin", "check", SRC_DIR, "-warnings-as-errors"}
-		must_run(check_cmd)
+		dirs: []string = {"tests", "app", "game", "entry"}
+		for dir in dirs {
+			check_cmd := []string {
+				"odin",
+				"check",
+				filepath.join({SRC_DIR, dir}),
+				"-warnings-as-errors",
+			}
+			must_run(check_cmd)
+		}
 	}
 
 	// TODO: Lint (and format the code)
@@ -161,7 +169,7 @@ do_tests :: proc() {
 		test_cmd := []string {
 			"odin",
 			"test",
-			filepath.join({"src", dir}),
+			filepath.join({SRC_DIR, dir}),
 			strings.concatenate({"-out:", filepath.join({BUILD_DIR, "test", dir})}),
 			"-debug",
 			"-warnings-as-errors",
@@ -188,7 +196,7 @@ do_doc_gen :: proc(out: string = DOCS_DIR) {
 		file, err := os.create(path);assert(err == os.ERROR_NONE, "Create doc file")
 		defer os.close(file)
 
-		doc_cmd := []string{"odin", "doc", filepath.join({"src", dir})}
+		doc_cmd := []string{"odin", "doc", filepath.join({SRC_DIR, dir})}
 		run(doc_cmd, stdout = file)
 	}
 }
