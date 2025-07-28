@@ -128,25 +128,39 @@ make_condition_generic :: proc($BlackboardType: typeid, condition: proc(^Behavio
 }
 
 // Console debugging visualization
-print_behavior_tree :: proc(node: ^BehaviorNode, depth: int = 0, is_last: bool = true, prefix: string = "") {
-    if node == nil do return
+behavior_tree_to_string_repr :: proc(
+    node: ^BehaviorNode,
+    depth: int = 0,
+    is_last: bool = true,
+    prefix: string = "",
+) -> string {
+    result := ""
+    if node == nil do return result
 
     // Draw tree structure with Unicode box characters
     connector := "└── " if is_last else "├── "
-    next_prefix := prefix + ("    " if is_last else "│   ")
+    next_prefix := strings.concatenate({prefix, "    " if is_last else "│   "})
 
     // Node type and status indicators
     node_type := get_node_type_name(node)
     status_icon := get_status_icon(node)
 
-    fmt.printf("%s%s%s %s\n", prefix, connector, status_icon, node_type)
+    result = strings.concatenate({result, prefix, connector, status_icon, " ", node_type, "\n"})
 
-    // Print children
+    // Build children strings
     child_count := len(node.children)
     for child, i in node.children {
         is_last_child := (i == child_count - 1)
-        print_behavior_tree(child, depth + 1, is_last_child, next_prefix)
+        child_string := behavior_tree_to_string_repr(child, depth + 1, is_last_child, next_prefix)
+        result = strings.concatenate({result, child_string})
     }
+
+    return result
+}
+
+print_behavior_tree :: proc(node: ^BehaviorNode) {
+    tree_string := behavior_tree_to_string_repr(node)
+    fmt.print(tree_string)
 }
 
 get_status_icon :: proc(node: ^BehaviorNode) -> string {
@@ -162,18 +176,25 @@ get_node_type_name :: proc(node: ^BehaviorNode) -> string {
 }
 
 // Enhanced debug version with live state
-print_behavior_tree_debug :: proc(node: ^BehaviorNode, ctx: ^BehaviorContext, depth: int = 0, is_last: bool = true, prefix: string = "") {
-    if node == nil do return
+behavior_tree_debug_to_string :: proc(
+    node: ^BehaviorNode, 
+    ctx: ^BehaviorContext, 
+    depth: int = 0, 
+    is_last: bool = true, 
+    prefix: string = "",
+) -> string {
+    result := ""
+    if node == nil do return result
 
     connector := "└── " if is_last else "├── "
-    next_prefix := prefix + ("    " if is_last else "│   ")
+    next_prefix := strings.concatenate({prefix, "    " if is_last else "│   "})
 
     // Execute to get current status
-    result := node.execute(node, ctx)
+    execution_result := node.execute(node, ctx)
     status_icon := ""
     status_color := ""
 
-    switch result {
+    switch execution_result {
     case .SUCCESS:
         status_icon = "+"
         status_color = "\033[32m"  // Green
@@ -188,13 +209,22 @@ print_behavior_tree_debug :: proc(node: ^BehaviorNode, ctx: ^BehaviorContext, de
     node_name := get_node_debug_name(node, ctx)
     reset_color := "\033[0m"
 
-    fmt.printf("%s%s%s%s %s%s\n", prefix, connector, status_color, status_icon, node_name, reset_color)
+    result = strings.concatenate({result, prefix, connector, status_color, status_icon, " ", node_name, reset_color, "\n"})
 
+    // Build children strings
     child_count := len(node.children)
     for child, i in node.children {
         is_last_child := (i == child_count - 1)
-        print_behavior_tree_debug(child, ctx, depth + 1, is_last_child, next_prefix)
+        child_string := behavior_tree_debug_to_string(child, ctx, depth + 1, is_last_child, next_prefix)
+        result = strings.concatenate({result, child_string})
     }
+
+    return result
+}
+
+print_behavior_tree_debug :: proc(node: ^BehaviorNode, ctx: ^BehaviorContext) {
+    debug_string := behavior_tree_debug_to_string(node, ctx)
+    fmt.print(debug_string)
 }
 
 get_node_debug_name :: proc(node: ^BehaviorNode, ctx: ^BehaviorContext) -> string {
