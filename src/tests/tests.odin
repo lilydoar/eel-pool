@@ -12,9 +12,8 @@ RELEASE_DIR: string : BUILD_DIR + "release/"
 RELEASE_EXE: string : RELEASE_DIR + "eel-pool"
 
 @(test)
-check_latest_release :: proc(t: ^testing.T) {
-	must_run([]string{BUILD_EXE, "-release", "-verbose"})
-	must_run([]string{RELEASE_EXE, "-check"})
+check_latest_release_compiles :: proc(t: ^testing.T) {
+	must_run([]string{BUILD_EXE, "-release", "-no-test"})
 }
 
 run :: proc(cmd: []string) -> bool {

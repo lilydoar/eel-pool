@@ -7,31 +7,39 @@ import "core:path/filepath"
 import "core:slice"
 import "core:strings"
 
-Options :: struct {
-	all:     bool `usage:"Build all targets"`,
-	release: bool `usage:"Produce a release build"`,
-	develop: bool `usage:"Produce a development build"`,
-	gamelib: bool `usage:"Build the game code as a dynamic library"`,
-	docs:    bool `usage:"Generate documentation"`,
-	test:    bool `usage:"Build and run all test functions"`,
-	verbose: bool `usage:"Enable verbose output"`,
-	clean:   bool `usage:"Clean the build directory before building"`,
-}
 
 BUILD_DIR: string : "bin/"
+EXE: string : "game"
 
 RELEASE_DIR: string : BUILD_DIR + "release/"
-RELEASE_EXE: string : RELEASE_DIR + "eel-pool"
-
-DEVELOP_DIR: string : BUILD_DIR + "develop"
-DEVELOP_EXE: string : DEVELOP_DIR + "eel-pool"
-
+RELEASE_DIR_DOCS: string : RELEASE_DIR + "docs/"
+DEVELOP_DIR: string : BUILD_DIR + "develop/"
 GAMELIB_DIR: string : BUILD_DIR + "gamelib/"
-
 TEST_DIR: string : BUILD_DIR + "test"
 
-DOCS_DIR: string : "docs/"
-DOCS_GEN_DIR: string : DOCS_DIR + "gen/"
+DOCS_DIR: string : "docs/gen"
+
+SRC_DIR: string : "src/"
+ENTRY_DIR: string : SRC_DIR + "entry/"
+ENTRY_DIR_RELEASE: string : ENTRY_DIR + "release/"
+ENTRY_DIR_DEVELOP: string : ENTRY_DIR + "develop/"
+GAME_DIR: string : SRC_DIR + "game/"
+
+cmds_have_failed: bool = false
+tests_have_run: bool = false
+
+Options :: struct {
+	all:      bool `usage:"Build all targets"`,
+	release:  bool `usage:"Produce a release build"`,
+	develop:  bool `usage:"Produce a development build"`,
+	gamelib:  bool `usage:"Build the game code as a dynamic library"`,
+	docs:     bool `usage:"Generate documentation"`,
+	test:     bool `usage:"Build and run all test functions"`,
+	check:    bool `usage:"Check code for compilation errors"`,
+	verbose:  bool `usage:"Enable verbose output"`,
+	clean:    bool `usage:"Clean the build directory before building"`,
+	no_tests: bool `usage:"Do not run tests (release builds default to running tests)"`,
+}
 
 main :: proc() {
 	opt: Options
@@ -45,7 +53,6 @@ main :: proc() {
 		log.info("Cleaning the build directory")
 
 		must_run([]string{"rm", "-rf", BUILD_DIR})
-		must_run([]string{"rm", "-rf", DOCS_GEN_DIR})
 	}
 
 	if opt.all {
@@ -57,23 +64,6 @@ main :: proc() {
 		opt.test = true
 	}
 
-	if opt.release {
-		log.info("Building a release build")
-
-		must_run([]string{"mkdir", "-p", RELEASE_DIR})
-
-		release_cmd := []string {
-			"odin",
-			"build",
-			"src/entry/release",
-			"-out:" + RELEASE_EXE,
-			"-disable-assert",
-			"-o:speed",
-			"-warnings-as-errors",
-		}
-		must_run(release_cmd)
-	}
-
 	if opt.develop {
 		log.info("Building a development build")
 
@@ -82,8 +72,8 @@ main :: proc() {
 		develop_cmd := []string {
 			"odin",
 			"build",
-			"src/entry/develop",
-			"-out:" + DEVELOP_EXE,
+			ENTRY_DIR_DEVELOP,
+			"-out:" + DEVELOP_DIR + EXE,
 			"-debug",
 		}
 		must_run(develop_cmd)
@@ -94,67 +84,112 @@ main :: proc() {
 
 		must_run([]string{"mkdir", "-p", GAMELIB_DIR})
 
-		gamelib_out := filepath.join({GAMELIB_DIR, "game"})
 		gamelib_cmd := []string {
 			"odin",
 			"build",
-			"src/game",
-			strings.concatenate({"-out:", gamelib_out}),
+			GAME_DIR,
+			strings.concatenate({"-out:", filepath.join({GAMELIB_DIR, "game"})}),
 			"-debug",
 			"-build-mode:dll",
 		}
 		must_run(gamelib_cmd)
 	}
 
-	if opt.docs {
-		log.info("Generating documentation")
+	if opt.docs {do_doc_gen()}
 
-		must_run([]string{"mkdir", "-p", DOCS_GEN_DIR})
+	if opt.check {
+		log.info("Checking code for compilation errors")
 
-		path := filepath.join({DOCS_GEN_DIR, strings.concatenate({"build", ".odin-doc"})})
+		check_cmd := []string{"odin", "check", SRC_DIR, "-warnings-as-errors"}
+		must_run(check_cmd)
+	}
+
+	// TODO: Lint (and format the code)
+
+	if opt.test {do_tests()}
+
+	if opt.release {
+		if !opt.no_tests {do_tests()}
+
+		do_doc_gen(out = RELEASE_DIR_DOCS)
+
+		log.info("Building a release build")
+
+		must_run([]string{"mkdir", "-p", RELEASE_DIR})
+
+
+		release_cmd := []string {
+			"odin",
+			"build",
+			ENTRY_DIR_RELEASE,
+			"-out:" + RELEASE_DIR + EXE,
+			"-disable-assert",
+			"-o:speed",
+			"-warnings-as-errors",
+		}
+		must_run(release_cmd)
+	}
+
+	if cmds_have_failed {
+		log.info("Run with -verbose to see more details")
+		os.exit(1)
+	}
+}
+
+do_tests :: proc() {
+	if tests_have_run {
+		log.debug("Tests have already been run, skipping")
+		return
+	}
+	tests_have_run = true
+
+	log.info("Running tests")
+
+	must_run([]string{"mkdir", "-p", TEST_DIR})
+
+	test_build_cmd := []string {
+		"odin",
+		"build",
+		"build.odin",
+		"-file",
+		strings.concatenate({"-out:", filepath.join({TEST_DIR, "build"})}),
+	}
+	must_run(test_build_cmd)
+
+	dirs: []string = {"tests"}
+	for dir in dirs {
+		test_cmd := []string {
+			"odin",
+			"test",
+			filepath.join({"src", dir}),
+			strings.concatenate({"-out:", filepath.join({BUILD_DIR, "test", dir})}),
+			"-debug",
+			"-warnings-as-errors",
+		}
+		run(test_cmd)
+	}
+}
+
+do_doc_gen :: proc(out: string = DOCS_DIR) {
+	log.infof("Generating documentation to {}", out)
+
+	must_run([]string{"mkdir", "-p", out})
+
+	path := filepath.join({out, strings.concatenate({"build", ".odin-doc"})})
+	file, err := os.create(path);assert(err == os.ERROR_NONE, "Create doc file")
+	defer os.close(file)
+
+	doc_cmd := []string{"odin", "doc", "build.odin", "-file"}
+	run(doc_cmd, stdout = file)
+
+	dirs: []string = {"app", "game", "tests"}
+	for dir in dirs {
+		path := filepath.join({out, strings.concatenate({dir, ".odin-doc"})})
 		file, err := os.create(path);assert(err == os.ERROR_NONE, "Create doc file")
 		defer os.close(file)
 
-		doc_cmd := []string{"odin", "doc", "build.odin", "-file"}
-		must_run(doc_cmd, stdout = file)
-
-		dirs: []string = {"app", "game", "tests"}
-		for dir in dirs {
-			path := filepath.join({DOCS_GEN_DIR, strings.concatenate({dir, ".odin-doc"})})
-			file, err := os.create(path);assert(err == os.ERROR_NONE, "Create doc file")
-			defer os.close(file)
-
-			doc_cmd := []string{"odin", "doc", filepath.join({"src", dir})}
-			must_run(doc_cmd, stdout = file)
-		}
-	}
-
-	if opt.test {
-		log.info("Running tests")
-
-		must_run([]string{"mkdir", "-p", TEST_DIR})
-
-		test_build_cmd := []string {
-			"odin",
-			"build",
-			"build.odin",
-			"-file",
-			strings.concatenate({"-out:", filepath.join({TEST_DIR, "build"})}),
-		}
-		must_run(test_build_cmd)
-
-		dirs: []string = {"tests"}
-		for dir in dirs {
-			test_cmd := []string {
-				"odin",
-				"test",
-				filepath.join({"src", dir}),
-				strings.concatenate({"-out:", filepath.join({BUILD_DIR, "test", dir})}),
-				"-debug",
-				"-warnings-as-errors",
-			}
-			must_run(test_cmd)
-		}
+		doc_cmd := []string{"odin", "doc", filepath.join({"src", dir})}
+		run(doc_cmd, stdout = file)
 	}
 }
 
@@ -168,21 +203,21 @@ run :: proc(cmd: []string, stdout: ^os.File = os.stdout, stderr: ^os.File = os.s
 	)
 	if err_start != os.ERROR_NONE {
 		log.errorf("Failed to start process: {}", err_start)
+		cmds_have_failed = true
 		return false
 	}
 
 	state, err_wait := os.process_wait(process)
 	if err_wait != os.ERROR_NONE {
 		log.errorf("Failed to wait for process: {}", err_wait)
+		cmds_have_failed = true
 		return false
 	}
 
 	return true
 }
 
-must_run :: proc(
-	cmd: []string,
-	stdout: ^os.File = os.stdout,
-	stderr: ^os.File = os.stderr,
-) {assert(run(cmd, stdout, stderr), "Process failed")}
+must_run :: proc(cmd: []string, stdout: ^os.File = os.stdout, stderr: ^os.File = os.stderr) {
+	assert(run(cmd, stdout, stderr), "proc run failed")
+}
 
