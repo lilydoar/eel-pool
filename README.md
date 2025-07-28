@@ -17,8 +17,6 @@ Then use the build script for different targets:
 -all      | Build all targets
 -release  | Produce a release build
 -develop  | Produce a development build
--gamelib  | Build the game code as a dynamic library
--doc      | Generate documentation
 -test     | Build and run all test functions
 ```
 
