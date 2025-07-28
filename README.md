@@ -1,5 +1,8 @@
 # Eel Pool
 
+Eel Pool is a code name for a game project. When the project evolves enough to
+develop its own identity, it will be renamed to something more fitting.
+
 ## Build
 
 First, build the build script:

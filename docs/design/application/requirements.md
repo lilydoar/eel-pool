@@ -1,4 +1,4 @@
-# Application Design
+# Application Requirements
 
 ## Project Goals
 
