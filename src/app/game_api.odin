@@ -59,6 +59,8 @@ game_api_load :: proc() -> (GameAPI, bool) {
 		return GameAPI{}, false
 	}
 
+	log.debugf("Loaded game library: {0}", game_api_path(id))
+
 	return api, true
 }
 

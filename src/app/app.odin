@@ -33,6 +33,9 @@ app_init :: proc() {
 }
 
 app_init_wait :: proc() {
+	// TODO: If a thread fails during it initialization it will return and never be initialized.
+	// It should also mark itself as failed so we can check for that within this loop.
+
 	initialization_wait: time.Stopwatch
 	time.stopwatch_start(&initialization_wait)
 	for !app_thread_data.initialized ||

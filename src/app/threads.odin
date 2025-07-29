@@ -90,6 +90,7 @@ app_thread_data: AppThreadData
 
 GameThreadData :: struct {
 	initialized: bool,
+	game_api:    GameAPI,
 }
 
 game_thread_proc :: proc(t: ^thread.Thread) {
@@ -99,7 +100,20 @@ game_thread_proc :: proc(t: ^thread.Thread) {
 	defer log.debug("Game thread exiting...")
 
 	thread_data := cast(^GameThreadData)t.data
+
+	// TODO: How to do this statically for release builds?
+	game, ok := game_api_load()
+	if !ok {return}
+	defer game_api_unload(game)
+	thread_data.game_api = game
+
+	thread_data.game_api.init()
+	defer thread_data.game_api.deinit()
+
 	thread_data.initialized = true
+
+	// I think I need to wait for other threads to finish initialization before I start the game update.
+	// Don't want to load in a scene/interact with the game before render thread finishes (I think? headless?)
 
 	for {
 		sync.mutex_lock(&app_threads.shutdown_mutex)
@@ -107,6 +121,8 @@ game_thread_proc :: proc(t: ^thread.Thread) {
 		sync.mutex_unlock(&app_threads.shutdown_mutex)
 
 		if shutdown_requested {break}
+
+		thread_data.game_api.update()
 
 		time.sleep(time.Millisecond * 10)
 	}

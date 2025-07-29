@@ -17,13 +17,6 @@ main :: proc() {
 	app.app_init()
 	defer app.app_deinit()
 
-	game, ok := app.game_api_load()
-	if !ok {return}
-	defer app.game_api_unload(game)
-
-	game_init(game)
-	defer game_deinit(game)
-
 	app.app_thread_data.initialized = true
 	app.app_init_wait()
 
@@ -34,22 +27,6 @@ main :: proc() {
 
 	for {
 		if quit := app.sdl_poll_events(); quit {break}
-		game_update(game)
 	}
-}
-
-game_init :: proc "c" (game: app.GameAPI) {
-	context = runtime.default_context()
-	game.init()
-}
-
-game_deinit :: proc "c" (game: app.GameAPI) {
-	context = runtime.default_context()
-	game.deinit()
-}
-
-game_update :: proc "c" (game: app.GameAPI) {
-	context = runtime.default_context()
-	game.update()
 }
 
