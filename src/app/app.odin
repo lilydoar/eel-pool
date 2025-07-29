@@ -1,7 +1,20 @@
 package app
 
 import "core:log"
+import os "core:os/os2"
+import "core:time"
 import sdl "vendor:sdl3"
+
+log_opts: log.Options : {
+	.Level,
+	.Time,
+	// .Short_File_Path,
+	// .Long_File_Path,
+	.Procedure,
+	.Line,
+	.Terminal_Color,
+	// .Thread_Id,
+}
 
 AppState :: struct {
 	window:      ^sdl.Window,
@@ -9,6 +22,40 @@ AppState :: struct {
 }
 
 state: AppState
+
+
+app_init :: proc() {
+	cli_parse()
+	log.info("Starting app initialization...")
+	sdl_init()
+	app_threads_init()
+	app_threads_start()
+}
+
+app_init_wait :: proc() {
+	initialization_wait: time.Stopwatch
+	time.stopwatch_start(&initialization_wait)
+	for !app_thread_data.initialized ||
+	    !(cast(^GameThreadData)app_threads.threads[ThreadID.GAME].data).initialized ||
+	    !(cast(^GameThreadData)app_threads.threads[ThreadID.RENDER].data).initialized ||
+	    !(cast(^GameThreadData)app_threads.threads[ThreadID.AUDIO].data).initialized {
+		if (time.stopwatch_duration(initialization_wait) > time.Second * 5) {
+			log.warn("Timeout waiting for initialization.")
+			os.exit(1)
+		}
+		time.sleep(time.Millisecond * 10)
+	}
+	time.stopwatch_stop(&initialization_wait)
+
+	wait_ms := cast(u64)(time.stopwatch_duration(initialization_wait) / time.Millisecond)
+	log.debugf("initialization wait time: {} ms", wait_ms)
+}
+
+app_deinit :: proc() {
+	log.info("Deinitializing app...")
+	app_threads_stop()
+	sdl_deinit()
+}
 
 sdl_init :: proc() {
 	log.info("Initializing SDL...")
