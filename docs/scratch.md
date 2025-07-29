@@ -157,5 +157,8 @@ Part of the testing process needs to be a fail safe cleanup process that
 identifies any processes "left behind" and records them to mark as failures.
 Threads that did not respond to the stop signal.
 
-Identify all processes that are started by a process and record them in a durable manner.
+TODO: Identify all processes that are started by a process and record them in a durable manner.
 Check that all threads exit when they are told to.
+
+TODO: Improve test process with a checker for leaked processes.
+Or maybe put all executed processes into a registry?
