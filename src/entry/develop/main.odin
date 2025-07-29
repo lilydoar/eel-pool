@@ -27,6 +27,7 @@ main :: proc() {
 
 	for {
 		if quit := app.sdl_poll_events(); quit {break}
+		time.sleep(10 * time.Millisecond)
 	}
 }
 

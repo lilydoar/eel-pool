@@ -4,20 +4,17 @@ import "../../app"
 import "../../game"
 import "base:runtime"
 import "core:log"
+import "core:time"
 import sdl "vendor:sdl3"
 
 main :: proc() {
 	context.logger = log.create_console_logger()
 
-	app.cli_parse()
+	app.app_init()
+	defer app.app_deinit()
 
-	state: app.AppState
-
-	app.sdl_init()
-	defer app.sdl_deinit()
-
-	game_init()
-	defer game_deinit()
+	app.app_thread_data.initialized = true
+	app.app_init_wait()
 
 	if app.cli_options().check {
 		log.info("App initialized successfully, exiting.")
@@ -26,7 +23,7 @@ main :: proc() {
 
 	for {
 		if quit := app.sdl_poll_events(); quit {break}
-		game_update()
+		time.sleep(10 * time.Millisecond)
 	}
 }
 
