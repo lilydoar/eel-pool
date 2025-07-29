@@ -35,7 +35,7 @@ Options :: struct {
 	gamelib:  bool `usage:"Build the game code as a dynamic library"`,
 	docs:     bool `usage:"Generate documentation"`,
 	test:     bool `usage:"Build and run all test functions"`,
-	check:    bool `usage:"Check code for compilation errors"`,
+	check:    bool `usage:"Check for compilation errors and successful initialization"`,
 	verbose:  bool `usage:"Enable verbose output"`,
 	clean:    bool `usage:"Clean the build directory before building"`,
 	no_tests: bool `usage:"Do not run tests (release builds default to running tests)"`,
@@ -62,21 +62,27 @@ main :: proc() {
 		opt.gamelib = true
 		opt.docs = true
 		opt.test = true
+		opt.check = true
 	}
 
-	if opt.develop {
-		log.info("Building a development build")
+	if opt.check {
+		log.info("Checking code for compilation errors")
 
-		must_run([]string{"mkdir", "-p", DEVELOP_DIR})
+		dirs: [dynamic]string
+		append(&dirs, "tests", "app", "game")
+		if opt.develop {append(&dirs, "entry/develop")}
+		if opt.release {append(&dirs, "entry/release")}
 
-		develop_cmd := []string {
-			"odin",
-			"build",
-			ENTRY_DIR_DEVELOP,
-			"-out:" + DEVELOP_DIR + EXE,
-			"-debug",
+		for dir in dirs {
+			check_cmd := []string {
+				"odin",
+				"check",
+				filepath.join({SRC_DIR, dir}),
+				"-no-entry-point",
+				"-warnings-as-errors",
+			}
+			must_run(check_cmd)
 		}
-		must_run(develop_cmd)
 	}
 
 	if opt.gamelib {
@@ -97,24 +103,29 @@ main :: proc() {
 
 	if opt.docs {do_doc_gen()}
 
-	if opt.check {
-		log.info("Checking code for compilation errors")
-
-		dirs: []string = {"tests", "app", "game", "entry"}
-		for dir in dirs {
-			check_cmd := []string {
-				"odin",
-				"check",
-				filepath.join({SRC_DIR, dir}),
-				"-warnings-as-errors",
-			}
-			must_run(check_cmd)
-		}
-	}
-
 	// TODO: Lint (and format the code)
 
-	if opt.test {do_tests()}
+	if opt.test && !opt.no_tests {do_tests()}
+
+	if opt.develop {
+		log.info("Building a development build")
+
+		must_run([]string{"mkdir", "-p", DEVELOP_DIR})
+
+		develop_cmd := []string {
+			"odin",
+			"build",
+			ENTRY_DIR_DEVELOP,
+			"-out:" + DEVELOP_DIR + EXE,
+			"-debug",
+		}
+		must_run(develop_cmd)
+
+		if opt.check {
+			log.info("Checking development build for successful initialization")
+			must_run([]string{DEVELOP_DIR + EXE, "-check"})
+		}
+	}
 
 	if opt.release {
 		if !opt.no_tests {do_tests()}
@@ -136,6 +147,11 @@ main :: proc() {
 			"-warnings-as-errors",
 		}
 		must_run(release_cmd)
+
+		if opt.check {
+			log.info("Checking release build for successful initialization")
+			must_run([]string{RELEASE_DIR + EXE, "-check"})
+		}
 	}
 
 	if cmds_have_failed {
