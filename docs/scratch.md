@@ -194,3 +194,281 @@ TODO: Start a timer for a single successful iteration of a thread loop. If it
 does not complete the first iteration within some time period, then mark the
 thread job as a failure and kill the thread. This will be a crucial tool in
 validating thread behavior for testing.
+
+# Wed Jul 30 2025 - 1
+
+## Advanced Build System Design - Profile-Based Workflow Orchestration
+
+This design session explored a powerful build configuration system that goes far
+beyond traditional compilation - it orchestrates entire development and release
+workflows through composable "profiles."
+
+### Core Concepts
+
+**Profiles as Workflow Orchestrators**: Rather than just building code, profiles
+define complete end-to-end processes - from building and testing to generating
+marketing materials, updating websites, and communicating with communities.
+
+**Action-Step Architecture**: Each profile consists of structured steps that
+invoke well-defined actions. Actions have explicit parameter schemas,
+dependencies, and data flow contracts.
+
+**Context Flow Between Steps**: Steps can consume outputs from previous steps
+through a variable substitution system (`${step_id.output_var}`), enabling
+complex data pipelines.
+
+**Declarative Dependencies**: Explicit `depends_on` relationships ensure proper
+execution order while enabling parallelization where possible.
+
+### Patterns and Creative Use Cases
+
+**Release Pipeline Orchestration**: Complete release workflows that build, test,
+package, generate changelogs, capture screenshots, deploy websites, and notify
+communities - all in a single profile execution.
+
+**Content Marketing Automation**: Profiles that build demo versions, capture
+promotional screenshots, extract trailer footage, and prepare press kits for
+marketing campaigns.
+
+**Community Communication Workflows**: Rich Discord integration for everything
+from major release announcements with embeds and threads to urgent hotfix
+notifications and scheduled development updates.
+
+**Environment-Specific Configurations**: Different build targets (release,
+develop, demo, prototype) with their own optimization settings, feature flags,
+and asset bundles.
+
+### Schema Evolution
+
+The design evolved through three key refinements:
+
+1. **Structured Action Parameters**: Moving from simple action strings to rich parameter schemas with validation and IDE support.
+
+2. **Step Dependencies and Context Flow**: Adding explicit dependencies and data passing between steps to enable complex workflows.
+
+3. **Discord-Specific Actions**: Specialized actions for community engagement, demonstrating how the system can extend into any domain.
+
+### Final Schema Design
+
+```json
+{
+  "action_definitions": {
+    "build": {
+      "params": ["targets", "watch", "incremental"],
+      "required": ["targets"],
+      "provides": ["build_path", "version", "artifacts"]
+    },
+    "screenshot": {
+      "params": ["scenes", "resolution", "output_dir", "format"],
+      "required": ["scenes"],
+      "depends_on": ["build"],
+      "provides": ["screenshots_path", "screenshot_count"]
+    },
+    "discord_post": {
+      "params": ["channel", "message", "embeds", "files", "thread_name"],
+      "required": ["channel", "message"],
+      "context_vars": ["version", "changelog_path", "screenshots_path"],
+      "provides": ["message_id", "message_url"]
+    },
+    "package": {
+      "params": ["format", "include_docs", "branding", "compression"],
+      "required": ["format"],
+      "context_vars": ["build_path", "changelog_path", "screenshots_path"],
+      "provides": ["package_path", "package_size"]
+    }
+  },
+  "profiles": {
+    "release-full": {
+      "description": "Complete release pipeline: build, validate, package",
+      "steps": [
+        {
+          "id": "build_release",
+          "action": "build",
+          "targets": ["release"]
+        },
+        {
+          "id": "capture_screenshots",
+          "action": "screenshot",
+          "depends_on": ["build_release"],
+          "scenes": ["main_menu", "gameplay"],
+          "resolution": "1920x1080",
+          "output_dir": "release_assets/"
+        },
+        {
+          "id": "create_package",
+          "action": "package",
+          "depends_on": ["build_release", "capture_screenshots"],
+          "format": "zip",
+          "context": {
+            "build_path": "${build_release.build_path}",
+            "screenshots_path": "${capture_screenshots.screenshots_path}"
+          }
+        },
+        {
+          "action": "discord_post",
+          "depends_on": ["create_package"],
+          "channel": "announcements",
+          "message": "🎉 Version ${build_release.version} Released!",
+          "context": {
+            "version": "${build_release.version}",
+            "screenshots_path": "${capture_screenshots.screenshots_path}"
+          }
+        }
+      ]
+    },
+    "discord-release-major": {
+      "description": "Full Discord announcement for major releases",
+      "steps": [
+        {
+          "id": "build_release",
+          "action": "build",
+          "targets": ["release"]
+        },
+        {
+          "id": "create_changelog",
+          "action": "generate_changelog",
+          "since_version": "auto",
+          "format": "discord",
+          "sections": ["features", "improvements", "fixes"]
+        },
+        {
+          "id": "capture_feature_screenshots",
+          "action": "screenshot",
+          "depends_on": ["build_release"],
+          "scenes": ["new_features", "ui_showcase"],
+          "resolution": "1920x1080",
+          "output_dir": "discord_assets/",
+          "format": "png"
+        },
+        {
+          "id": "create_release_embed",
+          "action": "discord_embed",
+          "depends_on": ["create_changelog", "capture_feature_screenshots"],
+          "title": "🎉 Version ${build_release.version} Released!",
+          "description": "Major update with exciting new features",
+          "color": "0x00ff00",
+          "context": {
+            "version": "${build_release.version}",
+            "screenshots_path": "${capture_feature_screenshots.screenshots_path}"
+          }
+        },
+        {
+          "id": "announce_to_community",
+          "action": "discord_post",
+          "depends_on": ["create_release_embed"],
+          "channel": "announcements",
+          "message": "@everyone New major release is here!",
+          "context": {
+            "embeds": "${create_release_embed.embed_data}",
+            "changelog_path": "${create_changelog.changelog_path}",
+            "screenshots_path": "${capture_feature_screenshots.screenshots_path}"
+          }
+        },
+        {
+          "action": "discord_thread",
+          "depends_on": ["announce_to_community"],
+          "parent_channel": "announcements",
+          "thread_name": "v${build_release.version} Discussion",
+          "initial_message": "Share your thoughts on the new release!",
+          "auto_archive": "24h"
+        }
+      ]
+    },
+    "site-update": {
+      "description": "Update game website with latest content",
+      "steps": [
+        {
+          "id": "build_demo",
+          "action": "build",
+          "targets": ["demo"]
+        },
+        {
+          "id": "capture_screenshots",
+          "action": "screenshot",
+          "depends_on": ["build_demo"],
+          "scenes": ["main_menu", "gameplay_sample", "boss_fight"],
+          "resolution": "1920x1080",
+          "output_dir": "site/assets/screenshots/",
+          "format": "webp"
+        },
+        {
+          "id": "extract_media",
+          "action": "extract_assets",
+          "depends_on": ["build_demo"],
+          "types": ["trailer_clips", "soundtrack_samples"],
+          "source_build": "demo",
+          "output_dir": "site/assets/media/",
+          "optimize": true
+        },
+        {
+          "id": "generate_player_docs",
+          "action": "generate_docs",
+          "source_dirs": ["docs/player_guide", "docs/modding"],
+          "output_format": "html",
+          "template": "site_theme"
+        },
+        {
+          "action": "deploy_site",
+          "depends_on": ["capture_screenshots", "extract_media", "generate_player_docs"],
+          "target_env": "staging",
+          "build_assets": true,
+          "context": {
+            "screenshots_path": "${capture_screenshots.screenshots_path}",
+            "docs_path": "${generate_player_docs.docs_path}"
+          }
+        }
+      ]
+    }
+  },
+  "targets": {
+    "release": {
+      "dir": "bin/release/",
+      "entry": "src/entry/release/",
+      "options": {
+        "optimized": true,
+        "debug_symbols": false
+      },
+      "flags": ["strip", "no-bounds-check"]
+    },
+    "demo": {
+      "dir": "bin/demo/",
+      "entry": "src/entry/demo/",
+      "options": {
+        "demo_mode": true,
+        "analytics": false,
+        "time_limit": "10m"
+      },
+      "flags": ["showcase", "no-save"]
+    },
+    "prototype": {
+      "dir": "bin/proto/",
+      "options": {
+        "fast_compile": true,
+        "skip_optimization": true,
+        "experimental_features": true
+      },
+      "flags": ["prototype", "unsafe"]
+    }
+  }
+}
+```
+
+### Implementation Roadmap
+
+This design enables a build tool that becomes the central orchestrator for all development and release activities. Key implementation phases:
+
+1. **Core Action System**: Implement the action definition schema with parameter validation and dependency resolution.
+
+2. **Context Flow Engine**: Build the variable substitution and data passing system between steps.
+
+3. **Target Configuration**: Implement the flexible target system with inheritance and overrides.
+
+4. **Profile Execution**: Create the profile runner with dependency resolution and parallel execution.
+
+5. **Domain-Specific Actions**: Implement actions for building, testing, packaging, documentation, and communication.
+
+6. **Integration Points**: Connect with Discord APIs, deployment systems, and content management tools.
+
+The result is a build system that transforms `./build -profile release-full` into a complete end-to-end release process, automating everything from compilation to community communication.
+
+

@@ -7,6 +7,33 @@ import "core:path/filepath"
 import "core:slice"
 import "core:strings"
 
+// TODO: move constants into a cfg file for build profiles
+//
+// {
+//   "directories": {
+//     "build": "bin/",
+//     "src": "src/",
+//     "docs": "docs/gen"
+//   },
+//   "targets": {
+//     "release": {
+//       "dir": "bin/release/",
+//       "entry": "src/entry/release/",
+//       "docs": "bin/release/docs/"
+//     },
+//     "develop": {
+//       "dir": "bin/develop/",
+//       "entry": "src/entry/develop/"
+//     },
+//     "gamelib": {
+//       "dir": "bin/gamelib/"
+//     },
+//     "test": {
+//       "dir": "bin/test"
+//     }
+//   },
+//   "exe_name": "game"
+// }
 
 BUILD_DIR: string : "bin/"
 EXE: string : "game"
@@ -104,9 +131,13 @@ main :: proc() {
 
 	if opt.docs {do_doc_gen()}
 
-	// TODO: Lint (and format the code)
-
 	if opt.test && !opt.no_tests {do_tests()}
+
+	// TODO: Lint 
+
+	// TODO: Format
+
+	// TODO: Other CI tasks: building images for testing environments, pushing builds to repositories, etc.
 
 	if opt.develop {
 		log.info("Building a development build")
