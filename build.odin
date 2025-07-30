@@ -36,6 +36,7 @@ Options :: struct {
 	docs:     bool `usage:"Generate documentation"`,
 	test:     bool `usage:"Build and run all test functions"`,
 	check:    bool `usage:"Check for compilation errors and successful initialization"`,
+	run:      bool `usage:"Run the targets after building"`,
 	verbose:  bool `usage:"Enable verbose output"`,
 	clean:    bool `usage:"Clean the build directory before building"`,
 	no_tests: bool `usage:"Do not run tests (release builds default to running tests)"`,
@@ -125,6 +126,11 @@ main :: proc() {
 			log.info("Checking development build for successful initialization")
 			must_run([]string{DEVELOP_DIR + EXE, "-check"})
 		}
+
+		if opt.run {
+			log.info("Running development build")
+			must_run([]string{DEVELOP_DIR + EXE})
+		}
 	}
 
 	if opt.release {
@@ -151,6 +157,11 @@ main :: proc() {
 		if opt.check {
 			log.info("Checking release build for successful initialization")
 			must_run([]string{RELEASE_DIR + EXE, "-check"})
+		}
+
+		if opt.run {
+			log.info("Running release build")
+			must_run([]string{RELEASE_DIR + EXE})
 		}
 	}
 
