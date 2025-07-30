@@ -19,17 +19,25 @@ log_opts: log.Options : {
 AppState :: struct {
 	window:      ^sdl.Window,
 	window_size: [2]i32,
+	threads:     AppThreads,
 }
 
 state: AppState
 
-
 app_init :: proc() {
 	cli_parse()
+
 	log.info("Starting app initialization...")
+
 	sdl_init()
+
 	app_threads_init()
 	app_threads_start()
+
+	state.threads.app_data.clock = thread_clock_init(APP_DESIRED_FRAME_TIME)
+	state.threads.app_data.initialized = true
+
+	app_init_wait()
 }
 
 app_init_wait :: proc() {
@@ -38,10 +46,10 @@ app_init_wait :: proc() {
 
 	initialization_wait: time.Stopwatch
 	time.stopwatch_start(&initialization_wait)
-	for !app_thread_data.initialized ||
-	    !(cast(^GameThreadData)app_threads.threads[ThreadID.GAME].data).initialized ||
-	    !(cast(^GameThreadData)app_threads.threads[ThreadID.RENDER].data).initialized ||
-	    !(cast(^GameThreadData)app_threads.threads[ThreadID.AUDIO].data).initialized {
+	for !state.threads.app_data.initialized ||
+	    !(cast(^GameThreadData)state.threads.threads[ThreadID.GAME].data).initialized ||
+	    !(cast(^GameThreadData)state.threads.threads[ThreadID.RENDER].data).initialized ||
+	    !(cast(^GameThreadData)state.threads.threads[ThreadID.AUDIO].data).initialized {
 		if (time.stopwatch_duration(initialization_wait) > time.Second * 5) {
 			log.warn("Timeout waiting for initialization.")
 			os.exit(1)

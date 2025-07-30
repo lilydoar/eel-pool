@@ -17,17 +17,18 @@ main :: proc() {
 	app.app_init()
 	defer app.app_deinit()
 
-	app.app_thread_data.initialized = true
-	app.app_init_wait()
-
 	if app.cli_options().check {
 		log.info("App initialized successfully, exiting.")
 		return
 	}
 
 	for {
+		app.thread_clock_frame_start(&app.state.threads.app_data.clock)
+
 		if quit := app.sdl_poll_events(); quit {break}
-		time.sleep(10 * time.Millisecond)
+
+		app.thread_clock_frame_end(&app.state.threads.app_data.clock)
+		app.thread_clock_sleep(&app.state.threads.app_data.clock)
 	}
 }
 

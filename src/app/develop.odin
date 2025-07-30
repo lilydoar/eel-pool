@@ -5,15 +5,15 @@ import "core:sync"
 import "core:thread"
 import "core:time"
 
-game_thread_proc_develop :: proc(t: ^thread.Thread) {
+game_entry_proc_develop :: proc(t: ^thread.Thread) {
 	context.logger = log.create_console_logger(opt = log_opts)
 
 	log.debug("Development game thread starting...")
 	defer log.debug("Development game thread exiting...")
 
 	thread_data := cast(^GameThreadData)t.data
+	thread_data.clock = thread_clock_init(GAME_DESIRED_FRAME_TIME)
 
-	// TODO: How to do this statically for release builds?
 	game, ok := game_api_load()
 	if !ok {return}
 	defer game_api_unload(game)
@@ -28,15 +28,18 @@ game_thread_proc_develop :: proc(t: ^thread.Thread) {
 	// Don't want to load in a scene/interact with the game before render thread finishes (I think? headless?)
 
 	for {
-		sync.mutex_lock(&app_threads.shutdown_mutex)
-		shutdown_requested := app_threads.shutdown_requested
-		sync.mutex_unlock(&app_threads.shutdown_mutex)
+		thread_clock_frame_start(&thread_data.clock)
 
+		sync.mutex_lock(&state.threads.shutdown_mutex)
+		shutdown_requested := state.threads.shutdown_requested
+		sync.mutex_unlock(&state.threads.shutdown_mutex)
 		if shutdown_requested {break}
 
 		thread_data.game_api.update()
+		thread_data.clock.frame_count += 1
 
-		time.sleep(time.Millisecond * 10)
+		thread_clock_frame_end(&thread_data.clock)
+		thread_clock_sleep(&thread_data.clock)
 	}
 }
 
