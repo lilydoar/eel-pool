@@ -162,3 +162,35 @@ Check that all threads exit when they are told to.
 
 TODO: Improve test process with a checker for leaked processes.
 Or maybe put all executed processes into a registry?
+
+# Tue Jul 29 2025 - 1
+
+Today the game thread hung before completing a single iteration. Just a total deadlock.
+And that's exactly what it was. A Mutex deadlock. I'm familiar with the tenants of Mutexes:
+
+- lock when performing a write
+
+- no lock required when reading
+
+- minimize surface area of the lock interactions
+
+But, this was a failure case I had not seen before and thus did not know to look for.
+A function took a lock and then called a function that took another lock.
+Duh. Of course that would never work. The second lock will wait forever because
+it's waiting on an unlock that is guaranteed to occur after it.
+This must be an extremely classic failure case that occurs when an API doesn't
+keep track of it's current lock state/share the lock across a call chain.
+But somehow I didn't know it before today. Maybe I'd heard it before, but it
+definitely didn't stick.
+
+> TIL:
+> Don't call a function that locks the same mutex that is locked within the
+> current scope. In other words, mutex lock/unlock scopes don't nest by default.
+> without shared checks, the program doesn't know it's entering a deadlocked
+> state even though it's guaranteed. Could this be fixed with a lil bit o
+> metaprogramming. Could fix this with a "local" global variable.
+
+TODO: Start a timer for a single successful iteration of a thread loop. If it
+does not complete the first iteration within some time period, then mark the
+thread job as a failure and kill the thread. This will be a crucial tool in
+validating thread behavior for testing.
