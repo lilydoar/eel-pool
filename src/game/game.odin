@@ -1,11 +1,13 @@
 package game
 
-GameState :: struct {}
+GameState :: struct {
+	scene: Scene,
+}
 
-state: ^GameState
+state: GameState
 
 @(export)
-game_state :: proc() -> rawptr {return state}
+game_state :: proc() -> rawptr {return &state}
 
 @(export)
 game_state_fingerprint :: proc() -> string {
@@ -13,10 +15,14 @@ game_state_fingerprint :: proc() -> string {
 }
 
 @(export)
-game_init :: proc() {}
+game_init :: proc() {
+	// Setup up handle maps, pools, etc.
+}
 
 @(export)
-game_deinit :: proc() {}
+game_deinit :: proc() {
+	// Tear down handle maps, pools, etc.
+}
 
 @(export)
 game_update :: proc() {}

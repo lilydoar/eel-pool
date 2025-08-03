@@ -1,4 +1,4 @@
-package process
+package shared
 
 import "core:log"
 import os "core:os/os2"
