@@ -19,13 +19,14 @@ robust parallel processing.
 
 ### Threading Model
 
-The application uses a 4+N thread architecture:
+The application uses a 3+N thread architecture:
 
-1. **Main Thread**: SDL3 event handling, window management, WebGPU context
-2. **Game Thread**: Pure game logic simulation and state management
-3. **Render Thread**: WebGPU operations and frame generation
-4. **Audio Thread**: Sound processing and SDL3 audio output
-5. **Job System**: N job system threads for async operations
+1. **Main Thread**: SDL3 event handling, window management, WebGPU context, and rendering operations
+2. **Game Thread**: Pure game logic simulation and state management  
+3. **Audio Thread**: Sound processing and SDL3 audio output
+4. **Job System**: N job system threads for async operations
+
+**WebGPU Threading Constraint**: WebGPU surfaces and resources cannot be safely accessed across threads. All WebGPU operations must occur on the thread that created the WebGPU context (Main Thread). This constraint led to consolidating rendering operations on the main thread rather than using a separate render thread.
 
 #### Thread Communication Strategy
 
@@ -33,7 +34,7 @@ The application uses a 4+N thread architecture:
 
 - **Lock-free structures**: Only for high-frequency, latency-critical paths
   - Input Event Buffer: Lock-free circular buffer (Main → Game Thread)
-  - Render Packet Buffer: Double-buffered structure (Game → Render Thread)
+  - Render Packet Buffer: Double-buffered structure (Game → Main Thread)
   - Audio Packet Buffer: Double-buffered structure (Game → Audio Thread)
   - Job Queue: Priority-based lock-free queue (Game → Job System)
 
@@ -123,27 +124,28 @@ requirements.
 
 #### Rendering System
 
-**Render Thread Architecture**
-- Independent frame timing (decoupled from game thread)
-- WebGPU rendering operations using device/surface created by Main Thread
-- Shader compilation and caching
-- Frame buffer management and presentation
-- GPU resource management (textures, buffers, shaders)
+**Main Thread Rendering Architecture**
+- **WebGPU Operations**: All WebGPU rendering operations on Main Thread due to threading constraints
+- **Render Packet Processing**: Process latest render packet from Game Thread during main loop
+- **Frame Generation**: WebGPU command buffer creation and presentation integrated with event loop
+- **GPU Resource Management**: Handle textures, buffers, shaders on Main Thread
+- **Surface Operations**: Direct access to WebGPU surface without cross-thread complexity
 
 **Render Packet Processing**
-- **Latest Packet Consumption**: Render thread always processes the most recent render packet, discarding older ones
-- **Triple Buffering**: Game thread writes to available buffer while render thread reads from another, with third buffer preventing blocking
+- **Latest Packet Consumption**: Main thread processes the most recent render packet during frame loop
+- **Double Buffering**: Game thread writes to available buffer while Main thread reads from another
 - **No Queueing**: Unlike input events, render packets are not queued - only the latest visual state matters
-- **Buffer Management**: Game thread produces into available buffer, render thread consumes latest completed buffer
-- **Independent Timing**: Neither thread blocks waiting for the other, maintaining smooth frame generation
+- **Buffer Management**: Game thread produces into available buffer, Main thread consumes latest completed buffer
+- **Integrated Timing**: Rendering integrated with main thread event loop timing
 - **Culling Data Interpretation**: Process visibility and rendering decisions from game thread
 - **Asset ID → GPU Resource Resolution**: Convert game asset references to actual GPU resources
 - **Command Buffer Generation**: Build WebGPU command sequences for frame rendering
 
-**WebGPU Division of Responsibilities**
-- **Main Thread**: WebGPU device creation, surface management, context lifecycle
-- **Render Thread**: Frame rendering operations, texture/buffer management, shader operations
-- **Coordination**: Thread-safe sharing of WebGPU device handle for rendering operations
+**WebGPU Threading Architecture Benefits**
+- **Single Thread Operations**: All WebGPU device, surface, and resource operations on Main Thread
+- **No Cross-Thread Complexity**: Eliminates WebGPU validation errors and synchronization issues
+- **Simplified Resource Management**: Direct access to resources without cross-thread coordination
+- **Better Development Experience**: Cleaner debugging and fewer threading-related issues
 
 **Shader Hot Reloading**:
 - **Asset Treatment**: Shaders treated as resources identical to models, textures, and sounds
@@ -302,9 +304,8 @@ requirements.
 
 #### Per-Thread Allocation Strategy
 
-- **Main Thread**: Persistent allocators for SDL/WebGPU resources, temp allocators for events
+- **Main Thread**: Persistent allocators for SDL/WebGPU resources, temp allocators for events and rendering
 - **Game Thread**: Frame-reset temp allocators, arena allocators for entities
-- **Render Thread**: GPU resource pools, per-frame temp allocators
 - **Audio Thread**: Audio buffer pools, mixing calculation temp allocators
 - **Job System**: Per-job allocators to prevent contention
 
@@ -337,9 +338,8 @@ requirements.
 #### Thread Failure Recovery
 
 **Core Thread Failure Strategy (Clean Exit)**:
-- **Main Thread failure**: Immediate application shutdown with error logging
+- **Main Thread failure**: Immediate application shutdown with error logging (handles rendering + windowing)
 - **Game Thread failure**: Save current state, display error message, exit application
-- **Render Thread failure**: Log graphics error details, exit application gracefully
 - **Audio Thread failure**: Log audio error details, exit application gracefully
 - **Rationale**: Core thread failures indicate fundamental system issues requiring user attention
 
@@ -379,9 +379,8 @@ requirements.
 **Performance Monitoring System**:
 
 **Per-Thread Performance Collectors**:
-- **Main Thread**: SDL3 event processing time, window management overhead
+- **Main Thread**: SDL3 event processing time, window management overhead, WebGPU rendering time, GPU resource usage
 - **Game Thread**: Simulation step timing, input processing duration, memory allocations
-- **Render Thread**: Frame render time, GPU resource usage, WebGPU operation timing
 - **Audio Thread**: Audio mixing time, buffer underruns, SDL3 audio latency
 - **Job System**: Worker utilization, job queue depths, completion rates
 
@@ -651,7 +650,7 @@ requirements.
 
 **Render Packet**: Data structure containing all information needed for frame rendering
 
-**Render Thread**: Dedicated thread for WebGPU operations and frame generation
+**Main Thread Rendering**: WebGPU rendering operations integrated into main thread due to threading constraints
 
 **SDL3**: Cross-platform library for window management, input, and audio
 

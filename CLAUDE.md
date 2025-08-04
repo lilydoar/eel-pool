@@ -32,3 +32,8 @@ Higher-level allocation procedures follow the following naming scheme:
 - free: Free a single object (opposite of new)
 - make: Allocate a group of objects
 - delete: Free a group of objects (opposite of make)
+
+## Build and Validation Guidelines
+
+- Run `./build -develop` and `./build -develop -check` to validate code changes
+- Run `./build -develop -run` when you want to demonstrate new behavior to the user

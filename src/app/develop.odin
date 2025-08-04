@@ -35,6 +35,15 @@ game_entry_proc_develop :: proc(t: ^thread.Thread) {
 		sync.mutex_unlock(&state.threads.shutdown_mutex)
 		if shutdown_requested {break}
 
+		// If signal to reload game code
+		// Load new game api
+		// Copy over game state to new api
+		// Switch to the new game api
+
+		// If signal to reload game data
+		// Load new game data
+		// Swap the game data values that the game state is currently using
+
 		thread_data.game_api.update()
 		thread_data.clock.frame_count += 1
 
