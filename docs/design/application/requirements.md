@@ -34,20 +34,17 @@
 
 ### Threading Architecture Requirements
 
-**Main Thread (Application/Window Management):**
+**Main Thread (Application/Window Management + Rendering):**
 - Handle SDL3 window events and system messages
 - Create and manage WebGPU surface through SDL3
+- **WebGPU Rendering Operations**: Perform all WebGPU operations and frame rendering
+- **Render Packet Processing**: Read most recent render packet from game thread buffer
+- **WebGPU Resource Management**: Handle WebGPU textures, buffers, shaders, and surface operations
+- **WebGPU Threading Constraint**: All WebGPU operations must occur on main thread due to surface threading limitations
 - Populate thread-safe input event buffer for game thread consumption
 - Manage application lifecycle and shutdown coordination
-- Handle UI interactions
-- Coordinate between all threads (Game, Render, Audio, Job System)
-
-**Render Thread (Graphics Operations):**
-- Read most recent render packet from game thread buffer
-- Perform all WebGPU operations and frame rendering
-- Maintain consistent frame rate independent of game thread timing
-- Handle WebGPU resource management (textures, buffers, shaders)
-- Coordinate with Main Thread for WebGPU surface management
+- Handle UI interactions  
+- Coordinate between all threads (Game, Audio, Job System)
 
 **Audio Thread (Sound Operations):**
 - Read most recent audio packet from game thread buffer
