@@ -207,6 +207,13 @@ thread_clock_frame_curr_duration :: proc(clock: ^ThreadClock) -> time.Duration {
 	return dur
 }
 
+thread_clock_frame_prev_duration :: proc(clock: ^ThreadClock) -> time.Duration {
+	sync.mutex_lock(&clock.timing_mutex)
+	dur := time.diff(clock.prev_frame.start, clock.prev_frame.end)
+	sync.mutex_unlock(&clock.timing_mutex)
+	return dur
+}
+
 thread_clock_sleep :: proc(clock: ^ThreadClock) {
 	curr_frame_dur := thread_clock_frame_curr_duration(clock)
 	if curr_frame_dur >= clock.frame_duration_target {return}

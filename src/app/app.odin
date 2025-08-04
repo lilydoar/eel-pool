@@ -1,9 +1,13 @@
 package app
 
+import "base:runtime"
+import "core:fmt"
 import "core:log"
 import os "core:os/os2"
 import "core:time"
 import sdl "vendor:sdl3"
+import "vendor:wgpu"
+import "vendor:wgpu/sdl3glue"
 
 log_opts: log.Options : {
 	.Level,
@@ -17,9 +21,25 @@ log_opts: log.Options : {
 }
 
 AppState :: struct {
-	window:      ^sdl.Window,
-	window_size: [2]i32,
-	threads:     AppThreads,
+	// SDL
+	window:          ^sdl.Window,
+	window_size:     [2]i32,
+
+	// WGPU
+	wgpu_is_ready:   bool,
+	instance:        wgpu.Instance,
+	surface:         wgpu.Surface,
+	adapter:         wgpu.Adapter,
+	device:          wgpu.Device,
+	config:          wgpu.SurfaceConfiguration,
+	queue:           wgpu.Queue,
+	module:          wgpu.ShaderModule,
+	pipeline_layout: wgpu.PipelineLayout,
+	pipeline:        wgpu.RenderPipeline,
+
+	// Application
+	ctx:             runtime.Context,
+	threads:         AppThreads,
 }
 
 state: AppState
@@ -30,6 +50,7 @@ app_init :: proc() {
 	log.info("Starting app initialization...")
 
 	sdl_init()
+	wgpu_init()
 
 	app_threads_init()
 	app_threads_start()
@@ -65,6 +86,7 @@ app_init_wait :: proc() {
 app_deinit :: proc() {
 	log.info("Deinitializing app...")
 	app_threads_stop()
+	wgpu_deinit()
 	sdl_deinit()
 }
 
@@ -76,7 +98,15 @@ sdl_init :: proc() {
 	window_width: i32 = 1280
 	window_height: i32 = 780
 
-	window := sdl.CreateWindow(title, window_width, window_height, {});sdl_assert(window != nil)
+	// read the profile config and load application flags based on dev/release
+	// release: full_screen, no window decorations, etc.
+	// development: windowed, with decorations, resizable, etc.
+	// viewport: run as the viewport in an editor
+	// Define environments that truly need different behavior
+
+	flags: sdl.WindowFlags = {.RESIZABLE}
+
+	window := sdl.CreateWindow(title, window_width, window_height, flags);sdl_assert(window != nil)
 	state.window = window
 
 	ok = sdl.GetWindowSize(state.window, &window_width, &window_height);sdl_assert(ok)
@@ -96,14 +126,218 @@ sdl_deinit :: proc() {
 
 sdl_assert :: proc(ok: bool) {if !ok do log.panicf("SDL error: {}", sdl.GetError())}
 
+sdl_get_framebuffer_size :: proc() -> (width, height: u32) {
+	w, h: i32
+	sdl.GetWindowSizeInPixels(state.window, &w, &h)
+	return u32(w), u32(h)
+}
+
+sdl_get_surface :: proc(instance: wgpu.Instance) -> wgpu.Surface {
+	return sdl3glue.GetSurface(instance, state.window)
+}
+
+sdl_resize :: proc() -> (w, h: u32) {
+	width, height := sdl_get_framebuffer_size()
+	if width == 0 || height == 0 {
+		log.warn("Invalid framebuffer size, skipping resize.")
+		return 0, 0
+	}
+
+	log.debugf("SDL window resizing to: [{}, {}]", width, height)
+	state.window_size = [2]i32{cast(i32)(width), cast(i32)(height)}
+
+	return cast(u32)(width), cast(u32)(height)
+}
+
 sdl_poll_events :: proc() -> (quit: bool) {
 	ev: sdl.Event
 	for sdl.PollEvent(&ev) {
 		#partial switch ev.type {
 		case .QUIT:
 			quit = true
+		case .WINDOW_RESIZED, .WINDOW_PIXEL_SIZE_CHANGED:
+			pixel_w, pixel_h := sdl_resize()
+			wgpu_resize(pixel_w, pixel_h)
 		}
 	}
 	return
+}
+
+wgpu_init :: proc() {
+	log.info("Initializing WebGPU...")
+
+	state.instance = wgpu.CreateInstance(nil)
+	if state.instance == nil {
+		panic("WebGPU is not supported")
+	}
+	state.surface = sdl_get_surface(state.instance)
+
+	wgpu.InstanceRequestAdapter(
+		state.instance,
+		&{compatibleSurface = state.surface},
+		{callback = on_adapter},
+	)
+
+	on_adapter :: proc "c" (
+		status: wgpu.RequestAdapterStatus,
+		adapter: wgpu.Adapter,
+		message: string,
+		userdata1, userdata2: rawptr,
+	) {
+		context = state.ctx
+		if status != .Success || adapter == nil {
+			fmt.panicf("request adapter failure: [%v] %s", status, message)
+		}
+		state.adapter = adapter
+		wgpu.AdapterRequestDevice(adapter, nil, {callback = on_device})
+	}
+
+	on_device :: proc "c" (
+		status: wgpu.RequestDeviceStatus,
+		device: wgpu.Device,
+		message: string,
+		userdata1, userdata2: rawptr,
+	) {
+		context = state.ctx
+		if status != .Success || device == nil {
+			fmt.panicf("request device failure: [%v] %s", status, message)
+		}
+		state.device = device
+
+		width, height := sdl_get_framebuffer_size()
+
+		state.config = wgpu.SurfaceConfiguration {
+			device      = state.device,
+			usage       = {.RenderAttachment},
+			format      = .BGRA8Unorm,
+			width       = width,
+			height      = height,
+			presentMode = .Fifo,
+			alphaMode   = .Opaque,
+		}
+		wgpu.SurfaceConfigure(state.surface, &state.config)
+
+		state.queue = wgpu.DeviceGetQueue(state.device)
+
+		shader :: `
+	@vertex
+	fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) vec4<f32> {
+		let x = f32(i32(in_vertex_index) - 1);
+		let y = f32(i32(in_vertex_index & 1u) * 2 - 1);
+		return vec4<f32>(x, y, 0.0, 1.0);
+	}
+
+	@fragment
+	fn fs_main() -> @location(0) vec4<f32> {
+		return vec4<f32>(0.4, 0.2, 0.4, 1.0);
+	}`
+
+
+		state.module = wgpu.DeviceCreateShaderModule(
+			state.device,
+			&{nextInChain = &wgpu.ShaderSourceWGSL{sType = .ShaderSourceWGSL, code = shader}},
+		)
+
+		state.pipeline_layout = wgpu.DeviceCreatePipelineLayout(state.device, &{})
+		state.pipeline = wgpu.DeviceCreateRenderPipeline(
+			state.device,
+			&{
+				layout = state.pipeline_layout,
+				vertex = {module = state.module, entryPoint = "vs_main"},
+				fragment = &{
+					module = state.module,
+					entryPoint = "fs_main",
+					targetCount = 1,
+					targets = &wgpu.ColorTargetState {
+						format = .BGRA8Unorm,
+						writeMask = wgpu.ColorWriteMaskFlags_All,
+					},
+				},
+				primitive = {topology = .TriangleList},
+				multisample = {count = 1, mask = 0xFFFFFFFF},
+			},
+		)
+
+		state.wgpu_is_ready = true
+	}
+}
+
+wgpu_is_ready :: proc() -> bool {return state.wgpu_is_ready}
+
+wgpu_deinit :: proc() {
+	log.info("Deinitializing WebGPU...")
+	wgpu.RenderPipelineRelease(state.pipeline)
+	wgpu.PipelineLayoutRelease(state.pipeline_layout)
+	wgpu.ShaderModuleRelease(state.module)
+	wgpu.QueueRelease(state.queue)
+	wgpu.DeviceRelease(state.device)
+	wgpu.AdapterRelease(state.adapter)
+	wgpu.SurfaceRelease(state.surface)
+	wgpu.InstanceRelease(state.instance)
+}
+
+wgpu_frame :: proc "c" () {
+	context = state.ctx
+
+	surface_texture := wgpu.SurfaceGetCurrentTexture(state.surface)
+	switch surface_texture.status {
+	case .SuccessOptimal, .SuccessSuboptimal:
+	case .Timeout, .Outdated, .Lost:
+		log.warnf("get_current_texture status=%v, resizing surface", surface_texture.status)
+		if surface_texture.texture != nil {
+			wgpu.TextureRelease(surface_texture.texture)
+		}
+		wgpu_resize(sdl_get_framebuffer_size())
+		return
+	case .OutOfMemory, .DeviceLost, .Error:
+		// Fatal error
+		fmt.panicf("get_current_texture status=%v", surface_texture.status)
+	}
+	defer wgpu.TextureRelease(surface_texture.texture)
+
+	frame := wgpu.TextureCreateView(surface_texture.texture, nil)
+	defer wgpu.TextureViewRelease(frame)
+
+	command_encoder := wgpu.DeviceCreateCommandEncoder(state.device, nil)
+	defer wgpu.CommandEncoderRelease(command_encoder)
+
+	render_pass_encoder := wgpu.CommandEncoderBeginRenderPass(
+		command_encoder,
+		&{
+			colorAttachmentCount = 1,
+			colorAttachments = &wgpu.RenderPassColorAttachment {
+				view = frame,
+				loadOp = .Clear,
+				storeOp = .Store,
+				depthSlice = wgpu.DEPTH_SLICE_UNDEFINED,
+				clearValue = {0.0, 0.2, 0.4, 1.0},
+			},
+		},
+	)
+
+	wgpu.RenderPassEncoderSetPipeline(render_pass_encoder, state.pipeline)
+	wgpu.RenderPassEncoderDraw(
+		render_pass_encoder,
+		vertexCount = 3,
+		instanceCount = 1,
+		firstVertex = 0,
+		firstInstance = 0,
+	)
+
+	wgpu.RenderPassEncoderEnd(render_pass_encoder)
+	wgpu.RenderPassEncoderRelease(render_pass_encoder)
+
+	command_buffer := wgpu.CommandEncoderFinish(command_encoder, nil)
+	defer wgpu.CommandBufferRelease(command_buffer)
+
+	wgpu.QueueSubmit(state.queue, {command_buffer})
+	wgpu.SurfacePresent(state.surface)
+}
+
+wgpu_resize :: proc(width, height: u32) {
+	state.config.width = width
+	state.config.height = height
+	log.debugf("WebGPU surface resizing to: [{}, {}]", width, height)
+	wgpu.SurfaceConfigure(state.surface, &state.config)
 }
 

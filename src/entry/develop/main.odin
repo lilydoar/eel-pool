@@ -27,6 +27,8 @@ main :: proc() {
 
 		if quit := app.sdl_poll_events(); quit {break}
 
+		if app.wgpu_is_ready() {app.wgpu_frame()}
+
 		app.thread_clock_frame_end(&app.state.threads.app_data.clock)
 		app.thread_clock_sleep(&app.state.threads.app_data.clock)
 	}
