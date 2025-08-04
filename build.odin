@@ -35,6 +35,16 @@ import "core:strings"
 //   "exe_name": "game"
 // }
 
+// TODO: Pass arbitrary commands to the application CLI when it is run through the build script
+//
+// ./build -develop -gamelib -check -- -check
+//
+// In this example, the first check goes to the build script. Checks compilation, building processes, etc.
+// The second -check is passed through to the application CLI.
+// In this example it would check the game module loads, game init passes, etc.
+// Reports on any errors related to assets, loaded data files, etc.
+// Basically a `health` command for the game application
+
 BUILD_DIR: string : "bin/"
 EXE: string : "game"
 
