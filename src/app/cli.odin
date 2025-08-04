@@ -4,7 +4,9 @@ import "core:flags"
 import os "core:os/os2"
 
 Options :: struct {
-	check: bool `usage:"Run app initialization then exit"`,
+	check:       bool `usage:"Run app initialization then exit"`,
+	// TODO
+	frame_count: int `usage:"Number of frames to run before exiting"`,
 }
 
 opt: Options

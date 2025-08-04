@@ -115,10 +115,14 @@ app_threads_stop :: proc() -> bool {
 	return true
 }
 
+// DEPRECATED: Render thread is deprecated due to WebGPU threading constraints.
+// WebGPU surfaces and resources cannot be safely used across threads.
+// All rendering must happen on the main thread that created the WebGPU context.
+// This thread now exists only for compatibility and future non-WebGPU rendering tasks.
 render_thread_proc :: proc(t: ^thread.Thread) {
 	context.logger = log.create_console_logger(opt = log_opts)
 
-	log.debug("Render thread starting...")
+	log.debug("Render thread starting... (DEPRECATED - rendering moved to main thread)")
 	defer log.debug("Render thread exiting...")
 
 	thread_data := cast(^RenderThreadData)t.data
@@ -134,6 +138,11 @@ render_thread_proc :: proc(t: ^thread.Thread) {
 
 		if shutdown_requested {break}
 
+		// DEPRECATED: All WebGPU rendering moved to main thread due to threading constraints
+		// WebGPU surfaces cannot be used across threads - validation errors occur
+		// Future: This thread could handle non-WebGPU rendering tasks like compute shaders
+
+		thread_data.clock.frame_count += 1
 		thread_clock_frame_end(&thread_data.clock)
 		thread_clock_sleep(&thread_data.clock)
 	}

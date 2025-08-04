@@ -44,6 +44,7 @@ game_entry_proc_develop :: proc(t: ^thread.Thread) {
 		// Load new game data
 		// Swap the game data values that the game state is currently using
 
+		log.debugf("Game thread: calling update (frame {})", thread_data.clock.frame_count)
 		thread_data.game_api.update()
 		thread_data.clock.frame_count += 1
 

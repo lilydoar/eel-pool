@@ -8,6 +8,7 @@ import "core:time"
 import sdl "vendor:sdl3"
 import "vendor:wgpu"
 import "vendor:wgpu/sdl3glue"
+import shared "../"
 
 log_opts: log.Options : {
 	.Level,
@@ -258,6 +259,9 @@ wgpu_init :: proc() {
 			},
 		)
 
+		// Initialize sprite batcher
+		sprite_batcher_init()
+
 		state.wgpu_is_ready = true
 	}
 }
@@ -266,6 +270,8 @@ wgpu_is_ready :: proc() -> bool {return state.wgpu_is_ready}
 
 wgpu_deinit :: proc() {
 	log.info("Deinitializing WebGPU...")
+	sprite_batcher_deinit()
+	shared.render_buffer_deinit()
 	wgpu.RenderPipelineRelease(state.pipeline)
 	wgpu.PipelineLayoutRelease(state.pipeline_layout)
 	wgpu.ShaderModuleRelease(state.module)
@@ -278,6 +284,7 @@ wgpu_deinit :: proc() {
 
 wgpu_frame :: proc "c" () {
 	context = state.ctx
+	log.debug("wgpu_frame called")
 
 	surface_texture := wgpu.SurfaceGetCurrentTexture(state.surface)
 	switch surface_texture.status {
@@ -315,14 +322,30 @@ wgpu_frame :: proc "c" () {
 		},
 	)
 
-	wgpu.RenderPassEncoderSetPipeline(render_pass_encoder, state.pipeline)
-	wgpu.RenderPassEncoderDraw(
-		render_pass_encoder,
-		vertexCount = 3,
-		instanceCount = 1,
-		firstVertex = 0,
-		firstInstance = 0,
-	)
+	// Process render packets and render game content
+	packet, has_data := shared.render_buffer_read()
+	if has_data {
+		switch packet.type {
+		case .GOL_BOARD:
+			gol_packet := &packet.data.(shared.GOLBoardRenderPacket)
+			log.debugf("Processing GOL render packet: board_size={}, data_length={}", gol_packet.board_size, len(gol_packet.board_data))
+			render_gol_board_from_packet(gol_packet)
+			render_sprites(render_pass_encoder)
+		}
+	} else {
+		// Comment out this debug line as it will spam too much
+		// log.debug("No render packet data available")
+	}
+
+	// Keep the original triangle for now as fallback - DISABLED FOR DEBUGGING
+	// wgpu.RenderPassEncoderSetPipeline(render_pass_encoder, state.pipeline)
+	// wgpu.RenderPassEncoderDraw(
+	// 	render_pass_encoder,
+	// 	vertexCount = 3,
+	// 	instanceCount = 1,
+	// 	firstVertex = 0,
+	// 	firstInstance = 0,
+	// )
 
 	wgpu.RenderPassEncoderEnd(render_pass_encoder)
 	wgpu.RenderPassEncoderRelease(render_pass_encoder)
@@ -339,5 +362,8 @@ wgpu_resize :: proc(width, height: u32) {
 	state.config.height = height
 	log.debugf("WebGPU surface resizing to: [{}, {}]", width, height)
 	wgpu.SurfaceConfigure(state.surface, &state.config)
+	
+	// Update sprite batcher screen size
+	sprite_batcher_update_screen_size(width, height)
 }
 

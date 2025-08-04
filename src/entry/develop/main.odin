@@ -16,18 +16,30 @@ main :: proc() {
 
 	app.app_init()
 	defer app.app_deinit()
-
+	
+	log.debug("App init completed, checking CLI options")
+	
 	if app.cli_options().check {
 		log.info("App initialized successfully, exiting.")
 		return
 	}
+	
+	log.debug("Starting main thread loop")
 
 	for {
 		app.thread_clock_frame_start(&app.state.threads.app_data.clock)
+		log.debug("Main thread loop iteration")
 
 		if quit := app.sdl_poll_events(); quit {break}
 
-		if app.wgpu_is_ready() {app.wgpu_frame()}
+		// WebGPU rendering must happen on main thread due to threading constraints.
+		// WebGPU surfaces and resources cannot be safely accessed from other threads.
+		// The render thread is now deprecated for WebGPU operations.
+		if app.wgpu_is_ready() {
+			app.wgpu_frame()
+		} else {
+			log.debug("WebGPU not ready, skipping frame")
+		}
 
 		app.thread_clock_frame_end(&app.state.threads.app_data.clock)
 		app.thread_clock_sleep(&app.state.threads.app_data.clock)
