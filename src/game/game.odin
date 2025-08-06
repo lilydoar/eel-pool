@@ -1,6 +1,8 @@
 package game
 
+import shared "../."
 import "core:log"
+
 GameState :: struct {
 	gol_board: GOLBoard,
 }
@@ -23,6 +25,8 @@ game_init :: proc() {
 	gol_board_set_glider(&gol_board, 1, 1)
 	state.gol_board = gol_board
 
+	// gol_board_print(&state.gol_board, viewport_min, viewport_max)
+
 	// Setup up handle maps, pools, etc.
 }
 
@@ -34,8 +38,11 @@ game_deinit :: proc() {
 @(export)
 game_update :: proc() {
 	gol_board_update(&state.gol_board)
-	// gol_board_print(&state.gol_board)
+	// gol_board_print(&state.gol_board, viewport_min, viewport_max)
 
 	// TODO: Packet the board data and send it to the render thread
 }
+
+viewport_min: shared.Vec2i = shared.Vec2i{0, 0}
+viewport_max: shared.Vec2i = shared.Vec2i{40, 10}
 
