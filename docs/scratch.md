@@ -471,7 +471,70 @@ This design enables a build tool that becomes the central orchestrator for all d
 
 The result is a build system that transforms `./build -profile release-full` into a complete end-to-end release process, automating everything from compilation to community communication.
 
-# Mon Aug 04 2025
+# Mon Aug 04 2025 - 1
 
 - [ ] TODO: Write an application demo that can demo all things handled by the application/platform layer
 - Exercise things like mouse position, drawing, input, etc
+
+# Tue Aug 05 2025 - 1
+
+## Understanding Unordered Sets: A Simple Implementation Guide
+
+An **unordered set** is a fundamental data structure that stores unique elements without maintaining any particular order. It's particularly useful when you need fast lookups and don't care about the sequence of elements.
+
+### Core Concepts
+
+#### What Makes a Set "Unordered"?
+Unlike arrays or lists where elements have positions (index 0, 1, 2...), unordered sets organize data based on **hash values** rather than insertion order. This trade-off between order and speed makes them ideal for membership testing.
+
+#### Key Properties
+1. **No duplicates** - Each element can appear only once
+2. **Dynamic sizing** - Grows and shrinks based on content
+3. **Fast lookups** - O(1) average time complexity for checking if an element exists
+4. **No guaranteed order** - Elements may appear in any sequence when iterated
+
+### The Hash-Based Approach
+
+The magic of unordered sets lies in **hashing**. When you insert an element:
+
+1. The element is passed through a hash function
+2. The hash function produces a number (the hash value)
+3. This number determines where to store the element internally
+4. Later lookups use the same hash to quickly find the element
+
+Think of it like a library with books sorted by a special numbering system - instead of searching shelf by shelf, you calculate exactly where a book should be.
+
+### Simple Implementation Structure
+
+Looking at the provided Odin code, we see the foundation:
+
+```odin
+UnorderedSet :: struct($keyT: typeid, $valT: typeid) {
+    items: map[keyT]valT,
+}
+```
+
+This implementation cleverly uses Odin's built-in `map` as the underlying storage. Maps naturally provide:
+- Hash-based lookup
+- Duplicate prevention (keys must be unique)
+- Dynamic resizing
+
+### Why This Matters
+
+In the Game of Life example from the notes, traditional approaches store *every* cell in a grid, even empty ones. With a sparse approach using unordered sets:
+
+- **Memory efficiency**: Only store active cells
+- **Computational efficiency**: Only process cells that might change
+- **Scalability**: Handle virtually infinite game boards
+
+Instead of checking 1 million empty cells, you might only check 1,000 active ones - a 1000x improvement!
+
+### Learning Takeaways
+
+The unordered set demonstrates several important computer science principles:
+- **Space-time tradeoffs**: Use more sophisticated data structures for better performance
+- **Sparse data representation**: Don't store what you don't need
+- **Hash table fundamentals**: Fast lookups through clever organization
+- **Generic programming**: One implementation works for many data types
+
+This simple yet powerful abstraction transforms problems from "check everything" to "check only what matters" - a fundamental optimization strategy in computer science.
