@@ -56,7 +56,6 @@ app_init :: proc() {
 	app_threads_start()
 
 	state.threads.app_data.clock = thread_clock_init(APP_DESIRED_FRAME_TIME)
-	state.threads.app_data.initialized = true
 
 	app_init_wait()
 }
@@ -67,8 +66,7 @@ app_init_wait :: proc() {
 
 	initialization_wait: time.Stopwatch
 	time.stopwatch_start(&initialization_wait)
-	for !state.threads.app_data.initialized ||
-	    !(cast(^GameThreadData)state.threads.threads[ThreadID.GAME].data).initialized ||
+	for !(cast(^GameThreadData)state.threads.threads[ThreadID.GAME].data).initialized ||
 	    !(cast(^GameThreadData)state.threads.threads[ThreadID.RENDER].data).initialized ||
 	    !(cast(^GameThreadData)state.threads.threads[ThreadID.AUDIO].data).initialized {
 		if (time.stopwatch_duration(initialization_wait) > time.Second * 5) {
@@ -81,6 +79,8 @@ app_init_wait :: proc() {
 
 	wait_ms := cast(u64)(time.stopwatch_duration(initialization_wait) / time.Millisecond)
 	log.debugf("initialization wait time: {} ms", wait_ms)
+
+	state.threads.app_data.initialized = true
 }
 
 app_deinit :: proc() {

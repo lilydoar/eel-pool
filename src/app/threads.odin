@@ -34,6 +34,9 @@ AppThreadData :: struct {
 	clock:       ThreadClock,
 }
 
+app_initialized :: proc() -> bool {
+	return state.threads.app_data.initialized
+}
 
 GameThreadData :: struct {
 	initialized: bool,

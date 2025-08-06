@@ -44,8 +44,10 @@ game_entry_proc_develop :: proc(t: ^thread.Thread) {
 		// Load new game data
 		// Swap the game data values that the game state is currently using
 
-		thread_data.game_api.update()
-		thread_data.clock.frame_count += 1
+		if app_initialized() {
+			thread_data.game_api.update()
+			thread_data.clock.frame_count += 1
+		}
 
 		thread_clock_frame_end(&thread_data.clock)
 		thread_clock_sleep(&thread_data.clock)
