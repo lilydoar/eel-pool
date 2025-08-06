@@ -471,3 +471,7 @@ This design enables a build tool that becomes the central orchestrator for all d
 
 The result is a build system that transforms `./build -profile release-full` into a complete end-to-end release process, automating everything from compilation to community communication.
 
+# Mon Aug 04 2025
+
+- [ ] TODO: Write an application demo that can demo all things handled by the application/platform layer
+- Exercise things like mouse position, drawing, input, etc
