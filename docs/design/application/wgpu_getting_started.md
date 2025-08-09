@@ -346,7 +346,7 @@ Modern GPUs are massively parallel processors optimized for throughput, not late
 Effective sprite batching transforms a high-frequency, low-work submission pattern into a low-frequency, high-work pattern that matches GPU architecture:
 
 1. **Texture Atlas Consolidation**: Eliminates texture binding overhead and enables texture cache coherency
-2. **Storage Buffer Architecture**: Leverages GPU's high-bandwidth memory access patterns for sprite parameters  
+2. **Storage Buffer Architecture**: Leverages GPU's high-bandwidth memory access patterns for sprite parameters
 3. **Procedural Geometry Generation**: Eliminates vertex buffer overhead by generating quad geometry algorithmically
 4. **Single Draw Call Submission**: Maximizes GPU utilization by submitting work in GPU-optimal batch sizes
 
@@ -368,12 +368,15 @@ typedef struct {
     WGPUBuffer index_buffer;
     WGPUBindGroup bind_group;
     WGPUBindGroupLayout bind_group_layout;
+    WGPUPipelineLayout pipeline_layout;
+    WGPURenderPipeline render_pipeline;
 
     SpriteData sprites[MAX_SPRITES];
     int sprite_count;
 
     WGPUTexture atlas_texture;
     WGPUSampler atlas_sampler;
+    WGPUTextureView atlas_view;
 } SpriteBatcher;
 
 SpriteBatcher g_batcher = {0};
@@ -410,6 +413,29 @@ bool initialize_sprite_batcher() {
     g_batcher.index_buffer = wgpuDeviceCreateBuffer(g_state.device, &index_buffer_desc);
     wgpuQueueWriteBuffer(g_state.queue, g_batcher.index_buffer, 0, indices, sizeof(indices));
 
+    // Create texture atlas (example: 512x512 RGBA8)
+    WGPUTextureDescriptor texture_desc = {
+        .usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst,
+        .dimension = WGPUTextureDimension_2D,
+        .size = {512, 512, 1},
+        .format = WGPUTextureFormat_RGBA8Unorm,
+        .mipLevelCount = 1,
+        .sampleCount = 1
+    };
+    g_batcher.atlas_texture = wgpuDeviceCreateTexture(g_state.device, &texture_desc);
+    g_batcher.atlas_view = wgpuTextureCreateView(g_batcher.atlas_texture, NULL);
+
+    // Create texture sampler
+    WGPUSamplerDescriptor sampler_desc = {
+        .addressModeU = WGPUAddressMode_ClampToEdge,
+        .addressModeV = WGPUAddressMode_ClampToEdge,
+        .addressModeW = WGPUAddressMode_ClampToEdge,
+        .magFilter = WGPUFilterMode_Linear,
+        .minFilter = WGPUFilterMode_Linear,
+        .mipmapFilter = WGPUMipmapFilterMode_Linear
+    };
+    g_batcher.atlas_sampler = wgpuDeviceCreateSampler(g_state.device, &sampler_desc);
+
     // Create bind group layout
     WGPUBindGroupLayoutEntry layout_entries[] = {
         {
@@ -442,6 +468,31 @@ bool initialize_sprite_batcher() {
         .entries = layout_entries
     };
     g_batcher.bind_group_layout = wgpuDeviceCreateBindGroupLayout(g_state.device, &layout_desc);
+
+    // Create bind group
+    WGPUBindGroupEntry bind_entries[] = {
+        {
+            .binding = 0,
+            .buffer = g_batcher.sprite_buffer,
+            .offset = 0,
+            .size = sizeof(SpriteData) * MAX_SPRITES
+        },
+        {
+            .binding = 1,
+            .textureView = g_batcher.atlas_view
+        },
+        {
+            .binding = 2,
+            .sampler = g_batcher.atlas_sampler
+        }
+    };
+
+    WGPUBindGroupDescriptor bind_group_desc = {
+        .layout = g_batcher.bind_group_layout,
+        .entryCount = 3,
+        .entries = bind_entries
+    };
+    g_batcher.bind_group = wgpuDeviceCreateBindGroup(g_state.device, &bind_group_desc);
 
     return true;
 }
@@ -512,6 +563,95 @@ const char* sprite_shader_source =
     "    return tex_color * in.color;\n"
     "}";
 
+bool create_sprite_pipeline() {
+    // Create shader module
+    WGPUShaderSourceWGSL wgsl_desc = {
+        .chain = {.sType = WGPUSType_ShaderSourceWGSL},
+        .code = sprite_shader_source
+    };
+
+    WGPUShaderModuleDescriptor shader_desc = {
+        .nextInChain = (WGPUChainedStruct*)&wgsl_desc,
+        .label = "Sprite Shader Module"
+    };
+    WGPUShaderModule sprite_shader = wgpuDeviceCreateShaderModule(g_state.device, &shader_desc);
+
+    // Create pipeline layout
+    WGPUPipelineLayoutDescriptor pipeline_layout_desc = {
+        .bindGroupLayoutCount = 1,
+        .bindGroupLayouts = &g_batcher.bind_group_layout,
+        .label = "Sprite Pipeline Layout"
+    };
+    g_batcher.pipeline_layout = wgpuDeviceCreatePipelineLayout(g_state.device, &pipeline_layout_desc);
+
+    // Configure color target state
+    WGPUBlendState blend_state = {
+        .color = {
+            .srcFactor = WGPUBlendFactor_SrcAlpha,
+            .dstFactor = WGPUBlendFactor_OneMinusSrcAlpha,
+            .operation = WGPUBlendOperation_Add
+        },
+        .alpha = {
+            .srcFactor = WGPUBlendFactor_One,
+            .dstFactor = WGPUBlendFactor_OneMinusSrcAlpha,
+            .operation = WGPUBlendOperation_Add
+        }
+    };
+
+    WGPUColorTargetState color_target = {
+        .format = WGPUTextureFormat_BGRA8Unorm,
+        .blend = &blend_state,
+        .writeMask = WGPUColorWriteMask_All
+    };
+
+    // Configure fragment state
+    WGPUFragmentState fragment_state = {
+        .module = sprite_shader,
+        .entryPoint = "fs_main",
+        .targetCount = 1,
+        .targets = &color_target
+    };
+
+    // Configure depth stencil state (optional for sprites)
+    WGPUDepthStencilState depth_stencil_state = {
+        .format = WGPUTextureFormat_Depth24Plus,
+        .depthWriteEnabled = true,
+        .depthCompare = WGPUCompareFunction_Less
+    };
+
+    // Create render pipeline
+    WGPURenderPipelineDescriptor pipeline_desc = {
+        .label = "Sprite Render Pipeline",
+        .layout = g_batcher.pipeline_layout,
+        .vertex = {
+            .module = sprite_shader,
+            .entryPoint = "vs_main",
+            .bufferCount = 0,        // No vertex buffers - we generate geometry procedurally
+            .buffers = NULL
+        },
+        .primitive = {
+            .topology = WGPUPrimitiveTopology_TriangleList,
+            .stripIndexFormat = WGPUIndexFormat_Undefined,
+            .frontFace = WGPUFrontFace_CCW,
+            .cullMode = WGPUCullMode_None      // Don't cull - sprites are billboards
+        },
+        .depthStencil = &depth_stencil_state,  // Set to NULL if no depth testing needed
+        .multisample = {
+            .count = 1,
+            .mask = 0xFFFFFFFF,
+            .alphaToCoverageEnabled = false
+        },
+        .fragment = &fragment_state
+    };
+
+    g_batcher.render_pipeline = wgpuDeviceCreateRenderPipeline(g_state.device, &pipeline_desc);
+
+    // Cleanup temporary shader module
+    wgpuShaderModuleRelease(sprite_shader);
+
+    return g_batcher.render_pipeline != NULL;
+}
+
 void add_sprite(float x, float y, float z, float rotation,
                float width, float height,
                float u0, float v0, float u1, float v1,
@@ -535,22 +675,25 @@ void add_sprite(float x, float y, float z, float rotation,
     sprite->color[3] = a;
 }
 
-void render_sprites() {
+void render_sprites(WGPURenderPassEncoder render_pass) {
     if (g_batcher.sprite_count == 0) return;
 
     // Upload sprite data to GPU
     wgpuQueueWriteBuffer(g_state.queue, g_batcher.sprite_buffer, 0,
                         g_batcher.sprites, sizeof(SpriteData) * g_batcher.sprite_count);
 
-    // ... (render pass setup as before) ...
-
     // Set sprite pipeline and bindings
-    wgpuRenderPassEncoderSetPipeline(render_pass, sprite_render_pipeline);
+    wgpuRenderPassEncoderSetPipeline(render_pass, g_batcher.render_pipeline);
     wgpuRenderPassEncoderSetBindGroup(render_pass, 0, g_batcher.bind_group, 0, NULL);
     wgpuRenderPassEncoderSetIndexBuffer(render_pass, g_batcher.index_buffer,
                                        WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
 
-    // Draw all sprites in a single call
+    // Draw all sprites in a single call using indexed rendering
+    // vertex_count = sprite_count * 6 (indices per sprite)
+    // instance_count = 1 (we're not using instancing)
+    // first_index = 0 (start from beginning of index buffer)
+    // base_vertex = 0 (vertex offset)
+    // first_instance = 0 (instance offset)
     wgpuRenderPassEncoderDrawIndexed(render_pass,
                                     g_batcher.sprite_count * 6,  // 6 indices per sprite
                                     1, 0, 0, 0);
@@ -558,7 +701,62 @@ void render_sprites() {
     // Reset for next frame
     g_batcher.sprite_count = 0;
 }
+
+void cleanup_sprite_batcher() {
+    if (g_batcher.render_pipeline) wgpuRenderPipelineRelease(g_batcher.render_pipeline);
+    if (g_batcher.pipeline_layout) wgpuPipelineLayoutRelease(g_batcher.pipeline_layout);
+    if (g_batcher.bind_group) wgpuBindGroupRelease(g_batcher.bind_group);
+    if (g_batcher.bind_group_layout) wgpuBindGroupLayoutRelease(g_batcher.bind_group_layout);
+    if (g_batcher.atlas_view) wgpuTextureViewRelease(g_batcher.atlas_view);
+    if (g_batcher.atlas_texture) wgpuTextureRelease(g_batcher.atlas_texture);
+    if (g_batcher.atlas_sampler) wgpuSamplerRelease(g_batcher.atlas_sampler);
+    if (g_batcher.sprite_buffer) wgpuBufferRelease(g_batcher.sprite_buffer);
+    if (g_batcher.index_buffer) wgpuBufferRelease(g_batcher.index_buffer);
+}
 ```
+
+### Pipeline Construction Deep Dive
+
+The sprite batcher's render pipeline demonstrates several advanced WebGPU patterns:
+
+**Procedural Vertex Generation**: Unlike traditional vertex buffer approaches, the sprite system generates quad vertices algorithmically in the vertex shader. The vertex shader uses `@builtin(vertex_index)` to determine both which sprite (`sprite_id = vertex_index / 4`) and which corner of the quad (`corner_id = vertex_index % 4`) to generate. This eliminates vertex buffer memory and bandwidth overhead.
+
+**Storage Buffer Architecture**: Sprite data lives in a storage buffer bound to the vertex shader, enabling random access to any sprite's properties during vertex generation. This pattern scales efficiently to thousands of sprites without the memory overhead of duplicated vertex data.
+
+**Alpha Blending Configuration**: The pipeline configures proper alpha blending for sprite rendering:
+```c
+WGPUBlendState blend_state = {
+    .color = {
+        .srcFactor = WGPUBlendFactor_SrcAlpha,
+        .dstFactor = WGPUBlendFactor_OneMinusSrcAlpha,
+        .operation = WGPUBlendOperation_Add
+    },
+    .alpha = {
+        .srcFactor = WGPUBlendFactor_One,
+        .dstFactor = WGPUBlendFactor_OneMinusSrcAlpha,
+        .operation = WGPUBlendOperation_Add
+    }
+};
+```
+This enables proper transparency handling where sprites blend naturally with the background and each other.
+
+**Texture Atlas Integration**: The pipeline binds a single texture atlas and sampler, allowing all sprites to reference different portions of the same texture. This eliminates texture binding overhead and enables efficient GPU texture cache utilization.
+
+**Depth Testing (Optional)**: The pipeline can optionally include depth testing for sprite layering:
+```c
+WGPUDepthStencilState depth_stencil_state = {
+    .format = WGPUTextureFormat_Depth24Plus,
+    .depthWriteEnabled = true,
+    .depthCompare = WGPUCompareFunction_Less
+};
+```
+Set `.depthStencil = NULL` in the pipeline descriptor if depth testing isn't needed for your sprites.
+
+**Complete Initialization Sequence**:
+The sprite system requires initialization in this order:
+1. `initialize_sprite_batcher()` - Creates buffers, textures, and bind groups
+2. `create_sprite_pipeline()` - Constructs the render pipeline
+3. Load texture atlas data using `wgpuQueueWriteBuffer()` or texture upload functions
 
 ### Sprite Batching Key Benefits
 
@@ -570,9 +768,30 @@ void render_sprites() {
 
 ### Integration Patterns
 
-The sprite batcher integrates into your main loop like this:
+The sprite batcher integrates into your application like this:
 
 ```c
+// Complete initialization in your setup function
+bool initialize_graphics() {
+    if (!initialize_sdl()) return false;
+    if (!initialize_webgpu()) return false;
+
+    // Wait for WebGPU to be ready (in your main loop)
+    while (!g_state.webgpu_ready) {
+        handle_events();
+        SDL_Delay(16);
+    }
+
+    // Initialize sprite system after WebGPU is ready
+    if (!initialize_sprite_batcher()) return false;
+    if (!create_sprite_pipeline()) return false;
+
+    // Load your texture atlas here
+    load_texture_atlas("sprites.png");
+
+    return true;
+}
+
 void game_update() {
     // Clear previous frame's sprites
     // (sprite_count is reset in render_sprites())
@@ -586,7 +805,7 @@ void game_update() {
                   1.0, 1.0, 1.0, 1.0);  // white tint
     }
 
-    // Add player sprite
+    // Add player sprite with higher Z for layering
     add_sprite(player.x, player.y, 0.1, player.rotation,
               48, 48,  // Larger player sprite
               player.atlas_u0, player.atlas_v0,
@@ -595,12 +814,57 @@ void game_update() {
 }
 
 void render_frame() {
-    // ... (surface texture setup as before) ...
+    if (!g_state.webgpu_ready) return;
 
-    // Render all sprites
-    render_sprites();
+    // Get surface texture
+    WGPUSurfaceTexture surface_texture;
+    wgpuSurfaceGetCurrentTexture(g_state.surface, &surface_texture);
 
-    // ... (present and cleanup as before) ...
+    if (surface_texture.status != WGPUSurfaceGetCurrentTextureStatus_Success) {
+        handle_surface_error(&surface_texture);
+        return;
+    }
+
+    // Create texture view and command encoder
+    WGPUTextureView frame_view = wgpuTextureCreateView(surface_texture.texture, NULL);
+    WGPUCommandEncoder command_encoder = wgpuDeviceCreateCommandEncoder(g_state.device, NULL);
+
+    // Begin render pass
+    WGPURenderPassColorAttachment color_attachment = {
+        .view = frame_view,
+        .loadOp = WGPULoadOp_Clear,
+        .storeOp = WGPUStoreOp_Store,
+        .clearValue = {0.0, 0.2, 0.4, 1.0}
+    };
+
+    WGPURenderPassDescriptor render_pass_desc = {
+        .colorAttachmentCount = 1,
+        .colorAttachments = &color_attachment
+    };
+
+    WGPURenderPassEncoder render_pass = wgpuCommandEncoderBeginRenderPass(command_encoder, &render_pass_desc);
+
+    // Render all sprites in a single draw call
+    render_sprites(render_pass);
+
+    // End render pass and submit
+    wgpuRenderPassEncoderEnd(render_pass);
+    WGPUCommandBuffer command_buffer = wgpuCommandEncoderFinish(command_encoder, NULL);
+    wgpuQueueSubmit(g_state.queue, 1, &command_buffer);
+    wgpuSurfacePresent(g_state.surface);
+
+    // Cleanup frame resources
+    wgpuCommandBufferRelease(command_buffer);
+    wgpuRenderPassEncoderRelease(render_pass);
+    wgpuCommandEncoderRelease(command_encoder);
+    wgpuTextureViewRelease(frame_view);
+    wgpuTextureRelease(surface_texture.texture);
+}
+
+// Don't forget cleanup on shutdown
+void shutdown_graphics() {
+    cleanup_sprite_batcher();
+    // ... other WebGPU cleanup
 }
 ```
 
@@ -648,15 +912,15 @@ void dispatch_culling_and_render() {
     // Reset counter buffer
     uint32_t zero = 0;
     wgpuQueueWriteBuffer(queue, indirect.counter_buffer, 0, &zero, sizeof(zero));
-    
+
     // Compute pass: GPU-driven culling
     WGPUComputePassEncoder compute_pass = wgpuCommandEncoderBeginComputePass(encoder, NULL);
     wgpuComputePassEncoderSetPipeline(compute_pass, indirect.cull_pipeline);
     wgpuComputePassEncoderSetBindGroup(compute_pass, 0, cull_bind_group, 0, NULL);
-    wgpuComputePassEncoderDispatchWorkgroups(compute_pass, 
+    wgpuComputePassEncoderDispatchWorkgroups(compute_pass,
         (object_count + 63) / 64, 1, 1);
     wgpuComputePassEncoderEnd(compute_pass);
-    
+
     // Render pass: Draw visible objects indirectly
     WGPURenderPassEncoder render_pass = wgpuCommandEncoderBeginRenderPass(encoder, &render_desc);
     wgpuRenderPassEncoderSetPipeline(render_pass, indirect.draw_pipeline);
@@ -860,36 +1124,36 @@ void render_deferred_frame() {
         {.view = gbuffer.normal_view, .loadOp = WGPULoadOp_Clear, .storeOp = WGPUStoreOp_Store},
         {.view = gbuffer.motion_view, .loadOp = WGPULoadOp_Clear, .storeOp = WGPUStoreOp_Store}
     };
-    
+
     WGPURenderPassDepthStencilAttachment depth_attachment = {
         .view = gbuffer.depth_view,
         .depthLoadOp = WGPULoadOp_Clear,
         .depthStoreOp = WGPUStoreOp_Store,
         .depthClearValue = 1.0f
     };
-    
+
     WGPURenderPassDescriptor gbuffer_pass = {
         .colorAttachmentCount = 3,
         .colorAttachments = color_attachments,
         .depthStencilAttachment = &depth_attachment
     };
-    
+
     WGPURenderPassEncoder gbuffer_encoder = wgpuCommandEncoderBeginRenderPass(cmd_encoder, &gbuffer_pass);
     // ... render all geometry to G-buffer
     wgpuRenderPassEncoderEnd(gbuffer_encoder);
-    
+
     // Lighting pass: Full-screen quad with deferred shading
     WGPURenderPassColorAttachment lighting_attachment = {
         .view = gbuffer.lighting_view,
         .loadOp = WGPULoadOp_Clear,
         .storeOp = WGPUStoreOp_Store
     };
-    
+
     WGPURenderPassDescriptor lighting_pass = {
         .colorAttachmentCount = 1,
         .colorAttachments = &lighting_attachment
     };
-    
+
     WGPURenderPassEncoder lighting_encoder = wgpuCommandEncoderBeginRenderPass(cmd_encoder, &lighting_pass);
     wgpuRenderPassEncoderSetPipeline(lighting_encoder, deferred_lighting_pipeline);
     wgpuRenderPassEncoderSetBindGroup(lighting_encoder, 0, gbuffer_bind_group, 0, NULL);
