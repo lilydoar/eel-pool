@@ -27,7 +27,28 @@ main :: proc() {
 
 		if quit := app.sdl_poll_events(); quit {break}
 
-		if app.wgpu_is_ready() {app.wgpu_frame()}
+		if app.wgpu_is_ready() {
+			app.sprite_batcher_add_sprite(
+				{
+					position = {0, 0, 0, 0},
+					tex_coords = {0, 0, 1, 1},
+					color = {0.8, 0.9, 0.2, 1},
+					scale = {1, 1},
+					tex_idx = 0,
+				},
+			)
+			app.sprite_batcher_add_sprite(
+				{
+					position = {-0.5, -0.5, 0.0, 0},
+					tex_coords = {0, 0, 1, 1},
+					color = {0.2, 0.8, 0.9, 0.6},
+					scale = {0.75, 0.75},
+					tex_idx = 0,
+				},
+			)
+			app.wgpu_frame()
+			app.sprite_batcher_clear()
+		}
 
 		app.thread_clock_frame_end(&app.state.threads.app_data.clock)
 		app.thread_clock_sleep(&app.state.threads.app_data.clock)

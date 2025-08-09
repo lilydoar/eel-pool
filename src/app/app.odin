@@ -33,6 +33,7 @@ AppState :: struct {
 	device:          wgpu.Device,
 	config:          wgpu.SurfaceConfiguration,
 	queue:           wgpu.Queue,
+	uniform_buf:     wgpu.Buffer,
 	module:          wgpu.ShaderModule,
 	pipeline_layout: wgpu.PipelineLayout,
 	pipeline:        wgpu.RenderPipeline,
@@ -47,10 +48,12 @@ state: AppState
 app_init :: proc() {
 	cli_parse()
 
+	state.ctx = context
 	log.info("Starting app initialization...")
 
 	sdl_init()
 	wgpu_init()
+	sprite_batcher_init()
 
 	app_threads_init()
 	app_threads_start()
@@ -86,6 +89,7 @@ app_init_wait :: proc() {
 app_deinit :: proc() {
 	log.info("Deinitializing app...")
 	app_threads_stop()
+	sprite_batcher_deinit()
 	wgpu_deinit()
 	sdl_deinit()
 }
@@ -219,7 +223,7 @@ wgpu_init :: proc() {
 
 		state.queue = wgpu.DeviceGetQueue(state.device)
 
-		shader :: `
+		shader_source :: `
 	@vertex
 	fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) vec4<f32> {
 		let x = f32(i32(in_vertex_index) - 1);
@@ -235,7 +239,12 @@ wgpu_init :: proc() {
 
 		state.module = wgpu.DeviceCreateShaderModule(
 			state.device,
-			&{nextInChain = &wgpu.ShaderSourceWGSL{sType = .ShaderSourceWGSL, code = shader}},
+			&{
+				nextInChain = &wgpu.ShaderSourceWGSL {
+					sType = .ShaderSourceWGSL,
+					code = shader_source,
+				},
+			},
 		)
 
 		state.pipeline_layout = wgpu.DeviceCreatePipelineLayout(state.device, &{})
@@ -279,6 +288,8 @@ wgpu_deinit :: proc() {
 wgpu_frame :: proc "c" () {
 	context = state.ctx
 
+	log.debug("Starting WGPU frame...")
+
 	surface_texture := wgpu.SurfaceGetCurrentTexture(state.surface)
 	switch surface_texture.status {
 	case .SuccessOptimal, .SuccessSuboptimal:
@@ -301,7 +312,9 @@ wgpu_frame :: proc "c" () {
 	command_encoder := wgpu.DeviceCreateCommandEncoder(state.device, nil)
 	defer wgpu.CommandEncoderRelease(command_encoder)
 
-	render_pass_encoder := wgpu.CommandEncoderBeginRenderPass(
+	log.debug("Starting render pass...")
+
+	render_pass := wgpu.CommandEncoderBeginRenderPass(
 		command_encoder,
 		&{
 			colorAttachmentCount = 1,
@@ -315,17 +328,29 @@ wgpu_frame :: proc "c" () {
 		},
 	)
 
-	wgpu.RenderPassEncoderSetPipeline(render_pass_encoder, state.pipeline)
-	wgpu.RenderPassEncoderDraw(
-		render_pass_encoder,
-		vertexCount = 3,
-		instanceCount = 1,
-		firstVertex = 0,
-		firstInstance = 0,
+	// wgpu.RenderPassEncoderSetPipeline(render_pass, state.pipeline)
+	// wgpu.RenderPassEncoderDraw(
+	// 	render_pass,
+	// 	vertexCount = 3,
+	// 	instanceCount = 1,
+	// 	firstVertex = 0,
+	// 	firstInstance = 0,
+	// )
+
+	identity_matrix := [16]f32{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}
+	viewport_x, viewport_y := sdl_get_framebuffer_size()
+	time: f32 = 0
+
+	sprite_batcher_frame(
+		render_pass,
+		identity_matrix,
+		{cast(f32)(viewport_x), cast(f32)(viewport_y)},
+		time,
 	)
 
-	wgpu.RenderPassEncoderEnd(render_pass_encoder)
-	wgpu.RenderPassEncoderRelease(render_pass_encoder)
+	wgpu.RenderPassEncoderEnd(render_pass)
+	wgpu.RenderPassEncoderRelease(render_pass)
+	log.debug("Ended render pass...")
 
 	command_buffer := wgpu.CommandEncoderFinish(command_encoder, nil)
 	defer wgpu.CommandBufferRelease(command_buffer)
