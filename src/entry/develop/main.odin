@@ -22,7 +22,20 @@ main :: proc() {
 		return
 	}
 
-	for {
+	if app.cli_options().frame != 0 {
+		log.infof("Running for %d frames then exiting.", app.cli_options().frame)
+	}
+
+	should_loop := proc() -> bool {
+		if app.cli_options().frame != 0 {
+			game_frame := app.state.threads.game_data.clock.frame_count
+			frame_limit := cast(u64)(app.cli_options().frame)
+			return game_frame < frame_limit
+		}
+		return true
+	}
+
+	for should_loop() {
 		app.thread_clock_frame_start(&app.state.threads.app_data.clock)
 
 		if quit := app.sdl_poll_events(); quit {break}
