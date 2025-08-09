@@ -47,6 +47,8 @@ game_entry_proc_develop :: proc(t: ^thread.Thread) {
 		if app_initialized() {
 			thread_data.game_api.update()
 			thread_data.clock.frame_count += 1
+
+			// TODO: Produce a render packet and make it available to the renderer
 		}
 
 		thread_clock_frame_end(&thread_data.clock)

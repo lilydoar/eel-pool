@@ -22,7 +22,7 @@ robust parallel processing.
 The application uses a 3+N thread architecture:
 
 1. **Main Thread**: SDL3 event handling, window management, WebGPU context, and rendering operations
-2. **Game Thread**: Pure game logic simulation and state management  
+2. **Game Thread**: Pure game logic simulation and state management
 3. **Audio Thread**: Sound processing and SDL3 audio output
 4. **Job System**: N job system threads for async operations
 

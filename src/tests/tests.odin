@@ -16,6 +16,14 @@ check_latest_release_compiles :: proc(t: ^testing.T) {
 	must_run([]string{BUILD_EXE, "-release", "-no-test"})
 }
 
+@(test)
+check_sprite_batcher_renders_grid :: proc(t: ^testing.T) {
+	// TODO
+	// Use the default texture atlas to draw a checker board grid to a fixed size texture
+	// Compare this result to a "golden image" to ensure it renders correctly.
+	// Support updating the "golden image" in the future when the rendering changes.
+}
+
 run :: proc(cmd: []string) -> bool {
 	a := context.allocator
 	defer context.allocator = a

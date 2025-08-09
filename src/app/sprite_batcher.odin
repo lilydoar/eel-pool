@@ -15,9 +15,6 @@ struct SpriteData {
 
 struct Uniforms {
 	view_proj: mat4x4<f32>,
-	viewport_size: vec2<f32>,
-	time: f32,
-	_padding: f32,
 }
 
 struct VertexOutput {
@@ -97,6 +94,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
 
 SpriteData :: struct {
+	// Using w component of position for rotation in radians
 	position:   [4]f32,
 	tex_coords: [4]f32,
 	color:      [4]f32,
@@ -106,10 +104,7 @@ SpriteData :: struct {
 }
 
 Uniforms :: struct {
-	view_proj:     [16]f32,
-	viewport_size: [2]f32,
-	time:          f32,
-	_padding:      f32,
+	view_proj: [16]f32,
 }
 
 MAX_SPRITES :: 2048
@@ -394,15 +389,15 @@ sprite_batcher_add_sprite :: proc(data: SpriteData) {
 		log.warn("SpriteBatcher: Max sprite count reached, cannot add more sprites.")
 		return
 	}
-	log.debugf(
-		"Adding sprite to batcher: position=({}, {}, {}), scale=({}, {}), rotation={}",
-		data.position[0],
-		data.position[1],
-		data.position[2],
-		data.scale[0],
-		data.scale[1],
-		data.position[3], // rotation stored in w component
-	)
+	// log.debugf(
+	// 	"Adding sprite to batcher: position=({}, {}, {}), scale=({}, {}), rotation={}",
+	// 	data.position[0],
+	// 	data.position[1],
+	// 	data.position[2],
+	// 	data.scale[0],
+	// 	data.scale[1],
+	// 	data.position[3], // rotation stored in w component
+	// )
 	append(&sprite_batcher.sprites, data)
 }
 
@@ -410,13 +405,8 @@ sprite_batcher_clear :: proc() {
 	clear(&sprite_batcher.sprites)
 }
 
-sprite_batcher_frame :: proc(
-	render_pass: wgpu.RenderPassEncoder,
-	view_proj_matrix: [16]f32,
-	viewport_size: [2]f32,
-	time: f32,
-) {
-	log.debugf("SpriteBatcher: Rendering {} sprites", len(sprite_batcher.sprites))
+sprite_batcher_frame :: proc(render_pass: wgpu.RenderPassEncoder, view_proj_matrix: [16]f32) {
+	// log.debugf("SpriteBatcher: Rendering {} sprites", len(sprite_batcher.sprites))
 
 	sprite_count := len(sprite_batcher.sprites)
 	if sprite_count == 0 {return}
@@ -430,9 +420,7 @@ sprite_batcher_frame :: proc(
 	)
 
 	uniforms := Uniforms {
-		view_proj     = view_proj_matrix,
-		viewport_size = viewport_size,
-		time          = time,
+		view_proj = view_proj_matrix,
 	}
 	wgpu.QueueWriteBuffer(state.queue, sprite_batcher.uniform_buf, 0, &uniforms, size_of(Uniforms))
 

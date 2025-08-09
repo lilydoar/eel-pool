@@ -203,14 +203,14 @@ thread_clock_frame_end :: proc(clock: ^ThreadClock) {
 	sync.mutex_unlock(&clock.timing_mutex)
 }
 
-thread_clock_frame_curr_duration :: proc(clock: ^ThreadClock) -> time.Duration {
+thread_clock_frame_curr_dur :: proc(clock: ^ThreadClock) -> time.Duration {
 	sync.mutex_lock(&clock.timing_mutex)
 	dur := time.diff(clock.curr_frame.start, clock.curr_frame.end)
 	sync.mutex_unlock(&clock.timing_mutex)
 	return dur
 }
 
-thread_clock_frame_prev_duration :: proc(clock: ^ThreadClock) -> time.Duration {
+thread_clock_frame_prev_dur :: proc(clock: ^ThreadClock) -> time.Duration {
 	sync.mutex_lock(&clock.timing_mutex)
 	dur := time.diff(clock.prev_frame.start, clock.prev_frame.end)
 	sync.mutex_unlock(&clock.timing_mutex)
@@ -218,7 +218,7 @@ thread_clock_frame_prev_duration :: proc(clock: ^ThreadClock) -> time.Duration {
 }
 
 thread_clock_sleep :: proc(clock: ^ThreadClock) {
-	curr_frame_dur := thread_clock_frame_curr_duration(clock)
+	curr_frame_dur := thread_clock_frame_curr_dur(clock)
 	if curr_frame_dur >= clock.frame_duration_target {return}
 	desired_sleep_dur := clock.frame_duration_target - curr_frame_dur
 	time.sleep(desired_sleep_dur)

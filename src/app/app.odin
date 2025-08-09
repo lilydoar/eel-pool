@@ -22,25 +22,21 @@ log_opts: log.Options : {
 
 AppState :: struct {
 	// SDL
-	window:          ^sdl.Window,
-	window_size:     [2]i32,
+	window:        ^sdl.Window,
+	window_size:   [2]i32,
 
 	// WGPU
-	wgpu_is_ready:   bool,
-	instance:        wgpu.Instance,
-	surface:         wgpu.Surface,
-	adapter:         wgpu.Adapter,
-	device:          wgpu.Device,
-	config:          wgpu.SurfaceConfiguration,
-	queue:           wgpu.Queue,
-	uniform_buf:     wgpu.Buffer,
-	module:          wgpu.ShaderModule,
-	pipeline_layout: wgpu.PipelineLayout,
-	pipeline:        wgpu.RenderPipeline,
+	wgpu_is_ready: bool,
+	instance:      wgpu.Instance,
+	surface:       wgpu.Surface,
+	adapter:       wgpu.Adapter,
+	device:        wgpu.Device,
+	config:        wgpu.SurfaceConfiguration,
+	queue:         wgpu.Queue,
 
 	// Application
-	ctx:             runtime.Context,
-	threads:         AppThreads,
+	ctx:           runtime.Context,
+	threads:       AppThreads,
 }
 
 state: AppState
@@ -223,50 +219,6 @@ wgpu_init :: proc() {
 
 		state.queue = wgpu.DeviceGetQueue(state.device)
 
-		shader_source :: `
-	@vertex
-	fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) vec4<f32> {
-		let x = f32(i32(in_vertex_index) - 1);
-		let y = f32(i32(in_vertex_index & 1u) * 2 - 1);
-		return vec4<f32>(x, y, 0.0, 1.0);
-	}
-
-	@fragment
-	fn fs_main() -> @location(0) vec4<f32> {
-		return vec4<f32>(0.4, 0.2, 0.4, 1.0);
-	}`
-
-
-		state.module = wgpu.DeviceCreateShaderModule(
-			state.device,
-			&{
-				nextInChain = &wgpu.ShaderSourceWGSL {
-					sType = .ShaderSourceWGSL,
-					code = shader_source,
-				},
-			},
-		)
-
-		state.pipeline_layout = wgpu.DeviceCreatePipelineLayout(state.device, &{})
-		state.pipeline = wgpu.DeviceCreateRenderPipeline(
-			state.device,
-			&{
-				layout = state.pipeline_layout,
-				vertex = {module = state.module, entryPoint = "vs_main"},
-				fragment = &{
-					module = state.module,
-					entryPoint = "fs_main",
-					targetCount = 1,
-					targets = &wgpu.ColorTargetState {
-						format = .BGRA8Unorm,
-						writeMask = wgpu.ColorWriteMaskFlags_All,
-					},
-				},
-				primitive = {topology = .TriangleList},
-				multisample = {count = 1, mask = 0xFFFFFFFF},
-			},
-		)
-
 		state.wgpu_is_ready = true
 	}
 }
@@ -275,9 +227,6 @@ wgpu_is_ready :: proc() -> bool {return state.wgpu_is_ready}
 
 wgpu_deinit :: proc() {
 	log.info("Deinitializing WebGPU...")
-	wgpu.RenderPipelineRelease(state.pipeline)
-	wgpu.PipelineLayoutRelease(state.pipeline_layout)
-	wgpu.ShaderModuleRelease(state.module)
 	wgpu.QueueRelease(state.queue)
 	wgpu.DeviceRelease(state.device)
 	wgpu.AdapterRelease(state.adapter)
@@ -288,7 +237,7 @@ wgpu_deinit :: proc() {
 wgpu_frame :: proc "c" () {
 	context = state.ctx
 
-	log.debug("Starting WGPU frame...")
+	// log.debug("Starting WGPU frame...")
 
 	surface_texture := wgpu.SurfaceGetCurrentTexture(state.surface)
 	switch surface_texture.status {
@@ -312,7 +261,7 @@ wgpu_frame :: proc "c" () {
 	command_encoder := wgpu.DeviceCreateCommandEncoder(state.device, nil)
 	defer wgpu.CommandEncoderRelease(command_encoder)
 
-	log.debug("Starting render pass...")
+	// log.debug("Starting render pass...")
 
 	render_pass := wgpu.CommandEncoderBeginRenderPass(
 		command_encoder,
@@ -328,29 +277,12 @@ wgpu_frame :: proc "c" () {
 		},
 	)
 
-	// wgpu.RenderPassEncoderSetPipeline(render_pass, state.pipeline)
-	// wgpu.RenderPassEncoderDraw(
-	// 	render_pass,
-	// 	vertexCount = 3,
-	// 	instanceCount = 1,
-	// 	firstVertex = 0,
-	// 	firstInstance = 0,
-	// )
-
 	identity_matrix := [16]f32{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}
-	viewport_x, viewport_y := sdl_get_framebuffer_size()
-	time: f32 = 0
-
-	sprite_batcher_frame(
-		render_pass,
-		identity_matrix,
-		{cast(f32)(viewport_x), cast(f32)(viewport_y)},
-		time,
-	)
+	sprite_batcher_frame(render_pass, identity_matrix)
 
 	wgpu.RenderPassEncoderEnd(render_pass)
 	wgpu.RenderPassEncoderRelease(render_pass)
-	log.debug("Ended render pass...")
+	// log.debug("Ended render pass...")
 
 	command_buffer := wgpu.CommandEncoderFinish(command_encoder, nil)
 	defer wgpu.CommandBufferRelease(command_buffer)
