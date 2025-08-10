@@ -99,6 +99,8 @@ wgpu_deinit :: proc() {
 	assert(app.wgpu.initialized)
 	defer app.wgpu.initialized = false
 
+	sprite_batcher_deinit()
+
 	wgpu.QueueRelease(app.wgpu.queue)
 	wgpu.DeviceRelease(app.wgpu.device)
 	wgpu.AdapterRelease(app.wgpu.adapter)

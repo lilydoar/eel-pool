@@ -27,16 +27,16 @@ main :: proc() {
 	}
 
 	should_loop := proc() -> bool {
-		if app.cli_options().frame != 0 {
-			game_frame := app.app.threads.game_data.clock.frame_count
-			frame_limit := cast(u64)(app.cli_options().frame)
-			return game_frame < frame_limit
-		}
+		// if app.cli_options().frame != 0 {
+		// 	game_frame := app.app.threads.game_data.clock.frame_count
+		// 	frame_limit := cast(u64)(app.cli_options().frame)
+		// 	return game_frame < frame_limit
+		// }
 		return true
 	}
 
 	for should_loop() {
-		app.thread_clock_frame_start(&app.app.threads.app_data.clock)
+		// app.thread_clock_frame_start(&app.app.threads.app_data.clock)
 
 		if quit := app.sdl_poll_events(); quit {break}
 
@@ -61,8 +61,8 @@ main :: proc() {
 		app.wgpu_frame()
 		app.sprite_batcher_clear()
 
-		app.thread_clock_frame_end(&app.app.threads.app_data.clock)
-		app.thread_clock_sleep(&app.app.threads.app_data.clock)
+		// app.thread_clock_frame_end(&app.app.threads.app_data.clock)
+		// app.thread_clock_sleep(&app.app.threads.app_data.clock)
 	}
 }
 

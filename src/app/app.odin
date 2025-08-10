@@ -18,19 +18,22 @@ log_opts: log.Options : {
 }
 
 App :: struct {
+	ctx:          runtime.Context,
 	sdl:          SDL,
 	wgpu:         WGPU,
-	// TODO: Init the threads
 	thread_job:   Thread,
 	thread_game:  Thread,
 	thread_sound: Thread,
 
 	// Application
-	ctx:          runtime.Context,
-	threads:      AppThreads,
+	// threads:           AppThreads,
 }
 
 app: App
+
+app_panic :: proc(ok: bool, msg: string = "") {
+	if !ok do log.panic("app panic: {}", msg)
+}
 
 app_init :: proc() {
 	cli_parse()
@@ -42,43 +45,39 @@ app_init :: proc() {
 	sdl_init()
 	wgpu_init()
 
-	threads_init()
-
-	app_threads_init()
-	app_threads_start()
-
-	app.threads.app_data.clock = thread_clock_init(APP_DESIRED_FRAME_TIME)
-
-	app_init_wait()
-}
-
-app_init_wait :: proc() {
-	// TODO: If a thread fails during it initialization it will return and never be initialized.
-	// It should also mark itself as failed so we can check for that within this loop.
-
-	initialization_wait: time.Stopwatch
-	time.stopwatch_start(&initialization_wait)
-	for !(cast(^GameThreadData)app.threads.threads[ThreadID.GAME].data).initialized ||
-	    !(cast(^GameThreadData)app.threads.threads[ThreadID.RENDER].data).initialized ||
-	    !(cast(^GameThreadData)app.threads.threads[ThreadID.AUDIO].data).initialized {
-		if (time.stopwatch_duration(initialization_wait) > time.Second * 5) {
-			log.warn("Timeout waiting for initialization.")
-			os.exit(1)
-		}
-		time.sleep(time.Millisecond * 10)
+	app.thread_job = thread_init(job_system_proc, nil, label = "Job System Thread")
+	when ODIN_DEBUG {
+		app.thread_game = thread_init(game_proc_develop, nil, label = "Game Thread <dev>")
+	} else {
+		app.thread_game = thread_init(game_proc_release, nil, label = "Game Thread <rel>")
 	}
-	time.stopwatch_stop(&initialization_wait)
+	app.thread_sound = thread_init(sound_system_proc, nil, label = "Sound System Thread")
 
-	wait_ms := cast(u64)(time.stopwatch_duration(initialization_wait) / time.Millisecond)
+	thread_init_wait: time.Stopwatch
+	time.stopwatch_start(&thread_init_wait)
+
+	app_panic(thread_start(&app.thread_job), "Failed to start job system thread.")
+	app_panic(thread_start(&app.thread_sound), "Failed to start sound system thread.")
+	app_panic(thread_start(&app.thread_game), "Failed to start game thread.")
+
+	time.stopwatch_stop(&thread_init_wait)
+
+	wait_ms := cast(u64)(time.stopwatch_duration(thread_init_wait) / time.Millisecond)
 	log.debugf("initialization wait time: {} ms", wait_ms)
-
-	app.threads.app_data.initialized = true
 }
 
 app_deinit :: proc() {
 	log.info("Deinitializing app...")
-	app_threads_stop()
-	sprite_batcher_deinit()
+
+	thread_stop(&app.thread_sound)
+	thread_deinit(&app.thread_sound)
+
+	thread_stop(&app.thread_game)
+	thread_deinit(&app.thread_game)
+
+	thread_stop(&app.thread_job)
+	thread_deinit(&app.thread_job)
+
 	wgpu_deinit()
 	sdl_deinit()
 }
