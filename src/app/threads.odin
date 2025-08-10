@@ -19,6 +19,18 @@ ThreadID :: enum {
 
 ChildThreadCount: int : 4
 
+Thread :: struct {
+	initialized:        bool,
+	shutdown_requested: bool,
+	shutdown_mutex:     sync.Mutex,
+	thread:             ^thread.Thread,
+	clock:              ThreadClock,
+}
+
+threads_init :: proc() {
+
+}
+
 AppThreads :: struct {
 	threads:            [ChildThreadCount]^thread.Thread,
 	shutdown_requested: bool,
@@ -35,7 +47,7 @@ AppThreadData :: struct {
 }
 
 app_initialized :: proc() -> bool {
-	return state.threads.app_data.initialized
+	return app.threads.app_data.initialized
 }
 
 GameThreadData :: struct {
@@ -55,7 +67,7 @@ AudioThreadData :: struct {
 }
 
 app_threads_init :: proc() -> bool {
-	state.threads.app_data.clock = thread_clock_init(APP_DESIRED_FRAME_TIME)
+	app.threads.app_data.clock = thread_clock_init(APP_DESIRED_FRAME_TIME)
 
 	game_thread_idx := cast(int)ThreadID.GAME
 	game_thread: ^thread.Thread
@@ -65,20 +77,20 @@ app_threads_init :: proc() -> bool {
 		game_thread = thread.create(game_entry_proc_release)
 	}
 	game_thread.user_index = game_thread_idx
-	game_thread.data = &state.threads.game_data
-	state.threads.threads[game_thread_idx] = game_thread
+	game_thread.data = &app.threads.game_data
+	app.threads.threads[game_thread_idx] = game_thread
 
 	render_thread_idx := cast(int)ThreadID.RENDER
 	render_thread := thread.create(render_thread_proc)
 	render_thread.user_index = render_thread_idx
-	render_thread.data = &state.threads.render_data
-	state.threads.threads[render_thread_idx] = render_thread
+	render_thread.data = &app.threads.render_data
+	app.threads.threads[render_thread_idx] = render_thread
 
 	audio_thread_idx := cast(int)ThreadID.AUDIO
 	audio_thread := thread.create(audio_thread_proc)
 	audio_thread.user_index = audio_thread_idx
-	audio_thread.data = &state.threads.audio_data
-	state.threads.threads[audio_thread_idx] = audio_thread
+	audio_thread.data = &app.threads.audio_data
+	app.threads.threads[audio_thread_idx] = audio_thread
 
 	return true
 }
@@ -87,32 +99,32 @@ app_threads_start :: proc() {
 	log.debug("Starting threads...")
 
 	for i in cast(int)ThreadID.GAME ..< ChildThreadCount {
-		assert(state.threads.threads[i] != nil, "Thread must be initialized before starting.")
-		thread.start(state.threads.threads[i])
+		assert(app.threads.threads[i] != nil, "Thread must be initialized before starting.")
+		thread.start(app.threads.threads[i])
 	}
 }
 
 app_threads_stop :: proc() -> bool {
 	log.debug("Stopping threads...")
 
-	sync.mutex_lock(&state.threads.shutdown_mutex)
-	state.threads.shutdown_requested = true
-	sync.mutex_unlock(&state.threads.shutdown_mutex)
+	sync.mutex_lock(&app.threads.shutdown_mutex)
+	app.threads.shutdown_requested = true
+	sync.mutex_unlock(&app.threads.shutdown_mutex)
 
 	for i in cast(int)ThreadID.GAME ..< ChildThreadCount {
-		if state.threads.threads[i] == nil {
+		if app.threads.threads[i] == nil {
 			log.debugf("Thread {} is nil, skipping shutdown.", ThreadID(i))
 			continue
 		}
 
 		log.debugf("Stopping thread {}...", ThreadID(i))
 
-		thread.join(state.threads.threads[i])
+		thread.join(app.threads.threads[i])
 	}
 
 	for i in cast(int)ThreadID.GAME ..< ChildThreadCount {
-		if state.threads.threads[i] == nil {continue}
-		thread.destroy(state.threads.threads[i])
+		if app.threads.threads[i] == nil {continue}
+		thread.destroy(app.threads.threads[i])
 	}
 
 	return true
@@ -131,9 +143,9 @@ render_thread_proc :: proc(t: ^thread.Thread) {
 	for {
 		thread_clock_frame_start(&thread_data.clock)
 
-		sync.mutex_lock(&state.threads.shutdown_mutex)
-		shutdown_requested := state.threads.shutdown_requested
-		sync.mutex_unlock(&state.threads.shutdown_mutex)
+		sync.mutex_lock(&app.threads.shutdown_mutex)
+		shutdown_requested := app.threads.shutdown_requested
+		sync.mutex_unlock(&app.threads.shutdown_mutex)
 
 		if shutdown_requested {break}
 
@@ -155,9 +167,9 @@ audio_thread_proc :: proc(t: ^thread.Thread) {
 	for {
 		thread_clock_frame_start(&thread_data.clock)
 
-		sync.mutex_lock(&state.threads.shutdown_mutex)
-		shutdown_requested := state.threads.shutdown_requested
-		sync.mutex_unlock(&state.threads.shutdown_mutex)
+		sync.mutex_lock(&app.threads.shutdown_mutex)
+		shutdown_requested := app.threads.shutdown_requested
+		sync.mutex_unlock(&app.threads.shutdown_mutex)
 
 		if shutdown_requested {break}
 

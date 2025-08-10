@@ -30,9 +30,9 @@ game_entry_proc_develop :: proc(t: ^thread.Thread) {
 	for {
 		thread_clock_frame_start(&thread_data.clock)
 
-		sync.mutex_lock(&state.threads.shutdown_mutex)
-		shutdown_requested := state.threads.shutdown_requested
-		sync.mutex_unlock(&state.threads.shutdown_mutex)
+		sync.mutex_lock(&app.threads.shutdown_mutex)
+		shutdown_requested := app.threads.shutdown_requested
+		sync.mutex_unlock(&app.threads.shutdown_mutex)
 		if shutdown_requested {break}
 
 		// If signal to reload game code

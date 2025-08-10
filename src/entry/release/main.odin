@@ -19,12 +19,12 @@ main :: proc() {
 	}
 
 	for {
-		app.thread_clock_frame_start(&app.state.threads.app_data.clock)
+		app.thread_clock_frame_start(&app.app.threads.app_data.clock)
 
 		if quit := app.sdl_poll_events(); quit {break}
 
-		app.thread_clock_frame_end(&app.state.threads.app_data.clock)
-		app.thread_clock_sleep(&app.state.threads.app_data.clock)
+		app.thread_clock_frame_end(&app.app.threads.app_data.clock)
+		app.thread_clock_sleep(&app.app.threads.app_data.clock)
 	}
 }
 

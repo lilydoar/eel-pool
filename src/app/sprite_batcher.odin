@@ -144,7 +144,7 @@ sprite_batcher_init :: proc() -> bool {
 			code = sprite_shader_source,
 		},
 	}
-	sprite_batcher.shader = wgpu.DeviceCreateShaderModule(state.device, &sprite_shader_desc)
+	sprite_batcher.shader = wgpu.DeviceCreateShaderModule(app.wgpu.device, &sprite_shader_desc)
 
 	// Create data buffers 
 	sprite_buf_desc: wgpu.BufferDescriptor = wgpu.BufferDescriptor {
@@ -152,14 +152,14 @@ sprite_batcher_init :: proc() -> bool {
 		usage = {.Storage, .CopyDst},
 		size  = cast(u64)(size_of(SpriteData) * MAX_SPRITES),
 	}
-	sprite_batcher.data_buf = wgpu.DeviceCreateBuffer(state.device, &sprite_buf_desc)
+	sprite_batcher.data_buf = wgpu.DeviceCreateBuffer(app.wgpu.device, &sprite_buf_desc)
 
 	uniform_buf_desc := wgpu.BufferDescriptor {
 		label = "Uniform Buffer",
 		usage = {.Uniform, .CopyDst},
 		size  = size_of(Uniforms),
 	}
-	sprite_batcher.uniform_buf = wgpu.DeviceCreateBuffer(state.device, &uniform_buf_desc)
+	sprite_batcher.uniform_buf = wgpu.DeviceCreateBuffer(app.wgpu.device, &uniform_buf_desc)
 
 	// Create atlas texture, view, and sampler
 	texture_desc := wgpu.TextureDescriptor {
@@ -171,7 +171,7 @@ sprite_batcher_init :: proc() -> bool {
 		mipLevelCount = 1,
 		sampleCount   = 1,
 	}
-	sprite_batcher.atlas_texture = wgpu.DeviceCreateTexture(state.device, &texture_desc)
+	sprite_batcher.atlas_texture = wgpu.DeviceCreateTexture(app.wgpu.device, &texture_desc)
 
 	texture_view_desc := wgpu.TextureViewDescriptor {
 		label           = "Sprite Atlas Texture View",
@@ -196,7 +196,7 @@ sprite_batcher_init :: proc() -> bool {
 		mipmapFilter  = .Nearest,
 		maxAnisotropy = 1,
 	}
-	sprite_batcher.atlas_sampler = wgpu.DeviceCreateSampler(state.device, &sampler_desc)
+	sprite_batcher.atlas_sampler = wgpu.DeviceCreateSampler(app.wgpu.device, &sampler_desc)
 
 	// Create bind group layouts
 	bgl_storage_buf := []wgpu.BindGroupLayoutEntry {
@@ -207,7 +207,7 @@ sprite_batcher_init :: proc() -> bool {
 		},
 	}
 	sprite_batcher.bind_group_layout_storage_buf = wgpu.DeviceCreateBindGroupLayout(
-		state.device,
+		app.wgpu.device,
 		&wgpu.BindGroupLayoutDescriptor {
 			label = "Sprite Data Bind Group Layout",
 			entryCount = 1,
@@ -223,7 +223,7 @@ sprite_batcher_init :: proc() -> bool {
 		},
 	}
 	sprite_batcher.bind_group_layout_uniform_buf = wgpu.DeviceCreateBindGroupLayout(
-		state.device,
+		app.wgpu.device,
 		&wgpu.BindGroupLayoutDescriptor {
 			label = "Uniforms Bind Group Layout",
 			entryCount = 1,
@@ -244,7 +244,7 @@ sprite_batcher_init :: proc() -> bool {
 		},
 	}
 	sprite_batcher.bind_group_layout_atlas_array = wgpu.DeviceCreateBindGroupLayout(
-		state.device,
+		app.wgpu.device,
 		&wgpu.BindGroupLayoutDescriptor {
 			label = "Atlas Bind Group Layout",
 			entryCount = 2,
@@ -257,7 +257,7 @@ sprite_batcher_init :: proc() -> bool {
 		{binding = 0, buffer = sprite_batcher.data_buf, offset = 0, size = wgpu.WHOLE_SIZE},
 	}
 	sprite_batcher.bind_group_storage_buf = wgpu.DeviceCreateBindGroup(
-		state.device,
+		app.wgpu.device,
 		&wgpu.BindGroupDescriptor {
 			label = "Sprite Data Bind Group",
 			layout = sprite_batcher.bind_group_layout_storage_buf,
@@ -270,7 +270,7 @@ sprite_batcher_init :: proc() -> bool {
 		{binding = 0, buffer = sprite_batcher.uniform_buf, offset = 0, size = wgpu.WHOLE_SIZE},
 	}
 	sprite_batcher.bind_group_uniform_buf = wgpu.DeviceCreateBindGroup(
-		state.device,
+		app.wgpu.device,
 		&wgpu.BindGroupDescriptor {
 			label = "Uniforms Bind Group",
 			layout = sprite_batcher.bind_group_layout_uniform_buf,
@@ -284,7 +284,7 @@ sprite_batcher_init :: proc() -> bool {
 		{binding = 1, sampler = sprite_batcher.atlas_sampler},
 	}
 	sprite_batcher.bind_group_atlas_array = wgpu.DeviceCreateBindGroup(
-		state.device,
+		app.wgpu.device,
 		&wgpu.BindGroupDescriptor {
 			label = "Atlas Bind Group",
 			layout = sprite_batcher.bind_group_layout_atlas_array,
@@ -306,7 +306,7 @@ sprite_batcher_init :: proc() -> bool {
 		),
 	}
 	sprite_batcher.pipeline_layout = wgpu.DeviceCreatePipelineLayout(
-		state.device,
+		app.wgpu.device,
 		&pipeline_layout_desc,
 	)
 
@@ -336,7 +336,7 @@ sprite_batcher_init :: proc() -> bool {
 		},
 		multisample = {count = 1, mask = 0xFFFFFFFF},
 	}
-	sprite_batcher.pipeline = wgpu.DeviceCreateRenderPipeline(state.device, &pipeline_desc)
+	sprite_batcher.pipeline = wgpu.DeviceCreateRenderPipeline(app.wgpu.device, &pipeline_desc)
 
 	// Upload the default white texture to the first atlas slot
 	sprite_batcher_upload_atlas({255, 255, 255, 255}, 0)
@@ -367,7 +367,7 @@ sprite_batcher_upload_atlas :: proc(data: []u8, idx: u32) {
 	log.debugf("SpriteBatcher: Uploading atlas texture data to slot {}...", idx)
 
 	wgpu.QueueWriteTexture(
-		state.queue,
+		app.wgpu.queue,
 		&wgpu.TexelCopyTextureInfo {
 			texture = sprite_batcher.atlas_texture,
 			aspect = .All,
@@ -412,7 +412,7 @@ sprite_batcher_frame :: proc(render_pass: wgpu.RenderPassEncoder, view_proj_matr
 	if sprite_count == 0 {return}
 
 	wgpu.QueueWriteBuffer(
-		state.queue,
+		app.wgpu.queue,
 		sprite_batcher.data_buf,
 		0,
 		&sprite_batcher.sprites[0],
@@ -422,7 +422,13 @@ sprite_batcher_frame :: proc(render_pass: wgpu.RenderPassEncoder, view_proj_matr
 	uniforms := Uniforms {
 		view_proj = view_proj_matrix,
 	}
-	wgpu.QueueWriteBuffer(state.queue, sprite_batcher.uniform_buf, 0, &uniforms, size_of(Uniforms))
+	wgpu.QueueWriteBuffer(
+		app.wgpu.queue,
+		sprite_batcher.uniform_buf,
+		0,
+		&uniforms,
+		size_of(Uniforms),
+	)
 
 	// Draw all sprites
 	wgpu.RenderPassEncoderSetPipeline(render_pass, sprite_batcher.pipeline)

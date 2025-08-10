@@ -24,9 +24,9 @@ game_entry_proc_release :: proc(t: ^thread.Thread) {
 	// Don't want to load in a scene/interact with the game before render thread finishes (I think? headless?)
 
 	for {
-		sync.mutex_lock(&state.threads.shutdown_mutex)
-		shutdown_requested := state.threads.shutdown_requested
-		sync.mutex_unlock(&state.threads.shutdown_mutex)
+		sync.mutex_lock(&app.threads.shutdown_mutex)
+		shutdown_requested := app.threads.shutdown_requested
+		sync.mutex_unlock(&app.threads.shutdown_mutex)
 
 		if shutdown_requested {break}
 
