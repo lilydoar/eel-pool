@@ -35,16 +35,6 @@ import "core:strings"
 //   "exe_name": "game"
 // }
 
-// TODO: Pass arbitrary commands to the application CLI when it is run through the build script
-//
-// ./build -develop -gamelib -check -- -check
-//
-// In this example, the first check goes to the build script. Checks compilation, building processes, etc.
-// The second -check is passed through to the application CLI.
-// In this example it would check the game module loads, game init passes, etc.
-// Reports on any errors related to assets, loaded data files, etc.
-// Basically a `health` command for the game application
-
 BUILD_DIR: string : "bin/"
 EXE: string : "game"
 
@@ -74,6 +64,7 @@ Options :: struct {
 	test:     bool `usage:"Build and run all test functions"`,
 	check:    bool `usage:"Check for compilation errors and successful initialization"`,
 	run:      bool `usage:"Run the targets after building"`,
+	run_arg:  [dynamic]string `usage:"Arguments to pass to the application when running"`,
 	verbose:  bool `usage:"Enable verbose output"`,
 	clean:    bool `usage:"Clean the build directory before building"`,
 	no_tests: bool `usage:"Do not run tests (release builds default to running tests)"`,
@@ -170,7 +161,11 @@ main :: proc() {
 
 		if opt.run {
 			log.info("Running development build")
-			must_run([]string{DEVELOP_DIR + EXE})
+
+			cmd := [dynamic]string{}
+			append(&cmd, DEVELOP_DIR + EXE)
+			append(&cmd, ..opt.run_arg[:])
+			must_run(cmd[:])
 		}
 	}
 
