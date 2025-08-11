@@ -5,12 +5,9 @@ import "core:sync"
 import "core:thread"
 import "core:time"
 
-APP_DESIRED_FRAME_TIME := time.Millisecond * 16
-GAME_DESIRED_FRAME_TIME := time.Millisecond * 16
-RENDER_DESIRED_FRAME_TIME := time.Millisecond * 16
-AUDIO_DESIRED_FRAME_TIME := time.Millisecond * 16
+MAIN_DESIRED_FRAME_TIME := time.Millisecond * 16
 
-// TODO: Rename Thread to System. Capturing lifecycle of separate app systems
+// TODO: Rename Thread to System. Or build a System specific construct. Start to capture lifecycle of separate app systems. 
 
 Thread :: struct {
 	initialized:        bool,
@@ -29,6 +26,19 @@ ThreadData :: struct {
 	update: proc(),
 }
 
+// The lifetime of the worker threads is managed by the Thread type.
+// But, the main thread is managed by the OS and runtime.
+// This means the fields: thread and data procs, are null on the main thread.
+thread_init_main :: proc() -> Thread {
+	t: Thread
+	t.clock = thread_clock_init(MAIN_DESIRED_FRAME_TIME)
+	t.label = "Main Thread"
+	return t
+}
+
+// thread_init creates a new thread system resource.
+// Initializes a clock for the thread to update the thread inner loop at a "uniform" rate.
+// Sets up the proc ptrs that tell the thread how to do init, deinit, and inner loop update
 thread_init :: proc(
 	proc_init: proc(),
 	proc_deinit: proc(),
@@ -37,11 +47,7 @@ thread_init :: proc(
 	label: string = "",
 ) -> Thread {
 	t: Thread
-
-	thread_ptr := thread.create(thread_proc)
-	thread_ptr.data = &t.data
-
-	t.thread = thread_ptr
+	t.thread = thread.create(thread_proc)
 	t.clock = thread_clock_init(want_frame_time)
 	t.data = ThreadData {
 		init   = proc_init,
@@ -60,6 +66,10 @@ thread_deinit :: proc(t: ^Thread) {
 	t^ = Thread{}
 }
 
+// thread_start starts the thread and waits for it to initialize.
+// If the thread does not initialize within the timeout duration, it is terminated and false is returned.
+// 
+// WARN: The thread pointer must be constant between the thread's corresponding calls of thread start/stop.
 thread_start :: proc(t: ^Thread, timeout: time.Duration = time.Second * 5) -> bool {
 	assert(t != nil)
 	assert(t.thread != nil)
@@ -95,6 +105,8 @@ thread_start :: proc(t: ^Thread, timeout: time.Duration = time.Second * 5) -> bo
 	return false
 }
 
+// thread_stop requests the thread to shutdown and waits for it to finish.
+// If the thread does not shutdown within the timeout duration, it is forcibly terminated.
 thread_stop :: proc(t: ^Thread, timeout: time.Duration = time.Second * 5, exit_code: int = 0) {
 	assert(t != nil)
 	assert(t.thread != nil)
@@ -128,8 +140,13 @@ thread_stop :: proc(t: ^Thread, timeout: time.Duration = time.Second * 5, exit_c
 	thread.terminate(t.thread, 1)
 }
 
+// thread_proc is the entry point for the worker threads.
+// This orchestrates worker initialization, the thread loop, 
+// and deinitialization.
 thread_proc :: proc(t: ^thread.Thread) {
 	assert(t != nil)
+
+	context.logger = log.create_console_logger()
 
 	data := cast(^ThreadData)t.data
 	parent := data.parent
@@ -143,7 +160,7 @@ thread_proc :: proc(t: ^thread.Thread) {
 
 	parent.initialized = true
 
-	log.infof("Thread {} running...", label)
+	log.infof("Thread {} starting loop...", label)
 	for {
 		if thread_shutdown_requested_get(parent) {break}
 		defer thread_clock_sleep(&parent.clock)
@@ -314,14 +331,14 @@ thread_shutdown_requested_set :: proc(t: ^Thread, val: bool) {
 // }
 
 ThreadClock :: struct {
-	timing_mutex:          sync.Mutex,
+	clock_mutex:           sync.Mutex,
 	frame_duration_target: time.Duration,
 	frame_count:           u64,
-	curr_frame:            FrameTimeData,
-	prev_frame:            FrameTimeData,
+	curr_frame:            TimeSpan,
+	prev_frame:            TimeSpan,
 }
 
-FrameTimeData :: struct {
+TimeSpan :: struct {
 	start: time.Time,
 	end:   time.Time,
 }
@@ -337,30 +354,31 @@ thread_clock_init :: proc(target_frame_duration: time.Duration) -> ThreadClock {
 }
 
 thread_clock_frame_start :: proc(clock: ^ThreadClock) {
-	sync.mutex_lock(&clock.timing_mutex)
+	sync.mutex_lock(&clock.clock_mutex)
+	clock.frame_count += 1
 	clock.prev_frame.start = clock.curr_frame.start
 	clock.prev_frame.end = clock.curr_frame.end
 	clock.curr_frame.start = time.now()
-	sync.mutex_unlock(&clock.timing_mutex)
+	sync.mutex_unlock(&clock.clock_mutex)
 }
 
 thread_clock_frame_end :: proc(clock: ^ThreadClock) {
-	sync.mutex_lock(&clock.timing_mutex)
+	sync.mutex_lock(&clock.clock_mutex)
 	clock.curr_frame.end = time.now()
-	sync.mutex_unlock(&clock.timing_mutex)
+	sync.mutex_unlock(&clock.clock_mutex)
 }
 
 thread_clock_frame_curr_dur :: proc(clock: ^ThreadClock) -> time.Duration {
-	sync.mutex_lock(&clock.timing_mutex)
+	sync.mutex_lock(&clock.clock_mutex)
 	dur := time.diff(clock.curr_frame.start, clock.curr_frame.end)
-	sync.mutex_unlock(&clock.timing_mutex)
+	sync.mutex_unlock(&clock.clock_mutex)
 	return dur
 }
 
 thread_clock_frame_prev_dur :: proc(clock: ^ThreadClock) -> time.Duration {
-	sync.mutex_lock(&clock.timing_mutex)
+	sync.mutex_lock(&clock.clock_mutex)
 	dur := time.diff(clock.prev_frame.start, clock.prev_frame.end)
-	sync.mutex_unlock(&clock.timing_mutex)
+	sync.mutex_unlock(&clock.clock_mutex)
 	return dur
 }
 

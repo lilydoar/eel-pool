@@ -6,20 +6,21 @@ import "core:thread"
 import "core:time"
 
 game_init :: proc() {
-	assert(!app.thread_game.initialized, "Game thread already initialized.")
-	defer app.thread_game.initialized = true
+	assert(!app.thread_game.initialized, "Game system already initialized.")
 
 	log.info("Game system initializing...")
 	// game.game_init()
 }
 
 game_deinit :: proc() {
+	assert(app.thread_game.initialized, "Game system not initialized.")
+
 	log.info("Game system deinitializing...")
 	// game.game_deinit()
 }
 
-game_dev_update :: proc() {
-	log.debug("Game dev update...")
+game_update_dev :: proc() {
+	// log.debug("Game dev update...")
 
 	// game.game_update()
 
@@ -46,7 +47,7 @@ game_dev_update :: proc() {
 	// ...
 }
 
-game_rel_update :: proc() {
+game_update_rel :: proc() {
 	// game_api.game_update()
 }
 

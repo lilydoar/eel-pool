@@ -4,8 +4,8 @@ import "core:flags"
 import os "core:os/os2"
 
 Options :: struct {
-	check: bool `usage:"Run app initialization then exit"`,
-	frame: u32 `usage:"Run a finite number of game updates then exit"`,
+	check:      bool `usage:"Run app initialization then exit"`,
+	game_frame: u32 `usage:"Run a finite number of game frames then exit"`,
 }
 
 opt: Options

@@ -1,15 +1,9 @@
 package main
 
 import "../../app"
-import "base:runtime"
-import "core:dynlib"
-import "core:encoding/uuid"
-import "core:fmt"
 import "core:log"
-import "core:os"
-import "core:strconv"
-import "core:strings"
-import "core:time"
+
+should_loop: proc() -> bool = proc() -> bool {return true}
 
 main :: proc() {
 	context.logger = log.create_console_logger(opt = app.log_opts)
@@ -22,21 +16,23 @@ main :: proc() {
 		return
 	}
 
-	if app.cli_options().frame != 0 {
-		log.infof("Running for %d frames then exiting.", app.cli_options().frame)
+	if app.cli_options().game_frame != 0 {
+		log.infof("Running for %d frames then exiting.", app.cli_options().game_frame)
+		should_loop = proc() -> bool {
+			game_frame := app.app.thread_game.clock.frame_count
+			frame_limit := cast(u64)(app.cli_options().game_frame)
+			// log.debugf("Game frame: {}, limit: {}", game_frame, frame_limit)
+			return game_frame < frame_limit
+		}
 	}
 
-	should_loop := proc() -> bool {
-		// if app.cli_options().frame != 0 {
-		// 	game_frame := app.app.threads.game_data.clock.frame_count
-		// 	frame_limit := cast(u64)(app.cli_options().frame)
-		// 	return game_frame < frame_limit
-		// }
-		return true
-	}
+	clock := app.app.thread_main.clock
 
 	for should_loop() {
-		// app.thread_clock_frame_start(&app.app.threads.app_data.clock)
+		defer app.thread_clock_sleep(&clock)
+
+		app.thread_clock_frame_start(&clock)
+		defer app.thread_clock_frame_end(&clock)
 
 		if quit := app.sdl_poll_events(); quit {break}
 
@@ -60,9 +56,6 @@ main :: proc() {
 		)
 		app.wgpu_frame()
 		app.sprite_batcher_clear()
-
-		// app.thread_clock_frame_end(&app.app.threads.app_data.clock)
-		// app.thread_clock_sleep(&app.app.threads.app_data.clock)
 	}
 }
 
