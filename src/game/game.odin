@@ -72,6 +72,47 @@ game_update :: proc() {
 	// gol_board_print(&state.gol_board, viewport_min, viewport_max)
 
 	// TODO: Packet the board data and send it to the render thread
+
+	// Input and Events
+	//
+	// 1. Collect Input - Poll keyboard, mouse, gamepad, and system events
+	// 2. Process Input Events - Convert raw input into game commands and actions
+	//
+	// Pre-Update Preparation
+	//
+	// 3. Update Timers and Clocks - Advance frame time, game time, and timer systems
+	// 4. Activate Delayed Triggers - Process triggers queued from previous frames
+	// 5. Process Scheduled Events - Handle time-based or frame-delayed events
+	//
+	// World State Updates
+	//
+	// 6. Update Game Logic - Process game rules, state machines, and gameplay systems
+	// 7. Update AI and Behaviors - Run AI decision making and behavior trees
+	// 8. Apply Movement Intentions - Convert input and AI decisions into movement requests
+	//
+	// Physics and Collision
+	//
+	// 9. Resolve Physics - Apply forces, gravity, and physics simulation
+	// 10. Detect Collisions - Check for collisions between all relevant entities
+	// 11. Resolve Collisions - Handle collision responses and position corrections
+	//
+	// World Events and Reactions
+	//
+	// 12. Check World Events - Evaluate conditions for spawning, despawning, state changes
+	// 13. Update Animations - Advance animation states and keyframes
+	// 14. Update Particle Systems - Simulate particles, effects, and dynamic visuals
+	//
+	// Audio and Effects
+	//
+	// 15. Process Audio Events - Trigger sounds based on collisions, actions, and events
+	// 16. Update Spatial Audio - Adjust audio based on listener and source positions
+	//
+	// Late Updates and Cleanup
+	//
+	// 17. Queue Triggers for Next Frame - Schedule events that need frame delay
+	// 18. Update Cameras - Adjust camera position, following, and effects
+	// 19. Prepare Render Data - Sort draw calls, update transform matrices, cull objects
+
 }
 
 viewport_min: shared.Vec2i = shared.Vec2i{0, 0}
