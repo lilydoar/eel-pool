@@ -1,20 +1,51 @@
 package game
 
 import shared "../."
+import "core:fmt"
 import "core:log"
+import "core:strings"
 
-GameState :: struct {
+// game state fingerprint.
+// 
+// The fingerprint is a string that uniquely identifies
+// the current generation of the game state.
+// This is used for reloading the game data in dev mode.
+//
+// fingerprint format example: 0.1.0-123456
+// version_major :: 0
+// version_minor :: 1
+// version_patch :: 0
+// game state struct size in bytes :: 123456
+fingerprint_format :: "{0}.{0}.{0}-{1})"
+
+State :: struct {
 	gol_board: GOLBoard,
 }
 
-state: GameState
+state: State
 
 @(export)
 game_state :: proc() -> rawptr {return &state}
 
 @(export)
+game_state_size :: proc() -> u64 {
+	return u64(size_of(State))
+}
+
+@(export)
 game_state_fingerprint :: proc() -> string {
-	return "0.1.0"
+	b: strings.Builder
+	strings.builder_init(&b)
+	fmt.sbprintf(
+		&b,
+		fingerprint_format,
+		version_major,
+		version_minor,
+		version_patch,
+		size_of(State),
+	)
+	result := strings.to_string(b)
+	return result
 }
 
 @(export)
