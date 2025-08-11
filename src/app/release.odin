@@ -7,9 +7,6 @@ import "core:time"
 
 import "../game"
 
-game_proc_release :: proc(t: ^thread.Thread) {
-}
-
 // game_entry_proc_release :: proc(t: ^thread.Thread) {
 // 	context.logger = log.create_console_logger(opt = log_opts)
 //

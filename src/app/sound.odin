@@ -3,10 +3,14 @@ package app
 import "core:log"
 import "core:thread"
 
-sound_system_proc :: proc(t: ^thread.Thread) {
-	log.debug("Sound system thread starting...")
-	defer log.debug("Sound system thread exiting...")
+sound_init :: proc() {
+	log.info("Sound system initializing...")
+}
 
-	thread_data := cast(^Thread)t.data
+sound_deinit :: proc() {
+	log.info("Sound system deinitializing...")
+}
+
+sound_update :: proc() {
 }
 

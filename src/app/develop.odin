@@ -5,9 +5,6 @@ import "core:sync"
 import "core:thread"
 import "core:time"
 
-game_proc_develop :: proc(t: ^thread.Thread) {
-}
-
 // game_entry_proc_develop :: proc(t: ^thread.Thread) {
 // 	context.logger = log.create_console_logger(opt = log_opts)
 //

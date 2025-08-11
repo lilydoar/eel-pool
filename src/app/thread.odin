@@ -10,43 +10,74 @@ GAME_DESIRED_FRAME_TIME := time.Millisecond * 16
 RENDER_DESIRED_FRAME_TIME := time.Millisecond * 16
 AUDIO_DESIRED_FRAME_TIME := time.Millisecond * 16
 
+// TODO: Rename Thread to System. Capturing lifecycle of separate app systems
+
 Thread :: struct {
 	initialized:        bool,
 	shutdown_requested: bool,
 	shutdown_mtx:       sync.Mutex,
 	thread:             ^thread.Thread,
 	clock:              ThreadClock,
+	data:               ThreadData,
 	label:              string,
 }
 
+ThreadData :: struct {
+	parent: ^Thread,
+	init:   proc(),
+	deinit: proc(),
+	update: proc(),
+}
+
 thread_init :: proc(
-	p: proc(t: ^thread.Thread),
-	data: rawptr,
+	proc_init: proc(),
+	proc_deinit: proc(),
+	proc_update: proc(),
 	want_frame_time: time.Duration = time.Millisecond * 16,
 	label: string = "",
 ) -> Thread {
-	clock := thread_clock_init(want_frame_time)
-	thread_ptr := thread.create(p)
-
 	t: Thread
-	defer t.initialized = true
-	t.clock = clock
+
+	thread_ptr := thread.create(thread_proc)
+	thread_ptr.data = &t.data
+
 	t.thread = thread_ptr
+	t.clock = thread_clock_init(want_frame_time)
+	t.data = ThreadData {
+		init   = proc_init,
+		deinit = proc_deinit,
+		update = proc_update,
+	}
 	t.label = label
 
 	return t
 }
 
+thread_deinit :: proc(t: ^Thread) {
+	assert(t != nil)
+	assert(t.thread != nil)
+	thread.destroy(t.thread)
+	t^ = Thread{}
+}
+
 thread_start :: proc(t: ^Thread, timeout: time.Duration = time.Second * 5) -> bool {
 	assert(t != nil)
 	assert(t.thread != nil)
+	assert(!t.initialized)
 
 	label := t.label
 	if label == "" {label = "<unnamed>"}
 
+	// We must set the thread local data here because we do not know
+	// the thread's address in the thread_init function since t gets 
+	// passed out by value
+	t.thread.data = &t.data
+	t.data.parent = t
+
 	log.infof("Starting thread {}...", label)
 	thread.start(t.thread)
 
+	log.debugf("Waiting for thread {} to initialize...", label)
 	wait_start := time.now()
 
 	for {
@@ -71,16 +102,18 @@ thread_stop :: proc(t: ^Thread, timeout: time.Duration = time.Second * 5, exit_c
 	label := t.label
 	if label == "" {label = "<unnamed>"}
 
-	sync.mutex_lock(&t.shutdown_mtx)
-	t.shutdown_requested = true
-	sync.mutex_unlock(&t.shutdown_mtx)
+	if !t.initialized {
+		log.warnf("Thread {} is not initialized, terminating", label)
+		thread.terminate(t.thread, 1)
+		return
+	}
+
+	thread_shutdown_requested_set(t, true)
 
 	wait_start := time.now()
 
 	for {
 		if thread.is_done(t.thread) {return}
-
-		if !t.initialized {break}
 
 		wait_dur := time.diff(wait_start, time.now())
 		if wait_dur >= timeout {
@@ -95,11 +128,46 @@ thread_stop :: proc(t: ^Thread, timeout: time.Duration = time.Second * 5, exit_c
 	thread.terminate(t.thread, 1)
 }
 
-thread_deinit :: proc(t: ^Thread) {
+thread_proc :: proc(t: ^thread.Thread) {
 	assert(t != nil)
-	assert(t.thread != nil)
-	thread.destroy(t.thread)
-	t^ = Thread{}
+
+	data := cast(^ThreadData)t.data
+	parent := data.parent
+	label := parent.label
+	if label == "" {label = "<unnamed>"}
+
+	log.infof("Thread {} initializing...", label)
+
+	data.init()
+	defer data.deinit()
+
+	parent.initialized = true
+
+	log.infof("Thread {} running...", label)
+	for {
+		if thread_shutdown_requested_get(parent) {break}
+		defer thread_clock_sleep(&parent.clock)
+
+		thread_clock_frame_start(&parent.clock)
+		defer thread_clock_frame_end(&parent.clock)
+
+		data.update()
+	}
+}
+
+thread_shutdown_requested_get :: proc(t: ^Thread) -> bool {
+	assert(t != nil)
+	sync.mutex_lock(&t.shutdown_mtx)
+	req := t.shutdown_requested
+	sync.mutex_unlock(&t.shutdown_mtx)
+	return req
+}
+
+thread_shutdown_requested_set :: proc(t: ^Thread, val: bool) {
+	assert(t != nil)
+	sync.mutex_lock(&t.shutdown_mtx)
+	t.shutdown_requested = val
+	sync.mutex_unlock(&t.shutdown_mtx)
 }
 
 // AppThreads :: struct {
