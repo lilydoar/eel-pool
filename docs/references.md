@@ -8,6 +8,8 @@ https://github.com/karl-zylinski/odin-sokol-hot-reload-template
 
 https://github.com/OneLoneCoder/olcPixelGameEngine
 
+https://github.com/emilk/egui - UI API inspiration
+
 ## Lists
 
 https://github.com/jakubtomsu/awesome-odin

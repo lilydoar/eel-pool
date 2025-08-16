@@ -538,3 +538,473 @@ The unordered set demonstrates several important computer science principles:
 - **Generic programming**: One implementation works for many data types
 
 This simple yet powerful abstraction transforms problems from "check everything" to "check only what matters" - a fundamental optimization strategy in computer science.
+
+# Fri Aug 15 2025
+
+## Job System Design Notes
+
+### Core API Components
+
+**Job Definition:**
+```odin
+Job :: struct {
+    func: proc(data: rawptr),
+    data: rawptr,
+    priority: Job_Priority,
+}
+
+Job_Priority :: enum {
+    LOW, NORMAL, HIGH, CRITICAL
+}
+```
+
+**Job Submission:**
+```odin
+submit_job :: proc(job: Job) -> Job_Handle
+submit_jobs :: proc(jobs: []Job) -> []Job_Handle
+submit_job_with_dependency :: proc(job: Job, dependency: Job_Handle) -> Job_Handle
+```
+
+**Job Control:**
+```odin
+Job_Handle :: distinct u64
+
+wait_for_job :: proc(handle: Job_Handle)
+wait_for_jobs :: proc(handles: []Job_Handle)
+is_job_complete :: proc(handle: Job_Handle) -> bool
+cancel_job :: proc(handle: Job_Handle) -> bool
+```
+
+**Worker Management:**
+```odin
+Job_System_Config :: struct {
+    worker_count: int,
+    queue_size: int,
+    enable_work_stealing: bool,
+}
+
+init_job_system :: proc(config: Job_System_Config)
+shutdown_job_system :: proc()
+get_worker_count :: proc() -> int
+```
+
+**Advanced Features:**
+```odin
+// Job groups for batch operations
+Job_Group :: distinct u64
+create_job_group :: proc() -> Job_Group
+submit_job_to_group :: proc(job: Job, group: Job_Group) -> Job_Handle
+wait_for_group :: proc(group: Job_Group)
+
+// Fiber/coroutine support for job yielding
+yield_job :: proc() // Allow other jobs to run
+resume_job :: proc(handle: Job_Handle)
+```
+
+### Odin Thread Pool Integration
+
+**Core Types:**
+```odin
+Pool :: struct { ... }
+Task :: struct { ... }
+Task_Proc :: proc(task: Task)
+```
+
+**Pool Management:**
+```odin
+pool_init :: proc(pool: ^Pool, allocator: Allocator, thread_count: int)
+pool_start :: proc(pool: ^Pool)
+pool_join :: proc(pool: ^Pool)
+pool_shutdown :: proc(pool: ^Pool)
+pool_destroy :: proc(pool: ^Pool)
+```
+
+**Task Operations:**
+```odin
+pool_add_task :: proc(pool: ^Pool, allocator: Allocator, procedure: Task_Proc, data: rawptr)
+pool_num_waiting :: proc(pool: ^Pool) -> int
+pool_num_in_processing :: proc(pool: ^Pool) -> int
+pool_stop_task :: proc(pool: ^Pool, task: ^Task)
+```
+
+**Usage Pattern:**
+```odin
+pool: thread.Pool
+thread.pool_init(&pool, context.allocator, 4)
+thread.pool_start(&pool)
+
+// Add work
+thread.pool_add_task(&pool, context.allocator, my_task_proc, &my_data)
+
+// Wait for completion
+thread.pool_join(&pool)
+thread.pool_destroy(&pool)
+```
+
+### Game Job System Wrapper
+
+**Job System Structure:**
+```odin
+Job_System :: struct {
+    pool: thread.Pool,
+    allocator: mem.Allocator,
+    job_counter: atomic.U64,
+    completed_jobs: map[Job_Handle]bool,
+    mutex: sync.Mutex,
+}
+
+Job_Handle :: distinct u64
+Job_Proc :: proc(data: rawptr)
+
+Job_Priority :: enum {
+    LOW, NORMAL, HIGH, CRITICAL
+}
+```
+
+**Core API:**
+```odin
+// System lifecycle
+job_system_init :: proc(js: ^Job_System, allocator: mem.Allocator, thread_count := 0)
+job_system_start :: proc(js: ^Job_System)
+job_system_shutdown :: proc(js: ^Job_System)
+job_system_destroy :: proc(js: ^Job_System)
+
+// Job submission
+submit_job :: proc(js: ^Job_System, procedure: Job_Proc, data: rawptr, priority := Job_Priority.NORMAL) -> Job_Handle
+submit_jobs :: proc(js: ^Job_System, jobs: []Job_Data) -> []Job_Handle
+
+Job_Data :: struct {
+    procedure: Job_Proc,
+    data: rawptr,
+    priority: Job_Priority,
+}
+```
+
+**Synchronization:**
+```odin
+wait_for_job :: proc(js: ^Job_System, handle: Job_Handle)
+wait_for_jobs :: proc(js: ^Job_System, handles: []Job_Handle)
+is_job_complete :: proc(js: ^Job_System, handle: Job_Handle) -> bool
+```
+
+**Status Queries:**
+```odin
+get_pending_job_count :: proc(js: ^Job_System) -> int
+get_active_job_count :: proc(js: ^Job_System) -> int
+get_worker_count :: proc(js: ^Job_System) -> int
+```
+
+**Game-Specific Extensions:**
+```odin
+// Frame-based processing
+Job_Group :: distinct u64
+
+create_job_group :: proc(js: ^Job_System) -> Job_Group
+submit_job_to_group :: proc(js: ^Job_System, group: Job_Group, procedure: Job_Proc, data: rawptr) -> Job_Handle
+wait_for_group :: proc(js: ^Job_System, group: Job_Group)
+
+// Common game patterns
+submit_parallel_for :: proc(js: ^Job_System, start, end: int, procedure: proc(index: int, data: rawptr), data: rawptr) -> Job_Group
+```
+
+### Implementation Details
+
+**System Lifecycle:**
+```odin
+job_system_init :: proc(js: ^Job_System, allocator: mem.Allocator, thread_count := 0) {
+    // Determine optimal thread count
+    actual_thread_count := thread_count
+    if actual_thread_count <= 0 {
+        actual_thread_count = max(1, runtime.processor_core_count() - 1) // Leave one core for main thread
+    }
+    
+    // Initialize the job system
+    js.allocator = allocator
+    js.job_counter = 0
+    js.completed_jobs = make(map[Job_Handle]bool, allocator)
+    sync.mutex_init(&js.mutex)
+    
+    // Initialize the underlying thread pool
+    thread.pool_init(&js.pool, allocator, actual_thread_count)
+}
+
+job_system_start :: proc(js: ^Job_System) {
+    // Start the thread pool workers
+    thread.pool_start(&js.pool)
+}
+
+job_system_shutdown :: proc(js: ^Job_System) {
+    // Wait for all current jobs to complete
+    thread.pool_join(&js.pool)
+    
+    // Stop all worker threads
+    thread.pool_shutdown(&js.pool)
+    
+    // Clear completed jobs tracking
+    sync.mutex_lock(&js.mutex)
+    clear(&js.completed_jobs)
+    sync.mutex_unlock(&js.mutex)
+}
+
+job_system_destroy :: proc(js: ^Job_System) {
+    // Ensure system is shut down first
+    job_system_shutdown(js)
+    
+    // Destroy the thread pool
+    thread.pool_destroy(&js.pool)
+    
+    // Clean up resources
+    delete(js.completed_jobs)
+    sync.mutex_destroy(&js.mutex)
+    
+    // Zero out the struct
+    js^ = {}
+}
+```
+
+**Synchronization Procedures:**
+```odin
+wait_for_job :: proc(js: ^Job_System, handle: Job_Handle) {
+    // Busy wait with yield for job completion
+    for !is_job_complete(js, handle) {
+        runtime.yield()  // Yield to other threads
+    }
+}
+
+wait_for_jobs :: proc(js: ^Job_System, handles: []Job_Handle) {
+    // Wait for all jobs to complete
+    for handle in handles {
+        wait_for_job(js, handle)
+    }
+    
+    // Alternative optimized approach:
+    // for {
+    //     all_complete := true
+    //     for handle in handles {
+    //         if !is_job_complete(js, handle) {
+    //             all_complete = false
+    //             break
+    //         }
+    //     }
+    //     if all_complete do break
+    //     runtime.yield()
+    // }
+}
+
+is_job_complete :: proc(js: ^Job_System, handle: Job_Handle) -> bool {
+    sync.mutex_lock(&js.mutex)
+    defer sync.mutex_unlock(&js.mutex)
+    
+    completed, exists := js.completed_jobs[handle]
+    return exists && completed
+}
+```
+
+**Status Query Procedures:**
+```odin
+get_pending_job_count :: proc(js: ^Job_System) -> int {
+    return thread.pool_num_waiting(&js.pool)
+}
+
+get_active_job_count :: proc(js: ^Job_System) -> int {
+    return thread.pool_num_in_processing(&js.pool)
+}
+
+get_worker_count :: proc(js: ^Job_System) -> int {
+    // Access pool's internal thread count
+    // Note: May need to store this in Job_System if pool doesn't expose it
+    return js.pool.thread_count  // Assuming this field exists
+}
+```
+
+**Job Completion Tracking:**
+```odin
+_internal_task_wrapper :: proc(task: thread.Task) {
+    // Extract job data
+    job_data := cast(^_Job_Wrapper_Data)task.data
+    
+    // Execute the actual job
+    job_data.procedure(job_data.user_data)
+    
+    // Mark as completed
+    sync.mutex_lock(&job_data.job_system.mutex)
+    job_data.job_system.completed_jobs[job_data.handle] = true
+    sync.mutex_unlock(&job_data.job_system.mutex)
+    
+    // Clean up wrapper data
+    free(job_data, job_data.job_system.allocator)
+}
+
+_Job_Wrapper_Data :: struct {
+    handle: Job_Handle,
+    job_system: ^Job_System,
+    procedure: Job_Proc,
+    user_data: rawptr,
+}
+```
+
+### Event Emission
+
+**Event Types:**
+```odin
+Job_Event_Type :: enum {
+    JOB_STARTED,
+    JOB_COMPLETED,
+    JOB_FAILED,
+    JOB_CANCELLED,
+    WORKER_IDLE,
+    WORKER_BUSY,
+    SYSTEM_SHUTDOWN,
+}
+
+Job_Event :: struct {
+    type: Job_Event_Type,
+    timestamp: time.Time,
+    job_handle: Job_Handle,
+    worker_id: int,
+    error_message: string, // For JOB_FAILED events
+}
+
+Event_Config :: struct {
+    max_events: int,
+    allocator: mem.Allocator,
+}
+```
+
+**Event Configuration:**
+```odin
+// Enable event emission for the job system
+job_system_enable_events :: proc(js: ^Job_System, config: Event_Config) {
+    js.event_queue = make([dynamic]Job_Event, 0, config.max_events, config.allocator)
+    js.event_allocator = config.allocator
+    js.events_enabled = true
+    sync.mutex_init(&js.event_mutex)
+}
+
+// Disable event emission
+job_system_disable_events :: proc(js: ^Job_System) {
+    sync.mutex_lock(&js.event_mutex)
+    defer sync.mutex_unlock(&js.event_mutex)
+    
+    delete(js.event_queue)
+    js.events_enabled = false
+    sync.mutex_destroy(&js.event_mutex)
+}
+```
+
+**Event Production:**
+```odin
+// Internal procedure to emit events
+_emit_event :: proc(js: ^Job_System, event_type: Job_Event_Type, handle: Job_Handle = 0, worker_id := -1, error_msg := "") {
+    if !js.events_enabled do return
+    
+    sync.mutex_lock(&js.event_mutex)
+    defer sync.mutex_unlock(&js.event_mutex)
+    
+    // Create event
+    event := Job_Event{
+        type = event_type,
+        timestamp = time.now(),
+        job_handle = handle,
+        worker_id = worker_id,
+        error_message = strings.clone(error_msg, js.event_allocator) if error_msg != "" else "",
+    }
+    
+    // Add to queue (with overflow protection)
+    if len(js.event_queue) < cap(js.event_queue) {
+        append(&js.event_queue, event)
+    } else {
+        // Optional: Drop oldest event or log overflow
+        ordered_remove(&js.event_queue, 0) // Remove oldest
+        append(&js.event_queue, event)
+    }
+}
+```
+
+**Event Consumption:**
+```odin
+// Poll for events (non-blocking)
+poll_job_events :: proc(js: ^Job_System, out_events: ^[dynamic]Job_Event) -> int {
+    if !js.events_enabled do return 0
+    
+    sync.mutex_lock(&js.event_mutex)
+    defer sync.mutex_unlock(&js.event_mutex)
+    
+    event_count := len(js.event_queue)
+    if event_count == 0 do return 0
+    
+    // Copy events to output buffer
+    append(out_events, ..js.event_queue[:])
+    
+    // Clear the internal queue
+    clear(&js.event_queue)
+    
+    return event_count
+}
+
+// Get event count without consuming
+get_pending_event_count :: proc(js: ^Job_System) -> int {
+    if !js.events_enabled do return 0
+    
+    sync.mutex_lock(&js.event_mutex)
+    defer sync.mutex_unlock(&js.event_mutex)
+    
+    return len(js.event_queue)
+}
+
+// Peek at next event without consuming
+peek_next_event :: proc(js: ^Job_System) -> (Job_Event, bool) {
+    if !js.events_enabled do return {}, false
+    
+    sync.mutex_lock(&js.event_mutex)
+    defer sync.mutex_unlock(&js.event_mutex)
+    
+    if len(js.event_queue) == 0 do return {}, false
+    
+    return js.event_queue[0], true
+}
+```
+
+**Updated Job_System Structure:**
+```odin
+Job_System :: struct {
+    // ... existing fields ...
+    
+    // Event system fields
+    events_enabled: bool,
+    event_queue: [dynamic]Job_Event,
+    event_allocator: mem.Allocator,
+    event_mutex: sync.Mutex,
+}
+```
+
+**Usage Pattern:**
+```odin
+// Setup
+job_system_enable_events(&job_system, {max_events = 1000, allocator = context.allocator})
+
+// In game loop or separate thread
+events: [dynamic]Job_Event
+defer delete(events)
+
+event_count := poll_job_events(&job_system, &events)
+for event in events {
+    switch event.type {
+    case .JOB_COMPLETED:
+        log.info("Job completed:", event.job_handle)
+    case .JOB_FAILED:
+        log.error("Job failed:", event.error_message)
+    }
+}
+```
+
+### Design Principles
+
+- **Thread safety**: Mutex protects shared state like completed jobs map
+- **Resource management**: Proper cleanup order in destroy
+- **Graceful shutdown**: `pool_join()` ensures jobs complete before shutdown
+- **Memory management**: Wrapper data cleanup after job completion
+- **Asynchronous events**: Thread-safe queuing allows external monitoring without blocking job execution
+
+This design provides thread-safe job scheduling, dependency management, and efficient work distribution across available cores while building on Odin's existing thread pool infrastructure.
+
