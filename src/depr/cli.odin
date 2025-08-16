@@ -1,4 +1,4 @@
-package app
+package game
 
 import "core:flags"
 import os "core:os/os2"

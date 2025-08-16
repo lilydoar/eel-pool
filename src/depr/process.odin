@@ -1,4 +1,4 @@
-package shared
+package game
 
 import "core:log"
 import os "core:os/os2"
