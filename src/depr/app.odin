@@ -1,4 +1,4 @@
-package app
+package game
 
 import "base:runtime"
 import "core:fmt"

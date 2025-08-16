@@ -1,4 +1,4 @@
-package shared
+package game
 
 import "base:intrinsics"
 

@@ -1,10 +1,8 @@
 package game
 
-import util "../."
-
 Player :: struct {
 	state:    PlayerState,
-	position: util.Vec3,
+	position: Vec3,
 }
 
 PlayerState :: union {
