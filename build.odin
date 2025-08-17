@@ -51,6 +51,8 @@ DOCS_DIR: string : "docs/gen"
 SRC_DIR: string : "src/"
 ENTRY_DIR: string : SRC_DIR + "entry/"
 ENTRY_GAME: string : ENTRY_DIR + "game/"
+LIB_DIR: string : SRC_DIR + "lib/"
+LIB_GAME: string : LIB_DIR + "game/"
 
 cmds_have_failed: bool = false
 tests_have_run: bool = false

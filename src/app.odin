@@ -10,6 +10,7 @@ App :: struct {
 	cfg:         Config,
 	sdl:         SDL,
 	wgpu:        WGPU,
+	game_api:    GameAPI,
 
 	// Runtime
 	frame_count: u64,
@@ -22,7 +23,7 @@ app_init :: proc(app: ^App, ctx: runtime.Context) {
 	app.cfg = config_load(app.opts)
 
 	app.ctx = ctx
-	app.ctx.logger = app_init_logger(app)
+	app.ctx.logger = app_create_logger(app)
 
 	context = app.ctx
 
@@ -35,15 +36,22 @@ app_init :: proc(app: ^App, ctx: runtime.Context) {
 	sdl_init(&app.sdl, sdl_opts)
 
 	wgpu_init(&app.wgpu, &app.sdl)
+
+	// TODO: Load game API path from config
+	app.game_api = game_api_init("./bin/gamelib").api
+	app.game_api.init()
+
+	// TODO: Initialize other subsystems (e.g., game, job, ...)
 }
 
-app_init_logger :: proc(app: ^App) -> (l: log.Logger) {
+app_create_logger :: proc(app: ^App) -> (l: log.Logger) {
 	cfg := app.cfg.logger
 
 	if cfg.to_file == "" {
 		return log.create_console_logger(opt = cfg.opts)
 	}
 
+	// TODO: Support file logging
 	// f, err := os.open(cfg.logger.to_file)
 	// l = log.create_file_logger(f, opt = cfg.logger.opts)
 
@@ -52,6 +60,8 @@ app_init_logger :: proc(app: ^App) -> (l: log.Logger) {
 
 app_deinit :: proc(app: ^App) {
 	context = app.ctx
+
+	app.game_api.deinit()
 
 	wgpu_deinit(&app.wgpu)
 	sdl_deinit(&app.sdl)
@@ -77,6 +87,8 @@ app_run :: proc(app: ^App) {
 		defer app.frame_count += 1
 		quit = app_update(app)
 		if quit {break}
+
+		app.game_api.update()
 	}
 }
 
