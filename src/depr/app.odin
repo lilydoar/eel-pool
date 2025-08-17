@@ -6,21 +6,7 @@ import "core:log"
 import os "core:os/os2"
 import "core:time"
 
-log_opts: log.Options : {
-	.Level,
-	.Time,
-	// .Short_File_Path,
-	// .Long_File_Path,
-	.Procedure,
-	.Line,
-	.Terminal_Color,
-	// .Thread_Id,
-}
-
 App :: struct {
-	ctx:            runtime.Context,
-	sdl:            SDL,
-	wgpu:           WGPU,
 	thread_main:    Thread,
 	thread_job_sys: Thread,
 	thread_sound:   Thread,
