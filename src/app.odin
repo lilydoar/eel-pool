@@ -10,10 +10,11 @@ App :: struct {
 	cfg:         Config,
 	sdl:         SDL,
 	wgpu:        WGPU,
-	game_api:    GameAPI,
+	game:        Game,
 
 	// Runtime
 	frame_count: u64,
+	// game_api:    GameAPI,
 }
 
 app_init :: proc(app: ^App, ctx: runtime.Context) {
@@ -27,6 +28,9 @@ app_init :: proc(app: ^App, ctx: runtime.Context) {
 
 	context = app.ctx
 
+	log.info("Initializing Application...")
+	defer log.info("Application initialized")
+
 	// TODO: Load from dev/release config
 	sdl_opts := SDL_Options {
 		window_title = "eel-pool",
@@ -37,11 +41,9 @@ app_init :: proc(app: ^App, ctx: runtime.Context) {
 
 	wgpu_init(&app.wgpu, &app.sdl)
 
-	// TODO: Load game API path from config
-	app.game_api = game_api_init("./bin/gamelib").api
-	app.game_api.init()
+	game_init(&app.game, app.ctx, app.ctx.logger)
 
-	// TODO: Initialize other subsystems (e.g., game, job, ...)
+	// TODO: Initialize other subsystems (e.g., job system, ...)
 }
 
 app_create_logger :: proc(app: ^App) -> (l: log.Logger) {
@@ -61,8 +63,10 @@ app_create_logger :: proc(app: ^App) -> (l: log.Logger) {
 app_deinit :: proc(app: ^App) {
 	context = app.ctx
 
-	app.game_api.deinit()
+	log.info("Deinitializing Application...")
+	defer log.info("Application deinitialized")
 
+	game_deinit(&app.game)
 	wgpu_deinit(&app.wgpu)
 	sdl_deinit(&app.sdl)
 }
@@ -73,13 +77,15 @@ app_run :: proc(app: ^App) {
 	context = app.ctx
 
 	if app.opts.check {
-		log.info("App initialized successfully, exiting.")
+		log.info("App initialized successfully and -check flag is enabled, exiting.")
 		return
 	}
 
 	if app.opts.run_for > 0 {
 		log.infof("Running App for %d frames then exiting.", app.opts.run_for)
-		should_loop = proc(a: ^App) -> bool {return a.frame_count < a.opts.run_for}
+		should_loop = proc(a: ^App) -> bool {
+			return a.frame_count < a.opts.run_for
+		}
 	}
 
 	quit: bool
@@ -87,12 +93,12 @@ app_run :: proc(app: ^App) {
 		defer app.frame_count += 1
 		quit = app_update(app)
 		if quit {break}
-
-		app.game_api.update()
 	}
 }
 
 app_update :: proc(app: ^App) -> (quit: bool) {
+	context = app.ctx
+
 	quit = sdl_begin_frame(&app.sdl)
 	if quit {return}
 
@@ -102,6 +108,9 @@ app_update :: proc(app: ^App) -> (quit: bool) {
 
 	frame := wgpu_frame_begin(&app.wgpu, sdl_get_window_size(&app.sdl))
 	defer wgpu_frame_end(&app.wgpu, frame)
+
+	game_update(&app.game)
+	game_draw(&app.game, &frame)
 
 	return
 }
