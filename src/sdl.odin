@@ -199,7 +199,7 @@ sdl_mouse_button_to_flag :: proc(button: u8) -> (sdl3.MouseButtonFlag, bool) {
 	}
 }
 
-// Mouse utility functions with overloading
+// Mouse button utility functions 
 sdl_mouse_button_is_down :: proc {
 	sdl_mouse_button_is_down_flag,
 	sdl_mouse_button_is_down_num,

@@ -3,96 +3,6 @@ package game
 import "core:log"
 import "vendor:wgpu"
 
-sprite_shader_source :: `
-struct SpriteData {
-	position: vec4<f32>, // Storing rotation in the w component
-	tex_coords: vec4<f32>,
-	color: vec4<f32>,
-	scale: vec2<f32>,
-	tex_idx: u32,
-	_padding: f32,
-}
-
-struct Uniforms {
-	view_proj: mat4x4<f32>,
-}
-
-struct VertexOutput {
-	@builtin(position) position: vec4<f32>,
-	@location(0) color: vec4<f32>,
-	@location(1) tex_coord: vec2<f32>,
-	@location(2) tex_index: u32,
-}
-
-const QUAD_VERTICES = array<vec2<f32>, 4>(
-vec2<f32>(0.0, 1.0),  // 0: Bottom-left
-vec2<f32>(1.0, 1.0),  // 1: Bottom-right
-vec2<f32>(0.0, 0.0),  // 2: Top-left
-vec2<f32>(1.0, 0.0),  // 3: Top-right
-);
-
-const QUAD_UVS = array<vec2<f32>, 4>(
-vec2<f32>(0.0, 1.0),  // 0: Bottom-left UV
-vec2<f32>(1.0, 1.0),  // 1: Bottom-right UV
-vec2<f32>(0.0, 0.0),  // 2: Top-left UV
-vec2<f32>(1.0, 0.0),  // 3: Top-right UV
-);
-
-@group(0) @binding(0) var<storage, read> sprites: array<SpriteData>;
-@group(1) @binding(0) var<uniform> uniforms: Uniforms;
-@group(2) @binding(0) var atlas_texture_array: texture_2d_array<f32>;
-@group(2) @binding(1) var atlas_texture_sampler: sampler;
-
-@vertex
-fn vs_main(@builtin(vertex_index) vertex_id: u32, @builtin(instance_index) instance_id: u32) -> VertexOutput {
-	let sprite_id = instance_id;
-	let corner_id = vertex_id;
-
-	let sprite = sprites[sprite_id];
-
-	// Lookup vertex data from constant arrays
-	let vertex_pos = QUAD_VERTICES[corner_id];
-	let vertex_uv = QUAD_UVS[corner_id];
-
-	// Build 2D transformation matrix
-	let rotation = sprite.position.w;
-	let cos_r = cos(rotation);
-	let sin_r = sin(rotation);
-
-	// Transform: scale, rotate, then translate
-	let centered_pos = (vertex_pos - 0.5) * sprite.scale;
-	let rotated = vec2<f32>(
-		centered_pos.x * cos_r - centered_pos.y * sin_r,
-		centered_pos.x * sin_r + centered_pos.y * cos_r
-	);
-	let world_pos = vec3<f32>(sprite.position.xy + rotated, sprite.position.z);
-
-	// Apply view-projection matrix
-	let clip_pos = uniforms.view_proj * vec4<f32>(world_pos, 1.0);
-
-	// Map UVs to sprite's texture rectangle
-	let tex_coord = mix(
-		sprite.tex_coords.xy,
-		sprite.tex_coords.zw,
-		vertex_uv
-	);
-
-	var out: VertexOutput;
-	out.position = clip_pos;
-	out.color = sprite.color;
-	out.tex_coord = tex_coord;
-	out.tex_index = sprite.tex_idx;
-	return out;
-}
-
-@fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-	let tex_color = textureSample(atlas_texture_array, atlas_texture_sampler, in.tex_coord, i32(in.tex_index));
-	return tex_color * in.color;
-}
-`
-
-
 SpriteData :: struct {
 	// Using w component of position for rotation in radians
 	position:   [4]f32,
@@ -114,21 +24,21 @@ MAX_ATLAS_TEXTURES :: 4
 ATLAS_SIZE :: 1
 
 SpriteBatcher :: struct {
-	shader:                        wgpu.ShaderModule,
-	data_buf:                      wgpu.Buffer,
-	uniform_buf:                   wgpu.Buffer,
-	bind_group_layout_storage_buf: wgpu.BindGroupLayout,
-	bind_group_layout_uniform_buf: wgpu.BindGroupLayout,
-	bind_group_layout_atlas_array: wgpu.BindGroupLayout,
-	bind_group_storage_buf:        wgpu.BindGroup,
-	bind_group_uniform_buf:        wgpu.BindGroup,
-	bind_group_atlas_array:        wgpu.BindGroup,
-	pipeline_layout:               wgpu.PipelineLayout,
-	pipeline:                      wgpu.RenderPipeline,
-	atlas_texture:                 wgpu.Texture,
-	atlas_view:                    wgpu.TextureView,
-	atlas_sampler:                 wgpu.Sampler,
-	sprites:                       [dynamic]SpriteData,
+	// shader:                        wgpu.ShaderModule,
+	// data_buf:                      wgpu.Buffer,
+	// uniform_buf:                   wgpu.Buffer,
+	// bind_group_layout_storage_buf: wgpu.BindGroupLayout,
+	// bind_group_layout_uniform_buf: wgpu.BindGroupLayout,
+	// bind_group_layout_atlas_array: wgpu.BindGroupLayout,
+	// bind_group_storage_buf:        wgpu.BindGroup,
+	// bind_group_uniform_buf:        wgpu.BindGroup,
+	// bind_group_atlas_array:        wgpu.BindGroup,
+	// pipeline_layout:               wgpu.PipelineLayout,
+	// pipeline:                      wgpu.RenderPipeline,
+	// atlas_texture: wgpu.Texture,
+	// atlas_view:    wgpu.TextureView,
+	// atlas_sampler: wgpu.Sampler,
+	// sprites:       [dynamic]SpriteData,
 }
 
 sprite_batcher: SpriteBatcher

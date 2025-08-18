@@ -5,15 +5,16 @@ import "core:log"
 import os "core:os/os2"
 
 App :: struct {
-	ctx:         runtime.Context,
-	opts:        Options,
-	cfg:         Config,
-	sdl:         SDL,
-	wgpu:        WGPU,
-	game:        Game,
+	ctx:            runtime.Context,
+	opts:           Options,
+	cfg:            Config,
+	sdl:            SDL,
+	wgpu:           WGPU,
+	sprite_batcher: Sprite_Batcher,
+	game:           Game,
 
 	// Runtime
-	frame_count: u64,
+	frame_count:    u64,
 	// game_api:    GameAPI,
 }
 
@@ -41,6 +42,8 @@ app_init :: proc(app: ^App, ctx: runtime.Context) {
 
 	wgpu_init(&app.wgpu, &app.sdl)
 
+	sprite_batcher_init(&app.wgpu, &app.sprite_batcher)
+
 	game_init(&app.game, app.ctx, app.ctx.logger)
 
 	// TODO: Initialize other subsystems (e.g., job system, ...)
@@ -67,6 +70,7 @@ app_deinit :: proc(app: ^App) {
 	defer log.info("Application deinitialized")
 
 	game_deinit(&app.game)
+	sprite_batcher_deinit(&app.sprite_batcher)
 	wgpu_deinit(&app.wgpu)
 	sdl_deinit(&app.sdl)
 }

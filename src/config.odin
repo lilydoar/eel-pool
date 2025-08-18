@@ -3,6 +3,7 @@ package game
 import "core:log"
 
 FRAME_DEBUG :: #config(FRAME_DEBUG, false)
+VERBOSE_LOGGING :: #config(VERBOSE_LOGGING, false)
 
 Config :: struct {
 	logger: Config_Logger,
