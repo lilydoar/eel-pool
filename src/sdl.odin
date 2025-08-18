@@ -142,9 +142,15 @@ sdl_handle_event :: proc(s: ^SDL, e: sdl3.Event) -> (quit: bool) {
 		s.keyboard.keycodes_curr[e.key.key] = pressed
 	case .MOUSE_MOTION:
 		s.mouse.pos_curr = {e.motion.x, e.motion.y}
+	// s.mouse.buttons_curr = e.motion.state
 	case .MOUSE_BUTTON_DOWN, .MOUSE_BUTTON_UP:
-		// TODO: Extract button state from event type, not GetMouseState call
-		s.mouse.buttons_curr = sdl3.GetMouseState(&s.mouse.pos_curr.x, &s.mouse.pos_curr.y)
+		if flag, ok := sdl_mouse_button_to_flag(e.button.button); ok {
+			if e.type == .MOUSE_BUTTON_DOWN {
+				s.mouse.buttons_curr += {flag}
+			} else {
+				s.mouse.buttons_curr -= {flag}
+			}
+		}
 	case .GAMEPAD_ADDED:
 		if s.gamepad != nil {return}
 		s.gamepad = sdl3.OpenGamepad(e.gdevice.which)
@@ -174,6 +180,112 @@ sdl_is_window_resized :: proc(s: ^SDL) -> (resized: bool) {
 	resized = s.window.size_curr != s.window.size_prev
 	return
 }
+
+// Helper to convert button number to flag
+sdl_mouse_button_to_flag :: proc(button: u8) -> (sdl3.MouseButtonFlag, bool) {
+	switch button {
+	case sdl3.BUTTON_LEFT:
+		return .LEFT, true
+	case sdl3.BUTTON_MIDDLE:
+		return .MIDDLE, true
+	case sdl3.BUTTON_RIGHT:
+		return .RIGHT, true
+	case sdl3.BUTTON_X1:
+		return .X1, true
+	case sdl3.BUTTON_X2:
+		return .X2, true
+	case:
+		return .LEFT, false
+	}
+}
+
+// Mouse utility functions with overloading
+sdl_mouse_button_is_down :: proc {
+	sdl_mouse_button_is_down_flag,
+	sdl_mouse_button_is_down_num,
+}
+sdl_mouse_button_is_up :: proc {
+	sdl_mouse_button_is_up_flag,
+	sdl_mouse_button_is_up_num,
+}
+sdl_mouse_button_was_pressed :: proc {
+	sdl_mouse_button_was_pressed_flag,
+	sdl_mouse_button_was_pressed_num,
+}
+sdl_mouse_button_was_released :: proc {
+	sdl_mouse_button_was_released_flag,
+	sdl_mouse_button_was_released_num,
+}
+
+sdl_mouse_button_is_down_flag :: proc(s: ^SDL, button: sdl3.MouseButtonFlag) -> bool {
+	assert(s.initialized)
+	return button in s.mouse.buttons_curr
+}
+
+sdl_mouse_button_is_down_num :: proc(s: ^SDL, button: u8) -> bool {
+	assert(s.initialized)
+	if flag, ok := sdl_mouse_button_to_flag(button); ok {
+		return flag in s.mouse.buttons_curr
+	}
+	return false
+}
+
+sdl_mouse_button_is_up_flag :: proc(s: ^SDL, button: sdl3.MouseButtonFlag) -> bool {
+	assert(s.initialized)
+	return button not_in s.mouse.buttons_curr
+}
+
+sdl_mouse_button_is_up_num :: proc(s: ^SDL, button: u8) -> bool {
+	assert(s.initialized)
+	if flag, ok := sdl_mouse_button_to_flag(button); ok {
+		return flag not_in s.mouse.buttons_curr
+	}
+	return true
+}
+
+sdl_mouse_button_was_pressed_flag :: proc(s: ^SDL, button: sdl3.MouseButtonFlag) -> bool {
+	assert(s.initialized)
+	return button in s.mouse.buttons_curr && button not_in s.mouse.buttons_prev
+}
+
+sdl_mouse_button_was_pressed_num :: proc(s: ^SDL, button: u8) -> bool {
+	assert(s.initialized)
+	if flag, ok := sdl_mouse_button_to_flag(button); ok {
+		return flag in s.mouse.buttons_curr && flag not_in s.mouse.buttons_prev
+	}
+	return false
+}
+
+sdl_mouse_button_was_released_flag :: proc(s: ^SDL, button: sdl3.MouseButtonFlag) -> bool {
+	assert(s.initialized)
+	return button not_in s.mouse.buttons_curr && button in s.mouse.buttons_prev
+}
+
+sdl_mouse_button_was_released_num :: proc(s: ^SDL, button: u8) -> bool {
+	assert(s.initialized)
+	if flag, ok := sdl_mouse_button_to_flag(button); ok {
+		return flag not_in s.mouse.buttons_curr && flag in s.mouse.buttons_prev
+	}
+	return false
+}
+
+// Mouse position utilities
+sdl_mouse_get_position :: proc(s: ^SDL) -> Vec2 {
+	assert(s.initialized)
+	return s.mouse.pos_curr
+}
+
+sdl_mouse_get_delta :: proc(s: ^SDL) -> Vec2 {
+	assert(s.initialized)
+	return Vec2{s.mouse.pos_curr.x - s.mouse.pos_prev.x, s.mouse.pos_curr.y - s.mouse.pos_prev.y}
+}
+
+sdl_mouse_did_move :: proc(s: ^SDL) -> bool {
+	assert(s.initialized)
+	return s.mouse.pos_curr != s.mouse.pos_prev
+}
+
+// SDL Logging
 
 sdl_panic :: proc(ok: bool) {
 	if ok {return}
