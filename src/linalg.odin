@@ -11,6 +11,13 @@ Vec3 :: struct {
 	z: f32,
 }
 
+Vec4 :: struct {
+	x: f32,
+	y: f32,
+	z: f32,
+	w: f32,
+}
+
 Vec2i :: struct {
 	x: i32,
 	y: i32,
@@ -20,5 +27,12 @@ Vec3i :: struct {
 	x: i32,
 	y: i32,
 	z: i32,
+}
+
+Vec4i :: struct {
+	x: i32,
+	y: i32,
+	z: i32,
+	w: i32,
 }
 

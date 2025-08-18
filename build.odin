@@ -91,8 +91,10 @@ main :: proc() {
 
 	if opt.verbose {
 		cfg.comp_time_params["FRAME_DEBUG"] = "true"
+		cfg.comp_time_params["VERBOSE_LOGGING"] = "true"
 	} else {
 		cfg.comp_time_params["FRAME_DEBUG"] = "false"
+		cfg.comp_time_params["VERBOSE_LOGGING"] = "false"
 	}
 
 	if opt.clean {
