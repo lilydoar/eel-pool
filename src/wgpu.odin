@@ -6,17 +6,23 @@ import "vendor:wgpu"
 import "vendor:wgpu/sdl3glue"
 
 WGPU :: struct {
-	initialized: bool,
-	instance:    wgpu.Instance,
-	surface:     wgpu.Surface,
-	surface_cfg: wgpu.SurfaceConfiguration,
-	adapter:     wgpu.Adapter,
-	device:      wgpu.Device,
-	queue:       wgpu.Queue,
+	initialized:     bool,
+	instance:        wgpu.Instance,
+	surface:         wgpu.Surface,
+	surface_cfg:     wgpu.SurfaceConfiguration,
+	adapter:         wgpu.Adapter,
+	device:          wgpu.Device,
+	queue:           wgpu.Queue,
+
+	//
+	default_sampler: wgpu.Sampler,
+
 
 	// // Runtime state
 	// is_frame_hot: bool,
 }
+
+WGPU_Texture_Format_Default: wgpu.TextureFormat : .BGRA8Unorm
 
 // This is used to expose wgpu actions to the rest of the application.
 // Functions that accept an active render pass can perform draw/gpu operations.
@@ -121,13 +127,27 @@ wgpu_init :: proc(w: ^WGPU, s: ^SDL) {
 		data.w.queue = wgpu.DeviceGetQueue(data.w.device)
 		wgpu_panic(data.w.queue != nil, "device get queue")
 	}
+
+	w.default_sampler = wgpu.DeviceCreateSampler(
+		w.device,
+		&wgpu.SamplerDescriptor {
+			label = "default",
+			addressModeU = .Repeat,
+			addressModeV = .Repeat,
+			addressModeW = .Repeat,
+			magFilter = .Linear,
+			minFilter = .Linear,
+			mipmapFilter = .Nearest,
+			maxAnisotropy = 1,
+		},
+	)
 }
 
 wgpu_deinit :: proc(w: ^WGPU) {
 	log.info("Deinitializing WebGPU...")
+	defer log.info("Deinitialized WebGPU")
 
 	assert(w.initialized)
-	defer w.initialized = false
 
 	wgpu.QueueRelease(w.queue)
 	wgpu.DeviceRelease(w.device)
@@ -189,13 +209,8 @@ wgpu_frame_begin :: proc(w: ^WGPU, window_size: Vec2i) -> WGPU_RenderPass_Active
 wgpu_frame_end :: proc(w: ^WGPU, r: WGPU_RenderPass_Active) {
 	assert(w.initialized)
 
-	when FRAME_DEBUG {
-		log.debug("ending frame...")
-	}
-
-	when ODIN_DEBUG {
-		wgpu.RenderPassEncoderInsertDebugMarker(r.render_encoder, "end frame")
-	}
+	when FRAME_DEBUG {log.debug("ending frame...")}
+	when ODIN_DEBUG {wgpu.RenderPassEncoderInsertDebugMarker(r.render_encoder, "wgpu end frame")}
 
 	wgpu.RenderPassEncoderEnd(r.render_encoder)
 	wgpu.RenderPassEncoderRelease(r.render_encoder)

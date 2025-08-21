@@ -77,7 +77,6 @@ sdl_deinit :: proc(s: ^SDL) {
 	log.info("Deinitializing SDL...")
 
 	assert(s.initialized)
-	defer s.initialized = false
 
 	delete(s.keyboard.keycodes_prev)
 	delete(s.keyboard.keycodes_curr)
