@@ -36,3 +36,16 @@ Vec4i :: struct {
 	w: i32,
 }
 
+Mat3 :: struct {
+	x: Vec3,
+	y: Vec3,
+	z: Vec3,
+}
+
+Mat4 :: struct {
+	x: Vec4,
+	y: Vec4,
+	z: Vec4,
+	w: Vec4,
+}
+
