@@ -1,0 +1,22 @@
+[tools]
+"asdf:jtakakura/asdf-odin" = "dev-2025-08"
+
+[tasks.bootstrap]
+description = "Build the build tool"
+run = "odin build build.odin -file -out:bin/build"
+sources = ["build.odin"]
+outputs = ["build"]
+
+[tasks.build-dev]
+description = "Build the project in dev mode"
+run = "$MISE_PROJECT_ROOT/build -develop -gamelib"
+sources = ["src/**/*.odin"]
+outputs = ["bin/dev/game"]
+depends = ["bootstrap"]
+
+[tasks.build-release]
+description = "Build the project in release mode"
+run = "$MISE_PROJECT_ROOT/build -release"
+sources = ["src/**/*.odin"]
+outputs = ["bin/release/game"]
+depends = ["bootstrap"]
