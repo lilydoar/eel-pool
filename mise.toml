@@ -3,11 +3,11 @@
 
 [tasks.bootstrap]
 description = "Build the build tool"
-run = "odin build build.odin -file -out:bin/build"
+run = "odin build build.odin -file"
 sources = ["build.odin"]
 outputs = ["build"]
 
-[tasks.build-dev]
+[tasks.build]
 description = "Build the project in dev mode"
 run = "$MISE_PROJECT_ROOT/build -develop -gamelib"
 sources = ["src/**/*.odin"]

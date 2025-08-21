@@ -80,8 +80,7 @@ main :: proc() {
 
 	if opt.clean {
 		log.info("Cleaning the build directory")
-
-		must_run([]string{"rm", "-rf", BUILD_DIR})
+		must_run_proc({command = []string{"rm", "-rf", BUILD_DIR}})
 	}
 
 	if opt.all {
@@ -110,14 +109,14 @@ main :: proc() {
 				"-no-entry-point",
 				"-warnings-as-errors",
 			}
-			must_run(check_cmd)
+			must_run_proc({command = check_cmd})
 		}
 	}
 
 	if opt.gamelib {
 		log.info("Building the game as a dynamic library")
 
-		must_run([]string{"mkdir", "-p", GAMELIB_DIR})
+		must_run_proc({command = {"mkdir", "-p", GAMELIB_DIR}})
 
 		gamelib_cmd := []string {
 			"odin",
@@ -127,14 +126,14 @@ main :: proc() {
 			"-debug",
 			"-build-mode:dll",
 		}
-		must_run(gamelib_cmd)
+		must_run_proc({command = gamelib_cmd})
 	}
 
 	if opt.docs {do_doc_gen()}
 
 	if opt.test && !opt.no_tests {do_tests()}
 
-	// TODO: Lint 
+	// TODO: Lint
 
 	// TODO: Format
 
@@ -143,7 +142,7 @@ main :: proc() {
 	if opt.develop {
 		log.info("Building a development build")
 
-		must_run([]string{"mkdir", "-p", DEVELOP_DIR})
+		must_run_proc({command = {"mkdir", "-p", DEVELOP_DIR}})
 
 		develop_cmd := []string {
 			"odin",
@@ -152,11 +151,11 @@ main :: proc() {
 			"-out:" + DEVELOP_DIR + EXE,
 			"-debug",
 		}
-		must_run(develop_cmd)
+		must_run_proc({command = develop_cmd})
 
 		if opt.check {
 			log.info("Checking development build for successful initialization")
-			must_run([]string{DEVELOP_DIR + EXE, "-check"})
+			must_run_proc({command = {DEVELOP_DIR + EXE, "-check"}})
 		}
 
 		if opt.run {
@@ -165,7 +164,7 @@ main :: proc() {
 			cmd := [dynamic]string{}
 			append(&cmd, DEVELOP_DIR + EXE)
 			append(&cmd, ..opt.run_arg[:])
-			must_run(cmd[:])
+			must_run_proc({command = cmd[:]})
 		}
 	}
 
@@ -176,7 +175,7 @@ main :: proc() {
 
 		log.info("Building a release build")
 
-		must_run([]string{"mkdir", "-p", RELEASE_DIR})
+		must_run_proc({command = {"mkdir", "-p", RELEASE_DIR}})
 
 
 		release_cmd := []string {
@@ -188,16 +187,16 @@ main :: proc() {
 			"-o:speed",
 			"-warnings-as-errors",
 		}
-		must_run(release_cmd)
+		must_run_proc({command = release_cmd})
 
 		if opt.check {
 			log.info("Checking release build for successful initialization")
-			must_run([]string{RELEASE_DIR + EXE, "-check"})
+			must_run_proc({command = {RELEASE_DIR + EXE, "-check"}})
 		}
 
 		if opt.run {
 			log.info("Running release build")
-			must_run([]string{RELEASE_DIR + EXE})
+			must_run_proc({command = {RELEASE_DIR + EXE}})
 		}
 	}
 
@@ -216,7 +215,7 @@ do_tests :: proc() {
 
 	log.info("Running tests")
 
-	must_run([]string{"mkdir", "-p", TEST_DIR})
+	must_run_proc({command = {"mkdir", "-p", TEST_DIR}})
 
 	test_build_cmd := []string {
 		"odin",
@@ -225,7 +224,7 @@ do_tests :: proc() {
 		"-file",
 		strings.concatenate({"-out:", filepath.join({TEST_DIR, "build"})}),
 	}
-	must_run(test_build_cmd)
+	must_run_proc({command = test_build_cmd})
 
 	dirs: []string = {"tests"}
 	for dir in dirs {
@@ -237,21 +236,21 @@ do_tests :: proc() {
 			"-debug",
 			"-warnings-as-errors",
 		}
-		run(test_cmd)
+		run_proc({command = test_cmd})
 	}
 }
 
 do_doc_gen :: proc(out: string = DOCS_DIR) {
 	log.infof("Generating documentation to {}", out)
 
-	must_run([]string{"mkdir", "-p", out})
+	must_run_proc({command = {"mkdir", "-p", out}})
 
 	path := filepath.join({out, strings.concatenate({"build", ".odin-doc"})})
 	file, err := os.create(path);assert(err == os.ERROR_NONE, "Create doc file")
 	defer os.close(file)
 
 	doc_cmd := []string{"odin", "doc", "build.odin", "-file"}
-	run(doc_cmd, stdout = file)
+	run_proc({command = doc_cmd, stdout = file})
 
 	dirs: []string = {"app", "game", "tests"}
 	for dir in dirs {
@@ -260,35 +259,31 @@ do_doc_gen :: proc(out: string = DOCS_DIR) {
 		defer os.close(file)
 
 		doc_cmd := []string{"odin", "doc", filepath.join({SRC_DIR, dir})}
-		run(doc_cmd, stdout = file)
+		run_proc({command = doc_cmd, stdout = file})
 	}
 }
 
-run :: proc(cmd: []string, stdout: ^os.File = os.stdout, stderr: ^os.File = os.stderr) -> bool {
-	context.allocator = context.temp_allocator
+run_proc :: proc(desc: os.Process_Desc, timeout := os.TIMEOUT_INFINITE) -> bool {
+	assert(len(desc.command) > 0)
 
-	log.debugf("Running: {}", strings.join(cmd, " "))
+	log.debugf("Running process: {}", strings.join(desc.command, " "))
 
-	process, err_start := os.process_start(
-		{command = cmd, stdin = os.stdin, stdout = stdout, stderr = stderr},
-	)
-	if err_start != os.ERROR_NONE {
-		log.errorf("Failed to start process: {}", err_start)
-		cmds_have_failed = true
+	process, start_err := os.process_start(desc)
+	if start_err != os.ERROR_NONE {
+		log.errorf("start process: {}", start_err)
 		return false
 	}
 
-	state, err_wait := os.process_wait(process)
-	if err_wait != os.ERROR_NONE {
-		log.errorf("Failed to wait for process: {}", err_wait)
-		cmds_have_failed = true
+	state, wait_err := os.process_wait(process)
+	if wait_err != os.ERROR_NONE {
+		log.errorf("wait for process: {}", wait_err)
 		return false
 	}
 
 	return true
 }
 
-must_run :: proc(cmd: []string, stdout: ^os.File = os.stdout, stderr: ^os.File = os.stderr) {
-	assert(run(cmd, stdout, stderr), "proc run failed")
+must_run_proc :: proc(desc: os.Process_Desc, timeout := os.TIMEOUT_INFINITE) {
+	assert(run_proc(desc, timeout))
 }
 
