@@ -6,43 +6,29 @@ import "vendor:wgpu"
 import "vendor:wgpu/sdl3glue"
 
 WGPU :: struct {
-	initialized:     bool,
-	instance:        wgpu.Instance,
-	surface:         wgpu.Surface,
-	surface_cfg:     wgpu.SurfaceConfiguration,
-	adapter:         wgpu.Adapter,
-	device:          wgpu.Device,
-	queue:           wgpu.Queue,
-
-	//
-	default_sampler: wgpu.Sampler,
-
-
-	// // Runtime state
-	// is_frame_hot: bool,
+	initialized: bool,
+	instance:    wgpu.Instance,
+	surface:     wgpu.Surface,
+	surface_cfg: wgpu.SurfaceConfiguration,
+	adapter:     wgpu.Adapter,
+	device:      wgpu.Device,
+	queue:       wgpu.Queue,
+	default:     struct {
+		texture_format: wgpu.TextureFormat,
+		depth_format:   wgpu.TextureFormat,
+		sampler:        wgpu.Sampler,
+		render_pass:    wgpu.RenderPassDescriptor,
+	},
 }
-
-WGPU_Texture_Format_Default: wgpu.TextureFormat : .BGRA8Unorm
 
 // This is used to expose wgpu actions to the rest of the application.
 // Functions that accept an active render pass can perform draw/gpu operations.
-WGPU_RenderPass_Active :: struct {
-	surface:        wgpu.SurfaceTexture,
-	texture_view:   wgpu.TextureView,
-	cmd_encoder:    wgpu.CommandEncoder,
-	render_encoder: wgpu.RenderPassEncoder,
-}
-
-wgpu_render_pass_desc_default := wgpu.RenderPassDescriptor {
-	colorAttachmentCount = 1,
-	colorAttachments     = &wgpu.RenderPassColorAttachment {
-		view       = nil,
-		depthSlice = wgpu.DEPTH_SLICE_UNDEFINED,
-		//
-		loadOp     = .Clear,
-		storeOp    = .Store,
-		clearValue = wgpu.Color{0.0, 0.0, 0.0, 0.0},
-	},
+// Another option is embedding this type in other structs as well.
+WGPU_RenderPass :: struct {
+	surface:         wgpu.SurfaceTexture,
+	surface_view:    wgpu.TextureView,
+	command_encoder: wgpu.CommandEncoder,
+	render_encoder:  wgpu.RenderPassEncoder,
 }
 
 wgpu_init :: proc(w: ^WGPU, s: ^SDL) {
@@ -128,7 +114,11 @@ wgpu_init :: proc(w: ^WGPU, s: ^SDL) {
 		wgpu_panic(data.w.queue != nil, "device get queue")
 	}
 
-	w.default_sampler = wgpu.DeviceCreateSampler(
+	w.default.texture_format = .BGRA8Unorm
+
+	w.default.depth_format = .Depth24Plus
+
+	w.default.sampler = wgpu.DeviceCreateSampler(
 		w.device,
 		&wgpu.SamplerDescriptor {
 			label = "default",
@@ -141,6 +131,18 @@ wgpu_init :: proc(w: ^WGPU, s: ^SDL) {
 			maxAnisotropy = 1,
 		},
 	)
+
+	w.default.render_pass = wgpu.RenderPassDescriptor {
+		label                = "default",
+		colorAttachmentCount = 1,
+		colorAttachments     = &wgpu.RenderPassColorAttachment {
+			view = nil,
+			depthSlice = wgpu.DEPTH_SLICE_UNDEFINED,
+			loadOp = .Clear,
+			storeOp = .Store,
+			clearValue = wgpu.Color{0.0, 0.0, 0.0, 1.0},
+		},
+	}
 }
 
 wgpu_deinit :: proc(w: ^WGPU) {
@@ -167,62 +169,14 @@ wgpu_resize :: proc(w: ^WGPU, size: Vec2i) {
 	wgpu.SurfaceConfigure(w.surface, &w.surface_cfg)
 }
 
-wgpu_frame_begin :: proc(w: ^WGPU, window_size: Vec2i) -> WGPU_RenderPass_Active {
+wgpu_frame_begin :: proc(w: ^WGPU, r: ^Render, window_size: Vec2i) {
 	assert(w.initialized)
-
-	when #config(FRAME_DEBUG, false) {
-		log.debug("beginning frame...")
-	}
-
-	surface := wgpu.SurfaceGetCurrentTexture(w.surface)
-
-	#partial switch surface.status {
-	case .Timeout, .Outdated, .Lost:
-		log.warnf("WebGPU: surface texture status: {}", surface.status)
-		wgpu_resize(w, window_size)
-		return WGPU_RenderPass_Active{}
-	case .OutOfMemory, .DeviceLost, .Error:
-		log.error("WebGPU: surface texture status: {}", surface.status)
-		return WGPU_RenderPass_Active{}
-	}
-
-	view := wgpu.TextureCreateView(surface.texture, nil)
-	cmd_encoder := wgpu.DeviceCreateCommandEncoder(w.device, nil)
-
-	render_pass_desc := wgpu_render_pass_desc_default
-	render_pass_desc.colorAttachments[0].view = view
-
-	render_encoder := wgpu.CommandEncoderBeginRenderPass(cmd_encoder, &render_pass_desc)
-
-	when ODIN_DEBUG {
-		wgpu.RenderPassEncoderInsertDebugMarker(render_encoder, "begin frame")
-	}
-
-	return WGPU_RenderPass_Active {
-		surface = surface,
-		texture_view = view,
-		cmd_encoder = cmd_encoder,
-		render_encoder = render_encoder,
-	}
+	renderpass_begin(w, r, &r.render_pass, window_size)
 }
 
-wgpu_frame_end :: proc(w: ^WGPU, r: WGPU_RenderPass_Active) {
+wgpu_frame_end :: proc(w: ^WGPU, r: ^Render) {
 	assert(w.initialized)
-
-	when FRAME_DEBUG {log.debug("ending frame...")}
-	when ODIN_DEBUG {wgpu.RenderPassEncoderInsertDebugMarker(r.render_encoder, "wgpu end frame")}
-
-	wgpu.RenderPassEncoderEnd(r.render_encoder)
-	wgpu.RenderPassEncoderRelease(r.render_encoder)
-
-	cmd_buf := wgpu.CommandEncoderFinish(r.cmd_encoder, nil)
-	wgpu.QueueSubmit(w.queue, {cmd_buf})
-	wgpu.CommandEncoderRelease(r.cmd_encoder)
-
-	wgpu.SurfacePresent(w.surface)
-
-	wgpu.TextureViewRelease(r.texture_view)
-	wgpu.TextureRelease(r.surface.texture)
+	renderpass_end(w, r, &r.render_pass)
 }
 
 wgpu_panic :: proc(ok: bool, msg: string = "") {

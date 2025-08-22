@@ -89,7 +89,7 @@ sdl_deinit :: proc(s: ^SDL) {
 	sdl3.Quit()
 }
 
-sdl_begin_frame :: proc(s: ^SDL) -> (quit: bool) {
+sdl_frame_begin :: proc(s: ^SDL) -> (quit: bool) {
 	assert(s.initialized)
 
 	// Track state across time steps.
