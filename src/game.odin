@@ -39,11 +39,14 @@ game_update :: proc(game: ^Game) {
 	when FRAME_DEBUG {defer log.debug("End updating game state")}
 }
 
-game_draw :: proc(game: ^Game, frame: ^WGPU_RenderPass_Active) {
+game_draw :: proc(game: ^Game, render_pass: ^RenderPass) {
 	context = game.ctx
 
 	// Drawing logic for the game module
 	when FRAME_DEBUG {log.debug("Begin drawing game frame")}
 	when FRAME_DEBUG {defer log.debug("End drawing game frame")}
+
+	// TODO: Draw some number of sprites
+
 }
 

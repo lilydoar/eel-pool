@@ -5,17 +5,31 @@ import "core:log"
 import os "core:os/os2"
 
 App :: struct {
-	ctx:            runtime.Context,
-	opts:           Options,
-	cfg:            Config,
-	sdl:            SDL,
-	wgpu:           WGPU,
-	sprite_batcher: Sprite_Batcher,
-	game:           Game,
+	ctx:         runtime.Context,
+	opts:        Options,
+	cfg:         Config,
+	sdl:         SDL,
+	wgpu:        WGPU,
+	render:      Render,
+	game:        Game,
 
 	// Runtime
-	frame_count:    u64,
+	frame_count: u64,
 	// game_api:    GameAPI,
+}
+
+app_create_logger :: proc(app: ^App) -> (l: log.Logger) {
+	cfg := app.cfg.logger
+
+	if cfg.to_file == "" {
+		return log.create_console_logger(opt = cfg.opts)
+	}
+
+	// TODO: Support file logging
+	// f, err := os.open(cfg.logger.to_file)
+	// l = log.create_file_logger(f, opt = cfg.logger.opts)
+
+	return
 }
 
 app_init :: proc(app: ^App, ctx: runtime.Context) {
@@ -40,27 +54,13 @@ app_init :: proc(app: ^App, ctx: runtime.Context) {
 	}
 	sdl_init(&app.sdl, sdl_opts)
 
-	// wgpu_init(&app.wgpu, &app.sdl)
+	wgpu_init(&app.wgpu, &app.sdl)
 
-	// sprite_batcher_init(&app.wgpu, &app.sprite_batcher)
+	render_init(&app.wgpu, &app.render)
 
 	game_init(&app.game, app.ctx, app.ctx.logger)
 
 	// TODO: Initialize other subsystems (e.g., job system, ...)
-}
-
-app_create_logger :: proc(app: ^App) -> (l: log.Logger) {
-	cfg := app.cfg.logger
-
-	if cfg.to_file == "" {
-		return log.create_console_logger(opt = cfg.opts)
-	}
-
-	// TODO: Support file logging
-	// f, err := os.open(cfg.logger.to_file)
-	// l = log.create_file_logger(f, opt = cfg.logger.opts)
-
-	return
 }
 
 app_deinit :: proc(app: ^App) {
@@ -70,7 +70,7 @@ app_deinit :: proc(app: ^App) {
 	defer log.info("Application deinitialized")
 
 	game_deinit(&app.game)
-	sprite_batcher_deinit(&app.sprite_batcher)
+	render_deinit(&app.wgpu, &app.render)
 	wgpu_deinit(&app.wgpu)
 	sdl_deinit(&app.sdl)
 }
@@ -103,18 +103,20 @@ app_run :: proc(app: ^App) {
 app_update :: proc(app: ^App) -> (quit: bool) {
 	context = app.ctx
 
-	quit = sdl_begin_frame(&app.sdl)
+	quit = sdl_frame_begin(&app.sdl)
 	if quit {return}
 
 	if sdl_is_window_resized(&app.sdl) {
 		wgpu_resize(&app.wgpu, app.sdl.window.size_curr)
 	}
 
-	frame := wgpu_frame_begin(&app.wgpu, sdl_get_window_size(&app.sdl))
-	defer wgpu_frame_end(&app.wgpu, frame)
-
 	game_update(&app.game)
-	game_draw(&app.game, &frame)
+
+	wgpu_frame_begin(&app.wgpu, &app.render, app.sdl.window.size_curr)
+
+	game_draw(&app.game, &app.render.render_pass)
+
+	wgpu_frame_end(&app.wgpu, &app.render)
 
 	return
 }

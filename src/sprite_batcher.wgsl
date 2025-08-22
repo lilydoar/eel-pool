@@ -77,7 +77,7 @@ fn vertex_main(@builtin(vertex_index) vertex: u32, @builtin(instance_index) inst
 }
 
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+fn fragment_main(in: VertexOutput) -> @location(0) vec4<f32> {
 	let tex_color = textureSample(atlas_texture_array, atlas_texture_sampler, in.tex_coord, i32(in.tex_idx));
 	return tex_color * in.color;
 }
