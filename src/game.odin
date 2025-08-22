@@ -42,11 +42,14 @@ game_update :: proc(game: ^Game) {
 game_draw :: proc(game: ^Game, render_pass: ^RenderPass) {
 	context = game.ctx
 
+	assert(render_pass.active)
+
 	// Drawing logic for the game module
 	when FRAME_DEBUG {log.debug("Begin drawing game frame")}
 	when FRAME_DEBUG {defer log.debug("End drawing game frame")}
 
 	// TODO: Draw some number of sprites
 
+	append(&render_pass.sprite_batcher.batch, Sprite_Raw{})
 }
 

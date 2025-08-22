@@ -55,19 +55,19 @@ sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 	assert(!s.initialized)
 	defer s.initialized = true
 
-	ok := sdl3.Init({.VIDEO})
-	sdl_panic(ok)
+	must(sdl3.Init({.VIDEO}), "init SDL")
 
-	cstr, err := strings.clone_to_cstring(opts.window_title)
-	s.window.title = must(cstr, err)
+	s.window.title = must(strings.clone_to_cstring(opts.window_title))
 
-	s.window.ptr = sdl3.CreateWindow(
-		s.window.title,
-		opts.window_size.x,
-		opts.window_size.y,
-		opts.window_flags,
+	s.window.ptr = must(
+		sdl3.CreateWindow(
+			s.window.title,
+			opts.window_size.x,
+			opts.window_size.y,
+			opts.window_flags,
+		),
+		"create window",
 	)
-	sdl_panic(s.window.ptr != nil)
 
 	s.keyboard.keycodes_prev = make(map[sdl3.Keycode]bool)
 	s.keyboard.keycodes_curr = make(map[sdl3.Keycode]bool)
@@ -153,7 +153,10 @@ sdl_handle_event :: proc(s: ^SDL, e: sdl3.Event) -> (quit: bool) {
 	case .GAMEPAD_ADDED:
 		if s.gamepad != nil {return}
 		s.gamepad = sdl3.OpenGamepad(e.gdevice.which)
-		sdl_warn(s.gamepad != nil)
+		if s.gamepad == nil {
+			log.warn("Open gamepad device: {}", e.gdevice.which)
+			return
+		}
 	case .GAMEPAD_REMOVED:
 		if s.gamepad == nil {return}
 		if sdl3.GetGamepadID(s.gamepad) != e.gdevice.which {return}
@@ -163,10 +166,6 @@ sdl_handle_event :: proc(s: ^SDL, e: sdl3.Event) -> (quit: bool) {
 
 	return
 }
-
-// sdl_end_frame :: proc(s: ^SDL) {
-// 	assert(s.initialized)
-// }
 
 sdl_get_window_size :: proc(s: ^SDL) -> (size: Vec2i) {
 	assert(s.initialized)
@@ -282,17 +281,5 @@ sdl_mouse_get_delta :: proc(s: ^SDL) -> Vec2 {
 sdl_mouse_did_move :: proc(s: ^SDL) -> bool {
 	assert(s.initialized)
 	return s.mouse.pos_curr != s.mouse.pos_prev
-}
-
-// SDL Logging
-
-sdl_panic :: proc(ok: bool) {
-	if ok {return}
-	log.panicf("SDL panic: {}", sdl3.GetError())
-}
-
-sdl_warn :: proc(ok: bool) {
-	if ok {return}
-	log.warnf("SDL warning: {}", sdl3.GetError())
 }
 

@@ -15,9 +15,6 @@ WGPU :: struct {
 	queue:       wgpu.Queue,
 	default:     struct {
 		texture_format: wgpu.TextureFormat,
-		depth_format:   wgpu.TextureFormat,
-		sampler:        wgpu.Sampler,
-		render_pass:    wgpu.RenderPassDescriptor,
 	},
 }
 
@@ -38,11 +35,8 @@ wgpu_init :: proc(w: ^WGPU, s: ^SDL) {
 	assert(!w.initialized)
 	defer w.initialized = true
 
-	w.instance = wgpu.CreateInstance(nil)
-	wgpu_panic(w.instance != nil, "create instance")
-
-	w.surface = sdl3glue.GetSurface(w.instance, s.window.ptr)
-	wgpu_panic(w.surface != nil, "create surface")
+	w.instance = must(wgpu.CreateInstance(nil), "create instance")
+	w.surface = must(sdl3glue.GetSurface(w.instance, s.window.ptr), "create surface")
 
 	callback_data := WGPU_InitCallbackData {
 		ctx = context,
@@ -75,8 +69,8 @@ wgpu_init :: proc(w: ^WGPU, s: ^SDL) {
 
 		context = data.ctx
 
-		wgpu_panic(status == .Success, "request adapter status")
-		wgpu_panic(adapter != nil, "request adapter")
+		must(status == .Success, "request adapter status")
+		must(adapter != nil, "request adapter")
 
 		data.w.adapter = adapter
 
@@ -93,11 +87,11 @@ wgpu_init :: proc(w: ^WGPU, s: ^SDL) {
 
 		context = data.ctx
 
-		wgpu_panic(status == .Success, "request device status")
-		wgpu_panic(device != nil, "request device")
+		must(status == .Success, "request device status")
+		must(device != nil, "request device")
 
 		capabilities, ok := wgpu.SurfaceGetCapabilities(data.w.surface, data.w.adapter)
-		wgpu_panic(ok == .Success, "surface get capabilities")
+		must(ok == .Success, "surface get capabilities")
 
 		data.w.device = device
 		data.w.surface_cfg = wgpu.SurfaceConfiguration {
@@ -110,38 +104,9 @@ wgpu_init :: proc(w: ^WGPU, s: ^SDL) {
 
 		wgpu_resize(data.w, sdl_get_window_size(data.s))
 
-		data.w.queue = wgpu.DeviceGetQueue(data.w.device)
-		wgpu_panic(data.w.queue != nil, "device get queue")
-	}
+		data.w.queue = must(wgpu.DeviceGetQueue(data.w.device), "device get queue")
 
-	w.default.texture_format = .BGRA8Unorm
-
-	w.default.depth_format = .Depth24Plus
-
-	w.default.sampler = wgpu.DeviceCreateSampler(
-		w.device,
-		&wgpu.SamplerDescriptor {
-			label = "default",
-			addressModeU = .Repeat,
-			addressModeV = .Repeat,
-			addressModeW = .Repeat,
-			magFilter = .Linear,
-			minFilter = .Linear,
-			mipmapFilter = .Nearest,
-			maxAnisotropy = 1,
-		},
-	)
-
-	w.default.render_pass = wgpu.RenderPassDescriptor {
-		label                = "default",
-		colorAttachmentCount = 1,
-		colorAttachments     = &wgpu.RenderPassColorAttachment {
-			view = nil,
-			depthSlice = wgpu.DEPTH_SLICE_UNDEFINED,
-			loadOp = .Clear,
-			storeOp = .Store,
-			clearValue = wgpu.Color{0.0, 0.0, 0.0, 1.0},
-		},
+		data.w.default.texture_format = capabilities.formats[0]
 	}
 }
 
@@ -171,16 +136,11 @@ wgpu_resize :: proc(w: ^WGPU, size: Vec2i) {
 
 wgpu_frame_begin :: proc(w: ^WGPU, r: ^Render, window_size: Vec2i) {
 	assert(w.initialized)
-	renderpass_begin(w, r, &r.render_pass, window_size)
+	renderpass_begin(w, r, window_size)
 }
 
 wgpu_frame_end :: proc(w: ^WGPU, r: ^Render) {
 	assert(w.initialized)
-	renderpass_end(w, r, &r.render_pass)
-}
-
-wgpu_panic :: proc(ok: bool, msg: string = "") {
-	if ok {return}
-	log.panic("WebGPU panic: {}", msg)
+	renderpass_end(w, r)
 }
 
