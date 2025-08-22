@@ -717,13 +717,13 @@ job_system_init :: proc(js: ^Job_System, allocator: mem.Allocator, thread_count 
     if actual_thread_count <= 0 {
         actual_thread_count = max(1, runtime.processor_core_count() - 1) // Leave one core for main thread
     }
-    
+
     // Initialize the job system
     js.allocator = allocator
     js.job_counter = 0
     js.completed_jobs = make(map[Job_Handle]bool, allocator)
     sync.mutex_init(&js.mutex)
-    
+
     // Initialize the underlying thread pool
     thread.pool_init(&js.pool, allocator, actual_thread_count)
 }
@@ -736,10 +736,10 @@ job_system_start :: proc(js: ^Job_System) {
 job_system_shutdown :: proc(js: ^Job_System) {
     // Wait for all current jobs to complete
     thread.pool_join(&js.pool)
-    
+
     // Stop all worker threads
     thread.pool_shutdown(&js.pool)
-    
+
     // Clear completed jobs tracking
     sync.mutex_lock(&js.mutex)
     clear(&js.completed_jobs)
@@ -749,14 +749,14 @@ job_system_shutdown :: proc(js: ^Job_System) {
 job_system_destroy :: proc(js: ^Job_System) {
     // Ensure system is shut down first
     job_system_shutdown(js)
-    
+
     // Destroy the thread pool
     thread.pool_destroy(&js.pool)
-    
+
     // Clean up resources
     delete(js.completed_jobs)
     sync.mutex_destroy(&js.mutex)
-    
+
     // Zero out the struct
     js^ = {}
 }
@@ -776,7 +776,7 @@ wait_for_jobs :: proc(js: ^Job_System, handles: []Job_Handle) {
     for handle in handles {
         wait_for_job(js, handle)
     }
-    
+
     // Alternative optimized approach:
     // for {
     //     all_complete := true
@@ -794,7 +794,7 @@ wait_for_jobs :: proc(js: ^Job_System, handles: []Job_Handle) {
 is_job_complete :: proc(js: ^Job_System, handle: Job_Handle) -> bool {
     sync.mutex_lock(&js.mutex)
     defer sync.mutex_unlock(&js.mutex)
-    
+
     completed, exists := js.completed_jobs[handle]
     return exists && completed
 }
@@ -822,15 +822,15 @@ get_worker_count :: proc(js: ^Job_System) -> int {
 _internal_task_wrapper :: proc(task: thread.Task) {
     // Extract job data
     job_data := cast(^_Job_Wrapper_Data)task.data
-    
+
     // Execute the actual job
     job_data.procedure(job_data.user_data)
-    
+
     // Mark as completed
     sync.mutex_lock(&job_data.job_system.mutex)
     job_data.job_system.completed_jobs[job_data.handle] = true
     sync.mutex_unlock(&job_data.job_system.mutex)
-    
+
     // Clean up wrapper data
     free(job_data, job_data.job_system.allocator)
 }
@@ -885,7 +885,7 @@ job_system_enable_events :: proc(js: ^Job_System, config: Event_Config) {
 job_system_disable_events :: proc(js: ^Job_System) {
     sync.mutex_lock(&js.event_mutex)
     defer sync.mutex_unlock(&js.event_mutex)
-    
+
     delete(js.event_queue)
     js.events_enabled = false
     sync.mutex_destroy(&js.event_mutex)
@@ -897,10 +897,10 @@ job_system_disable_events :: proc(js: ^Job_System) {
 // Internal procedure to emit events
 _emit_event :: proc(js: ^Job_System, event_type: Job_Event_Type, handle: Job_Handle = 0, worker_id := -1, error_msg := "") {
     if !js.events_enabled do return
-    
+
     sync.mutex_lock(&js.event_mutex)
     defer sync.mutex_unlock(&js.event_mutex)
-    
+
     // Create event
     event := Job_Event{
         type = event_type,
@@ -909,7 +909,7 @@ _emit_event :: proc(js: ^Job_System, event_type: Job_Event_Type, handle: Job_Han
         worker_id = worker_id,
         error_message = strings.clone(error_msg, js.event_allocator) if error_msg != "" else "",
     }
-    
+
     // Add to queue (with overflow protection)
     if len(js.event_queue) < cap(js.event_queue) {
         append(&js.event_queue, event)
@@ -926,41 +926,41 @@ _emit_event :: proc(js: ^Job_System, event_type: Job_Event_Type, handle: Job_Han
 // Poll for events (non-blocking)
 poll_job_events :: proc(js: ^Job_System, out_events: ^[dynamic]Job_Event) -> int {
     if !js.events_enabled do return 0
-    
+
     sync.mutex_lock(&js.event_mutex)
     defer sync.mutex_unlock(&js.event_mutex)
-    
+
     event_count := len(js.event_queue)
     if event_count == 0 do return 0
-    
+
     // Copy events to output buffer
     append(out_events, ..js.event_queue[:])
-    
+
     // Clear the internal queue
     clear(&js.event_queue)
-    
+
     return event_count
 }
 
 // Get event count without consuming
 get_pending_event_count :: proc(js: ^Job_System) -> int {
     if !js.events_enabled do return 0
-    
+
     sync.mutex_lock(&js.event_mutex)
     defer sync.mutex_unlock(&js.event_mutex)
-    
+
     return len(js.event_queue)
 }
 
 // Peek at next event without consuming
 peek_next_event :: proc(js: ^Job_System) -> (Job_Event, bool) {
     if !js.events_enabled do return {}, false
-    
+
     sync.mutex_lock(&js.event_mutex)
     defer sync.mutex_unlock(&js.event_mutex)
-    
+
     if len(js.event_queue) == 0 do return {}, false
-    
+
     return js.event_queue[0], true
 }
 ```
@@ -969,7 +969,7 @@ peek_next_event :: proc(js: ^Job_System) -> (Job_Event, bool) {
 ```odin
 Job_System :: struct {
     // ... existing fields ...
-    
+
     // Event system fields
     events_enabled: bool,
     event_queue: [dynamic]Job_Event,
@@ -1008,3 +1008,163 @@ for event in events {
 
 This design provides thread-safe job scheduling, dependency management, and efficient work distribution across available cores while building on Odin's existing thread pool infrastructure.
 
+# Thu Aug 21 2025
+
+Begin here tomorrow.
+
+```
+❯ mise diagnostic -- -debug
+[bootstrap] sources up-to-date, skipping
+[diagnostic] $ $MISE_PROJECT_ROOT/build -dev -verbose -run -run-arg:-run-for:10 -debug
+[INFO ] --- [2025-08-22 06:23:35] [225:dev()] Building a development build
+[DEBUG] --- [2025-08-22 06:23:35] [128:run_proc()] Running process: mkdir -p bin/develop
+[DEBUG] --- [2025-08-22 06:23:35] [128:run_proc()] Running process: odin build src/entry/game -out:bin/develop/game -debug -define:FRAME_DEBUG=true
+[INFO ] --- [2025-08-22 06:23:36] [238:dev()] Running development build
+[DEBUG] --- [2025-08-22 06:23:36] [128:run_proc()] Running process: bin/develop/game -run-for:10
+[DEBUG] --- [2025-08-22 06:23:36] [130:run_proc()] With environment:
+[DEBUG] --- [2025-08-22 06:23:36] [131:run_proc()]   RUST_BACKTRACE=full
+[INFO ] --- [2025-08-22 06:23:36] [app.odin:46:app_init()] [18837220] Initializing Application...
+[INFO ] --- [2025-08-22 06:23:36] [sdl.odin:52:sdl_init()] [18837220] Initializing SDL...
+[INFO ] --- [2025-08-22 06:23:36] [sdl.odin:53:sdl_init()] [18837220] SDL initialized
+[INFO ] --- [2025-08-22 06:23:36] [wgpu.odin:35:wgpu_init()] [18837220] Initializing WebGPU...
+[DEBUG] --- [2025-08-22 06:23:36] [wgpu.odin:164:wgpu_resize()] [18837220] WebGPU: resizing surface to (1280x720)
+[INFO ] --- [2025-08-22 06:23:36] [wgpu.odin:36:wgpu_init()] [18837220] WebGPU initialized
+[INFO ] --- [2025-08-22 06:23:36] [render.odin:56:render_init()] [18837220] Initializing Render...
+[INFO ] --- [2025-08-22 06:23:36] [render.odin:135:sprite_batcher_init()] [18837220] Initializing Sprite Batcher...
+[INFO ] --- [2025-08-22 06:23:36] [render.odin:136:sprite_batcher_init()] [18837220] Sprite Batcher initialized.
+[INFO ] --- [2025-08-22 06:23:36] [render.odin:57:render_init()] [18837220] Render initialized.
+[DEBUG] --- [2025-08-22 06:23:36] [game.odin:19:game_init()] [18837220] Begin initializing game module
+[DEBUG] --- [2025-08-22 06:23:36] [game.odin:20:game_init()] [18837220] End initializing game module
+[INFO ] --- [2025-08-22 06:23:36] [app.odin:47:app_init()] [18837220] Application initialized
+[INFO ] --- [2025-08-22 06:23:36] [app.odin:89:app_run()] [18837220] Running App for 10 frames then exiting.
+[DEBUG] --- [2025-08-22 06:23:36] [wgpu.odin:164:wgpu_resize()] [18837220] WebGPU: resizing surface to (1280x720)
+[DEBUG] --- [2025-08-22 06:23:36] [game.odin:38:game_update()] [18837220] Begin updating game state
+[DEBUG] --- [2025-08-22 06:23:36] [game.odin:39:game_update()] [18837220] End updating game state
+[DEBUG] --- [2025-08-22 06:23:36] [render.odin:77:renderpass_begin()] [18837220] Beginning render pass...
+[DEBUG] --- [2025-08-22 06:23:36] [game.odin:46:game_draw()] [18837220] Begin drawing game frame
+[DEBUG] --- [2025-08-22 06:23:36] [game.odin:47:game_draw()] [18837220] End drawing game frame
+[DEBUG] --- [2025-08-22 06:23:36] [render.odin:107:renderpass_end()] [18837220] Ending render pass...
+[DEBUG] --- [2025-08-22 06:23:36] [render.odin:299:sprite_batcher_draw()] [18837220] Begin Sprite Batcher Draw...
+[DEBUG] --- [2025-08-22 06:23:36] [render.odin:300:sprite_batcher_draw()] [18837220] End Sprite Batcher Draw.
+
+thread '<unnamed>' panicked at src/lib.rs:417:5:
+wgpu uncaptured error:
+Validation Error
+
+Caused by:
+  In wgpuRenderPassEncoderEnd
+    In a pass parameter
+      No color attachments or depth attachments were provided, at least one attachment of any kind must be provided
+
+
+stack backtrace:
+   0:        0x100d60bf8 - std::backtrace_rs::backtrace::libunwind::trace::hd09570c029a6744a
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/std/src/../../backtrace/src/backtrace/libunwind.rs:117:9
+   1:        0x100d60bf8 - std::backtrace_rs::backtrace::trace_unsynchronized::h8d2fa64833f91cb3
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/std/src/../../backtrace/src/backtrace/mod.rs:66:14
+   2:        0x100d60bf8 - std::sys::backtrace::_print_fmt::h567d2a106a3b0dee
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/std/src/sys/backtrace.rs:66:9
+   3:        0x100d60bf8 - <std::sys::backtrace::BacktraceLock::print::DisplayBacktrace as core::fmt::Display>::fmt::h92dda645f072dcaf
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/std/src/sys/backtrace.rs:39:26
+   4:        0x100da0c90 - core::fmt::rt::Argument::fmt::hc0b28dad2d7b7ba8
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/core/src/fmt/rt.rs:184:76
+   5:        0x100da0c90 - core::fmt::write::hbc92919d8e8f9a96
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/core/src/fmt/mod.rs:1481:21
+   6:        0x100d56c28 - std::io::default_write_fmt::h0768ab719ca8b5cc
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/std/src/io/mod.rs:639:11
+   7:        0x100d56c28 - std::io::Write::write_fmt::hcee3b5dc9ab531be
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/std/src/io/mod.rs:1914:13
+   8:        0x100d60aac - std::sys::backtrace::BacktraceLock::print::h0f497abce563e5d2
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/std/src/sys/backtrace.rs:42:9
+   9:        0x100d62dc8 - std::panicking::default_hook::{{closure}}::h62595143a6c21f05
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/std/src/panicking.rs:300:22
+  10:        0x100d62c18 - std::panicking::default_hook::hd800536ed1df5085
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/std/src/panicking.rs:327:9
+  11:        0x100d63940 - std::panicking::rust_panic_with_hook::h1882a30575fbb763
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/std/src/panicking.rs:833:13
+  12:        0x100d6356c - std::panicking::begin_panic_handler::{{closure}}::h39275ef3005e6337
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/std/src/panicking.rs:706:13
+  13:        0x100d610a8 - std::sys::backtrace::__rust_end_short_backtrace::h6ede323c05a76849
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/std/src/sys/backtrace.rs:168:18
+  14:        0x100d63214 - __rustc[95feac21a9532783]::rust_begin_unwind
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/std/src/panicking.rs:697:5
+  15:        0x100dd8840 - core::panicking::panic_fmt::h529fda7ea817ba4f
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/core/src/panicking.rs:75:14
+  16:        0x100db2828 - wgpu_native::default_uncaptured_error_handler::hf25de64590a009b9
+  17:        0x10091412c - wgpu_native::ErrorSinkRaw::handle_error::hbcb9f29bd6a0e02d
+  18:        0x1009153f4 - wgpu_native::handle_error::h17fb39ef39ca376f
+  19:        0x1009261e4 - _wgpuRenderPassEncoderEnd
+  20:        0x100884828 - game::renderpass_end
+                               at /Users/lily/Documents/repos/eel-pool/src/render.odin:118:2
+  21:        0x1008860a0 - game::wgpu_frame_end
+                               at /Users/lily/Documents/repos/eel-pool/src/wgpu.odin:179:2
+  22:        0x1008840e4 - game::app_update
+                               at /Users/lily/Documents/repos/eel-pool/src/app.odin:119:2
+  23:        0x100883770 - game::app_run
+                               at /Users/lily/Documents/repos/eel-pool/src/app.odin:98:8
+  24:        0x1008c49ac - main::main
+                               at /Users/lily/Documents/repos/eel-pool/src/entry/game/main.odin:12:2
+  25:        0x1008b19fc - main
+                               at /Users/lily/.local/share/mise/installs/asdf-jtakakura-asdf-odin/dev-2025-08/bin/base/runtime/entry_unix.odin:57:4
+
+thread '<unnamed>' panicked at library/core/src/panicking.rs:218:5:
+panic in a function that cannot unwind
+stack backtrace:
+   0:        0x100d60bf8 - std::backtrace_rs::backtrace::libunwind::trace::hd09570c029a6744a
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/std/src/../../backtrace/src/backtrace/libunwind.rs:117:9
+   1:        0x100d60bf8 - std::backtrace_rs::backtrace::trace_unsynchronized::h8d2fa64833f91cb3
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/std/src/../../backtrace/src/backtrace/mod.rs:66:14
+   2:        0x100d60bf8 - std::sys::backtrace::_print_fmt::h567d2a106a3b0dee
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/std/src/sys/backtrace.rs:66:9
+   3:        0x100d60bf8 - <std::sys::backtrace::BacktraceLock::print::DisplayBacktrace as core::fmt::Display>::fmt::h92dda645f072dcaf
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/std/src/sys/backtrace.rs:39:26
+   4:        0x100da0c90 - core::fmt::rt::Argument::fmt::hc0b28dad2d7b7ba8
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/core/src/fmt/rt.rs:184:76
+   5:        0x100da0c90 - core::fmt::write::hbc92919d8e8f9a96
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/core/src/fmt/mod.rs:1481:21
+   6:        0x100d56c28 - std::io::default_write_fmt::h0768ab719ca8b5cc
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/std/src/io/mod.rs:639:11
+   7:        0x100d56c28 - std::io::Write::write_fmt::hcee3b5dc9ab531be
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/std/src/io/mod.rs:1914:13
+   8:        0x100d60aac - std::sys::backtrace::BacktraceLock::print::h0f497abce563e5d2
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/std/src/sys/backtrace.rs:42:9
+   9:        0x100d62dc8 - std::panicking::default_hook::{{closure}}::h62595143a6c21f05
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/std/src/panicking.rs:300:22
+  10:        0x100d62c18 - std::panicking::default_hook::hd800536ed1df5085
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/std/src/panicking.rs:327:9
+  11:        0x100d63940 - std::panicking::rust_panic_with_hook::h1882a30575fbb763
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/std/src/panicking.rs:833:13
+  12:        0x100d63544 - std::panicking::begin_panic_handler::{{closure}}::h39275ef3005e6337
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/std/src/panicking.rs:699:13
+  13:        0x100d610a8 - std::sys::backtrace::__rust_end_short_backtrace::h6ede323c05a76849
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/std/src/sys/backtrace.rs:168:18
+  14:        0x100d63214 - __rustc[95feac21a9532783]::rust_begin_unwind
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/std/src/panicking.rs:697:5
+  15:        0x100dd8874 - core::panicking::panic_nounwind_fmt::runtime::hcbc23776d9f6f115
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/core/src/panicking.rs:117:22
+  16:        0x100dd8874 - core::panicking::panic_nounwind_fmt::hae736249e48cf020
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/core/src/intrinsics/mod.rs:3241:9
+  17:        0x100dd88ec - core::panicking::panic_nounwind::hb89b2a5de4429251
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/core/src/panicking.rs:218:5
+  18:        0x100dd8a90 - core::panicking::panic_cannot_unwind::h620b5c02cb97e1cc
+                               at /rustc/17067e9ac6d7ecb70e50f92c1944e545188d2359/library/core/src/panicking.rs:323:5
+  19:        0x100db2858 - wgpu_native::default_uncaptured_error_handler::hf25de64590a009b9
+  20:        0x10091412c - wgpu_native::ErrorSinkRaw::handle_error::hbcb9f29bd6a0e02d
+  21:        0x1009153f4 - wgpu_native::handle_error::h17fb39ef39ca376f
+  22:        0x1009261e4 - _wgpuRenderPassEncoderEnd
+  23:        0x100884828 - game::renderpass_end
+                               at /Users/lily/Documents/repos/eel-pool/src/render.odin:118:2
+  24:        0x1008860a0 - game::wgpu_frame_end
+                               at /Users/lily/Documents/repos/eel-pool/src/wgpu.odin:179:2
+  25:        0x1008840e4 - game::app_update
+                               at /Users/lily/Documents/repos/eel-pool/src/app.odin:119:2
+  26:        0x100883770 - game::app_run
+                               at /Users/lily/Documents/repos/eel-pool/src/app.odin:98:8
+  27:        0x1008c49ac - main::main
+                               at /Users/lily/Documents/repos/eel-pool/src/entry/game/main.odin:12:2
+  28:        0x1008b19fc - main
+                               at /Users/lily/.local/share/mise/installs/asdf-jtakakura-asdf-odin/dev-2025-08/bin/base/runtime/entry_unix.odin:57:4
+thread caused non-unwinding panic. aborting.
+Finished in 1.16s
+[diagnostic] ERROR task failed
+```
