@@ -40,9 +40,9 @@ app_init :: proc(app: ^App, ctx: runtime.Context) {
 	}
 	sdl_init(&app.sdl, sdl_opts)
 
-	wgpu_init(&app.wgpu, &app.sdl)
+	// wgpu_init(&app.wgpu, &app.sdl)
 
-	sprite_batcher_init(&app.wgpu, &app.sprite_batcher)
+	// sprite_batcher_init(&app.wgpu, &app.sprite_batcher)
 
 	game_init(&app.game, app.ctx, app.ctx.logger)
 
