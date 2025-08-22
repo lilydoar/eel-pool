@@ -9,73 +9,55 @@ import "core:path/filepath"
 import "core:slice"
 import "core:strings"
 
-// TODO: move constants into a cfg file for build profiles
-//
-// {
-//   "directories": {
-//     "build": "bin/",
-//     "src": "src/",
-//     "docs": "docs/gen"
-//   },
-//   "targets": {
-//     "release": {
-//       "dir": "bin/release/",
-//       "entry": "src/entry/release/",
-//       "docs": "bin/release/docs/"
-//     },
-//     "develop": {
-//       "dir": "bin/develop/",
-//       "entry": "src/entry/develop/"
-//     },
-//     "gamelib": {
-//       "dir": "bin/gamelib/"
-//     },
-//     "test": {
-//       "dir": "bin/test"
-//     }
-//   },
-//   "exe_name": "game"
-// }
-
-BUILD_DIR: string : "bin/"
-EXE: string : "game"
-
-RELEASE_DIR: string : BUILD_DIR + "release/"
-RELEASE_DIR_DOCS: string : RELEASE_DIR + "docs/"
-DEVELOP_DIR: string : BUILD_DIR + "develop/"
-GAMELIB_DIR: string : BUILD_DIR + "gamelib/"
-TEST_DIR: string : BUILD_DIR + "test"
-
-DOCS_DIR: string : "docs/gen"
-
-SRC_DIR: string : "src/"
-ENTRY_DIR: string : SRC_DIR + "entry/"
-ENTRY_GAME: string : ENTRY_DIR + "game/"
-LIB_DIR: string : SRC_DIR + "lib/"
-LIB_GAME: string : LIB_DIR + "game/"
-
-cmds_have_failed: bool = false
-tests_have_run: bool = false
-
 Options :: struct {
-	all:      bool `usage:"Build all targets"`,
-	release:  bool `usage:"Produce a release build"`,
-	develop:  bool `usage:"Produce a development build"`,
-	gamelib:  bool `usage:"Build the game code as a dynamic library"`,
-	docs:     bool `usage:"Generate documentation"`,
-	test:     bool `usage:"Build and run all test functions"`,
-	check:    bool `usage:"Check for compilation errors and successful initialization"`,
-	run:      bool `usage:"Run the targets after building"`,
-	run_arg:  [dynamic]string `usage:"Arguments to pass to the application when running"`,
-	verbose:  bool `usage:"Enable verbose output"`,
-	clean:    bool `usage:"Clean the build directory before building"`,
-	no_tests: bool `usage:"Do not run tests (release builds default to running tests)"`,
+	clean:   bool `usage:"Clean the build directory"`,
+	release: bool `usage:"Produce a release build"`,
+	dev:     bool `usage:"Produce a development build"`,
+	gamelib: bool `usage:"Build the game code as a dynamic library"`,
+	test:    bool `usage:"Build and run all test functions"`,
+	docs:    bool `usage:"Generate documentation"`,
+	check:   bool `usage:"Check for compilation errors and successful initialization"`,
+	run:     bool `usage:"Run the targets after building"`,
+	run_arg: [dynamic]string `usage:"Arguments to pass to the application when running"`,
+	verbose: bool `usage:"Enable verbose output"`,
+	debug:   bool `usage:"Enable debug mode"`,
 }
 
 Config :: struct {
-	// These match up to definitions in the code like:
-	// FRAME_DEBUG :: #config(FRAME_DEBUG, false)
-	comp_time_params: map[string]string,
+	game: struct {
+		src:     string,
+		out:     string,
+		release: struct {
+			entry: string,
+			out:   string,
+			flags: [dynamic]string,
+		},
+		dev:     struct {
+			entry: string,
+			out:   string,
+			flags: [dynamic]string,
+		},
+		gamelib: struct {
+			lib:   string,
+			out:   string,
+			flags: [dynamic]string,
+		},
+		docs:    struct {
+			out: string,
+		},
+	},
+}
+
+log_opts :: log.Options {
+	.Level,
+	.Date,
+	.Time,
+	// .Short_File_Path,
+	// .Long_File_Path,
+	.Line,
+	.Procedure,
+	.Terminal_Color,
+	// .Thread_Id,
 }
 
 main :: proc() {
@@ -84,206 +66,49 @@ main :: proc() {
 
 	level := log.Level.Info
 	if opt.verbose {level = log.Level.Debug}
-	context.logger = log.create_console_logger(level)
 
-	cfg := Config{}
-	cfg.comp_time_params = make(map[string]string)
+	context.logger = log.create_console_logger(level, log_opts)
 
-	if opt.verbose {
-		cfg.comp_time_params["FRAME_DEBUG"] = "true"
-		cfg.comp_time_params["VERBOSE_LOGGING"] = "true"
-	} else {
-		cfg.comp_time_params["FRAME_DEBUG"] = "false"
-		cfg.comp_time_params["VERBOSE_LOGGING"] = "false"
+	cfg := Config {
+		game = {
+			src = "src",
+			out = "bin/",
+			release = {
+				entry = "entry/game/",
+				out = "release/game",
+				flags = {"-warnings-as-errors", "-disable-assert", "-o:speed"},
+			},
+			dev = {entry = "entry/game/", out = "develop/game", flags = {"-debug"}},
+			gamelib = {lib = "lib/game/", out = "gamelib/game", flags = {"-debug"}},
+			docs = {out = "docs/gen/"},
+		},
+	}
+
+	if opt.debug {
+		append(&cfg.game.dev.flags, "-define:FRAME_DEBUG=true")
 	}
 
 	if opt.clean {
 		log.info("Cleaning the build directory")
-		must_run_proc({command = []string{"rm", "-rf", BUILD_DIR}})
+		must_run_proc({command = {"rm", "-rf", cfg.game.out}})
 	}
 
-	if opt.all {
-		log.info("Building all targets")
-		opt.release = true
-		opt.develop = true
-		opt.gamelib = true
-		opt.docs = true
-		opt.test = true
-		opt.check = true
-	}
-
-	if opt.check {do_check()}
-
-	if opt.docs {do_doc_gen()}
-
-	if opt.test && !opt.no_tests {do_tests()}
-
-	// TODO: Lint
-
-	// TODO: Format
-
-	if opt.develop {
-		log.info("Building a development build")
-
-		must_run_proc({command = {"mkdir", "-p", DEVELOP_DIR}})
-
-		develop_cmd := [dynamic]string {
-			"odin",
-			"build",
-			ENTRY_GAME,
-			"-out:" + DEVELOP_DIR + EXE,
-			"-debug",
-		}
-
-		for flag in config_get_odin_build_flags(cfg) {append(&develop_cmd, flag)}
-
-		must_run_proc({command = develop_cmd[:]})
-
-		run_cmd := [dynamic]string{}
-		append(&run_cmd, DEVELOP_DIR + EXE)
-		append(&run_cmd, ..opt.run_arg[:])
-
-		if opt.check {
-			log.info("Checking development build for successful initialization")
-			append(&run_cmd, "-check")
-		}
-
-		if opt.run || opt.check {
-			log.info("Running development build")
-			must_run_proc({command = run_cmd[:]})
-		}
-	}
-
-	if opt.release {
-		if !opt.no_tests {do_tests()}
-
-		do_doc_gen(out = RELEASE_DIR_DOCS)
-
-		log.info("Building a release build")
-
-		must_run_proc({command = {"mkdir", "-p", RELEASE_DIR}})
-
-		release_cmd := [dynamic]string {
-			"odin",
-			"build",
-			ENTRY_GAME,
-			"-out:" + RELEASE_DIR + EXE,
-			"-disable-assert",
-			"-o:speed",
-			"-warnings-as-errors",
-		}
-
-		for flag in config_get_odin_build_flags(cfg) {append(&release_cmd, flag)}
-
-		must_run_proc({command = release_cmd[:]})
-
-
-		run_cmd := [dynamic]string{}
-		append(&run_cmd, RELEASE_DIR + EXE)
-		append(&run_cmd, ..opt.run_arg[:])
-
-		if opt.check {
-			log.info("Checking release build for successful initialization")
-			append(&run_cmd, "-check")
-		}
-
-		if opt.run || opt.check {
-			log.info("Running release build")
-			must_run_proc({command = run_cmd[:]})
-		}
-	}
-
-	// TODO: Other CI tasks: building images for testing environments, pushing builds to repositories, etc.
-
-	if cmds_have_failed {
-		log.info("Run with -verbose to see more details")
-		os.exit(1)
-	}
-}
-
-do_check :: proc() {
-	log.info("Checking code for compilation errors")
-
-	check_cmd := []string{"odin", "check", SRC_DIR, "-no-entry-point", "-warnings-as-errors"}
-	must_run_proc({command = check_cmd})
-
-	check_cmd = {
-		"odin",
-		"check",
-		filepath.join({SRC_DIR, "tests"}),
-		"-no-entry-point",
-		"-warnings-as-errors",
-	}
-	must_run_proc({command = check_cmd})
-
-	dirs: []string = {ENTRY_GAME}
-	for dir in dirs {
-		check_cmd = {"odin", "check", dir, "-warnings-as-errors"}
-		must_run_proc({command = check_cmd})
-	}
-}
-
-do_tests :: proc() {
-	if tests_have_run {
-		log.debug("Tests have already been run, skipping")
-		return
-	}
-	tests_have_run = true
-
-	log.info("Running tests")
-
-	must_run_proc({command = {"mkdir", "-p", TEST_DIR}})
-
-	test_build_cmd := []string {
-		"odin",
-		"build",
-		"build.odin",
-		"-file",
-		strings.concatenate({"-out:", filepath.join({TEST_DIR, "build"})}),
-	}
-	must_run_proc({command = test_build_cmd})
-
-	dirs: []string = {"tests"}
-	for dir in dirs {
-		test_cmd := []string {
-			"odin",
-			"test",
-			filepath.join({SRC_DIR, dir}),
-			strings.concatenate({"-out:", filepath.join({BUILD_DIR, "test", dir})}),
-			"-debug",
-			"-warnings-as-errors",
-		}
-		run_proc({command = test_cmd})
-	}
-}
-
-do_doc_gen :: proc(out: string = DOCS_DIR) {
-	log.infof("Generating documentation to {}", out)
-
-	must_run_proc({command = {"mkdir", "-p", out}})
-
-	path := filepath.join({out, strings.concatenate({"build", ".odin-doc"})})
-	file, err := os.create(path);assert(err == os.ERROR_NONE, "Create doc file")
-	defer os.close(file)
-
-	doc_cmd := []string{"odin", "doc", "build.odin", "-file"}
-	run_proc({command = doc_cmd, stdout = file})
-
-	dirs: []string = {"app", "game", "tests"}
-	for dir in dirs {
-		path := filepath.join({out, strings.concatenate({dir, ".odin-doc"})})
-		file, err := os.create(path);assert(err == os.ERROR_NONE, "Create doc file")
-		defer os.close(file)
-
-		doc_cmd := []string{"odin", "doc", filepath.join({SRC_DIR, dir})}
-		run_proc({command = doc_cmd, stdout = file})
-	}
+	if opt.check {check(cfg)}
+	if opt.docs {docs(cfg)}
+	if opt.test {tests()}
+	if opt.gamelib {gamelib(opt, cfg)}
+	if opt.dev {dev(opt, cfg)}
+	if opt.release {release(opt, cfg)}
 }
 
 run_proc :: proc(desc: os.Process_Desc, timeout := os.TIMEOUT_INFINITE) -> bool {
 	assert(len(desc.command) > 0)
 
 	log.debugf("Running process: {}", strings.join(desc.command, " "))
+	desc := desc
+
+	if desc.stdout == nil {desc.stdout = os.stdout}
+	if desc.stderr == nil {desc.stderr = os.stderr}
 
 	process, start_err := os.process_start(desc)
 	if start_err != os.ERROR_NONE {
@@ -291,7 +116,7 @@ run_proc :: proc(desc: os.Process_Desc, timeout := os.TIMEOUT_INFINITE) -> bool 
 		return false
 	}
 
-	state, wait_err := os.process_wait(process)
+	state, wait_err := os.process_wait(process, timeout)
 	if wait_err != os.ERROR_NONE {
 		log.errorf("wait for process: {}", wait_err)
 		return false
@@ -304,15 +129,124 @@ must_run_proc :: proc(desc: os.Process_Desc, timeout := os.TIMEOUT_INFINITE) {
 	assert(run_proc(desc, timeout))
 }
 
-config_get_odin_build_flags :: proc(cfg: Config) -> []string {
-	flags := [dynamic]string{}
+check :: proc(cfg: Config) {
+	log.info("Checking code for compilation errors")
 
-	is_first := true
-	for k, v in cfg.comp_time_params {
-		append(&flags, strings.concatenate({"-define:", k, "=", v}))
-		is_first = false
+	must_run_proc(
+		{command = {"odin", "check", cfg.game.src, "-no-entry-point", "-warnings-as-errors"}},
+	)
+}
+
+docs :: proc(cfg: Config) {
+	out_dir := filepath.join({cfg.game.out, cfg.game.docs.out})
+
+	log.infof("Generating documentation to {}", out_dir)
+	must_run_proc({command = {"mkdir", "-p", out_dir}})
+
+	// build.odin
+	path := filepath.join({out_dir, "build.odin-doc"})
+	file_build_doc, err_build_doc := os.create(path)
+	assert(err_build_doc == os.ERROR_NONE)
+	defer os.close(file_build_doc)
+
+	run_proc({command = {"odin", "doc", "build.odin", "-file"}, stdout = file_build_doc})
+
+	// game package
+	path = filepath.join({out_dir, "game.odin-doc"})
+	file_game_doc, err_game_doc := os.create(path)
+	assert(err_game_doc == os.ERROR_NONE)
+	defer os.close(file_game_doc)
+
+	run_proc({command = {"odin", "doc", cfg.game.src, "-no-entry-point"}, stdout = file_game_doc})
+}
+
+
+tests :: proc() {
+	log.info("Running tests")
+	log.warn("tests not implemented")
+}
+
+gamelib :: proc(opt: Options, cfg: Config) {
+	entry := filepath.join({cfg.game.src, cfg.game.gamelib.lib})
+	out := filepath.join({cfg.game.out, cfg.game.gamelib.out})
+
+	log.info("Building game code as a dynamic library")
+	must_run_proc({command = {"mkdir", "-p", filepath.dir(out)}})
+
+	cmd_build := [dynamic]string {
+		"odin",
+		"build",
+		entry,
+		strings.concatenate({"-out:", out}),
+		"-build-mode:dll",
 	}
 
-	return flags[:]
+	for flag in cfg.game.gamelib.flags {
+		append(&cmd_build, flag)
+	}
+
+	run_proc({command = cmd_build[:]})
+}
+
+dev :: proc(opt: Options, cfg: Config) {
+	entry := filepath.join({cfg.game.src, cfg.game.dev.entry})
+	out := filepath.join({cfg.game.out, cfg.game.dev.out})
+
+	log.info("Building a development build")
+	must_run_proc({command = {"mkdir", "-p", filepath.dir(out)}})
+
+	cmd_build := [dynamic]string{"odin", "build", entry, strings.concatenate({"-out:", out})}
+
+	for flag in cfg.game.dev.flags {
+		append(&cmd_build, flag)
+	}
+
+	run_proc({command = cmd_build[:]})
+
+	if opt.run || opt.check {
+		log.info("Running development build")
+
+		cmd_run := [dynamic]string{out}
+
+		if opt.check {
+			log.debug("Checking development build for successful initialization")
+			append(&cmd_run, "-check")
+		}
+
+		append(&cmd_run, ..opt.run_arg[:])
+
+		run_proc({command = cmd_run[:]})
+	}
+}
+
+release :: proc(opt: Options, cfg: Config) {
+	entry := filepath.join({cfg.game.src, cfg.game.release.entry})
+	out := filepath.join({cfg.game.out, cfg.game.release.out})
+
+	log.info("Building a release build")
+	must_run_proc({command = {"mkdir", "-p", filepath.dir(out)}})
+
+	cmd_build := [dynamic]string{"odin", "build", entry, strings.concatenate({"-out:", out})}
+
+	for flag in cfg.game.release.flags {
+		append(&cmd_build, flag)
+	}
+
+	run_proc({command = cmd_build[:]})
+
+	if opt.run || opt.check {
+		log.info("Running release build")
+
+		cmd_run := [dynamic]string{out}
+
+		if opt.check {
+			log.debug("Checking release build for successful initialization")
+			append(&cmd_run, "-check")
+		}
+
+		append(&cmd_run, ..opt.run_arg[:])
+
+		run_proc({command = cmd_run[:]})
+	}
 }
 
