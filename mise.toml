@@ -9,7 +9,12 @@ outputs = ["build"]
 
 [tasks.build]
 description = "Build the project in dev mode"
-run = "$MISE_PROJECT_ROOT/build -dev -gamelib"
+run = "$MISE_PROJECT_ROOT/build"
+depends = ["bootstrap"]
+
+[tasks.gamelib]
+description = "Build the game code as a dynamic library"
+run = "$MISE_PROJECT_ROOT/build -gamelib"
 sources = ["src/**/*.odin"]
-outputs = ["bin/dev/game", "bin/gamelib/game"]
+outputs = ["bin/gamelib/*"]
 depends = ["bootstrap"]

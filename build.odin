@@ -31,32 +31,33 @@ Options :: struct {
 	check:   bool `usage:"Check for compilation errors and successful initialization"`,
 	run:     bool `usage:"Run the targets after building"`,
 	run_arg: [dynamic]string `usage:"Arguments to pass to the application when running"`,
+	run_env: [dynamic]string `usage:"Environment to pass to the application when running"`,
 	verbose: bool `usage:"Enable verbose output"`,
 	debug:   bool `usage:"Enable debug mode"`,
 }
 
 Config :: struct {
-	game: struct {
-		src:     string,
-		out:     string,
-		release: struct {
-			entry: string,
-			out:   string,
-			flags: [dynamic]string,
-		},
-		dev:     struct {
-			entry: string,
-			out:   string,
-			flags: [dynamic]string,
-		},
-		gamelib: struct {
-			lib:   string,
-			out:   string,
-			flags: [dynamic]string,
-		},
-		docs:    struct {
-			out: string,
-		},
+	src:     string,
+	out:     string,
+	release: struct {
+		entry: string,
+		out:   string,
+		flags: [dynamic]string,
+		env:   [dynamic]string,
+	},
+	dev:     struct {
+		entry: string,
+		out:   string,
+		flags: [dynamic]string,
+		env:   [dynamic]string,
+	},
+	gamelib: struct {
+		lib:   string,
+		out:   string,
+		flags: [dynamic]string,
+	},
+	docs:    struct {
+		out: string,
 	},
 }
 
@@ -71,28 +72,39 @@ main :: proc() {
 
 	context.logger = log.create_console_logger(level, log_opts)
 
-	cfg := Config {
-		game = {
-			src = "src",
-			out = "bin/",
-			release = {
-				entry = "entry/game/",
-				out = "release/game",
-				flags = {"-warnings-as-errors", "-disable-assert", "-o:speed"},
-			},
-			dev = {entry = "entry/game/", out = "develop/game", flags = {"-debug"}},
-			gamelib = {lib = "lib/game/", out = "gamelib/game", flags = {"-debug"}},
-			docs = {out = "docs/gen/"},
-		},
+	if len(os.args) == 1 {
+		// TODO: Call help command
+		return
 	}
 
+	cfg := Config {
+		src = "src",
+		out = "bin/",
+		release = {
+			entry = "entry/game/",
+			out = "release/game",
+			flags = {"-warnings-as-errors", "-disable-assert", "-o:speed"},
+		},
+		dev = {
+			entry = "entry/game/",
+			out = "develop/game",
+			flags = {"-debug"},
+			env = {"RUST_BACKTRACE=1"},
+		},
+		gamelib = {lib = "lib/game/", out = "gamelib/game", flags = {"-debug"}},
+		docs = {out = "docs/gen/"},
+	}
+
+	for str in opt.run_arg {append(&cfg.release.env, str)}
+	for str in opt.run_arg {append(&cfg.dev.env, str)}
+
 	if opt.debug {
-		append(&cfg.game.dev.flags, "-define:FRAME_DEBUG=true")
+		append(&cfg.dev.flags, "-define:FRAME_DEBUG=true")
 	}
 
 	if opt.clean {
 		log.info("Cleaning the build directory")
-		must_run_proc({command = {"rm", "-rf", cfg.game.out}})
+		must_run_proc({command = {"rm", "-rf", cfg.out}})
 	}
 
 	if opt.check {check(cfg)}
@@ -112,6 +124,11 @@ run_proc :: proc(desc: os.Process_Desc, timeout := os.TIMEOUT_INFINITE) -> bool 
 	assert(len(desc.command) > 0)
 
 	log.debugf("Running process: {}", strings.join(desc.command, " "))
+	if len(desc.env) > 0 {
+		log.debugf("With environment:")
+		for e in desc.env {log.debugf("  {}", e)}
+	}
+
 	desc := desc
 
 	if desc.stdout == nil {desc.stdout = os.stdout}
@@ -140,13 +157,13 @@ check :: proc(cfg: Config) {
 	log.info("Checking code for compilation errors")
 
 	ok := run_proc(
-		{command = {"odin", "check", cfg.game.src, "-no-entry-point", "-warnings-as-errors"}},
+		{command = {"odin", "check", cfg.src, "-no-entry-point", "-warnings-as-errors"}},
 	)
 	if !ok {cmd_failed = true}
 }
 
 docs :: proc(cfg: Config) {
-	out_dir := filepath.join({cfg.game.out, cfg.game.docs.out})
+	out_dir := filepath.join({cfg.out, cfg.docs.out})
 
 	log.infof("Generating documentation to {}", out_dir)
 	must_run_proc({command = {"mkdir", "-p", out_dir}})
@@ -166,9 +183,7 @@ docs :: proc(cfg: Config) {
 	assert(err_game_doc == os.ERROR_NONE)
 	defer os.close(file_game_doc)
 
-	ok = run_proc(
-		{command = {"odin", "doc", cfg.game.src, "-no-entry-point"}, stdout = file_game_doc},
-	)
+	ok = run_proc({command = {"odin", "doc", cfg.src, "-no-entry-point"}, stdout = file_game_doc})
 	if !ok {cmd_failed = true}
 }
 
@@ -179,8 +194,8 @@ tests :: proc() {
 }
 
 gamelib :: proc(opt: Options, cfg: Config) {
-	entry := filepath.join({cfg.game.src, cfg.game.gamelib.lib})
-	out := filepath.join({cfg.game.out, cfg.game.gamelib.out})
+	entry := filepath.join({cfg.src, cfg.gamelib.lib})
+	out := filepath.join({cfg.out, cfg.gamelib.out})
 
 	log.info("Building game code as a dynamic library")
 	must_run_proc({command = {"mkdir", "-p", filepath.dir(out)}})
@@ -193,7 +208,7 @@ gamelib :: proc(opt: Options, cfg: Config) {
 		"-build-mode:dll",
 	}
 
-	for flag in cfg.game.gamelib.flags {
+	for flag in cfg.gamelib.flags {
 		append(&cmd_build, flag)
 	}
 
@@ -202,15 +217,15 @@ gamelib :: proc(opt: Options, cfg: Config) {
 }
 
 dev :: proc(opt: Options, cfg: Config) {
-	entry := filepath.join({cfg.game.src, cfg.game.dev.entry})
-	out := filepath.join({cfg.game.out, cfg.game.dev.out})
+	entry := filepath.join({cfg.src, cfg.dev.entry})
+	out := filepath.join({cfg.out, cfg.dev.out})
 
 	log.info("Building a development build")
 	must_run_proc({command = {"mkdir", "-p", filepath.dir(out)}})
 
 	cmd_build := [dynamic]string{"odin", "build", entry, strings.concatenate({"-out:", out})}
 
-	for flag in cfg.game.dev.flags {
+	for flag in cfg.dev.flags {
 		append(&cmd_build, flag)
 	}
 
@@ -229,21 +244,21 @@ dev :: proc(opt: Options, cfg: Config) {
 
 		append(&cmd_run, ..opt.run_arg[:])
 
-		ok = run_proc({command = cmd_run[:]})
+		ok = run_proc({command = cmd_run[:], env = cfg.dev.env[:]})
 		if !ok {cmd_failed = true}
 	}
 }
 
 release :: proc(opt: Options, cfg: Config) {
-	entry := filepath.join({cfg.game.src, cfg.game.release.entry})
-	out := filepath.join({cfg.game.out, cfg.game.release.out})
+	entry := filepath.join({cfg.src, cfg.release.entry})
+	out := filepath.join({cfg.out, cfg.release.out})
 
 	log.info("Building a release build")
 	must_run_proc({command = {"mkdir", "-p", filepath.dir(out)}})
 
 	cmd_build := [dynamic]string{"odin", "build", entry, strings.concatenate({"-out:", out})}
 
-	for flag in cfg.game.release.flags {
+	for flag in cfg.release.flags {
 		append(&cmd_build, flag)
 	}
 
@@ -262,7 +277,7 @@ release :: proc(opt: Options, cfg: Config) {
 
 		append(&cmd_run, ..opt.run_arg[:])
 
-		ok = run_proc({command = cmd_run[:]})
+		ok = run_proc({command = cmd_run[:], env = cfg.release.env[:]})
 		if !ok {cmd_failed = true}
 	}
 }
