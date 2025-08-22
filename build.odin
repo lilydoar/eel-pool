@@ -89,14 +89,14 @@ main :: proc() {
 			entry = "entry/game/",
 			out = "develop/game",
 			flags = {"-debug"},
-			env = {"RUST_BACKTRACE=1"},
+			env = {"RUST_BACKTRACE=full"},
 		},
 		gamelib = {lib = "lib/game/", out = "gamelib/game", flags = {"-debug"}},
 		docs = {out = "docs/gen/"},
 	}
 
-	for str in opt.run_arg {append(&cfg.release.env, str)}
-	for str in opt.run_arg {append(&cfg.dev.env, str)}
+	for str in opt.run_env {append(&cfg.release.env, str)}
+	for str in opt.run_env {append(&cfg.dev.env, str)}
 
 	if opt.debug {
 		append(&cfg.dev.flags, "-define:FRAME_DEBUG=true")
@@ -115,7 +115,9 @@ main :: proc() {
 	if opt.release {release(opt, cfg)}
 
 	if cmd_failed {
-		log.warn("A command failed. Run with -verbose for more information")
+		if !opt.verbose {
+			log.warn("A command failed. Run with -verbose for more information")
+		}
 		os.exit(1)
 	}
 }
