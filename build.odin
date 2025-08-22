@@ -9,6 +9,18 @@ import "core:path/filepath"
 import "core:slice"
 import "core:strings"
 
+log_opts :: log.Options {
+	.Level,
+	.Date,
+	.Time,
+	// .Short_File_Path,
+	// .Long_File_Path,
+	.Line,
+	.Procedure,
+	.Terminal_Color,
+	// .Thread_Id,
+}
+
 Options :: struct {
 	clean:   bool `usage:"Clean the build directory"`,
 	release: bool `usage:"Produce a release build"`,
@@ -48,17 +60,7 @@ Config :: struct {
 	},
 }
 
-log_opts :: log.Options {
-	.Level,
-	.Date,
-	.Time,
-	// .Short_File_Path,
-	// .Long_File_Path,
-	.Line,
-	.Procedure,
-	.Terminal_Color,
-	// .Thread_Id,
-}
+cmd_failed := false
 
 main :: proc() {
 	opt: Options
@@ -99,6 +101,11 @@ main :: proc() {
 	if opt.gamelib {gamelib(opt, cfg)}
 	if opt.dev {dev(opt, cfg)}
 	if opt.release {release(opt, cfg)}
+
+	if cmd_failed {
+		log.warn("A command failed. Run with -verbose for more information")
+		os.exit(1)
+	}
 }
 
 run_proc :: proc(desc: os.Process_Desc, timeout := os.TIMEOUT_INFINITE) -> bool {
@@ -122,7 +129,7 @@ run_proc :: proc(desc: os.Process_Desc, timeout := os.TIMEOUT_INFINITE) -> bool 
 		return false
 	}
 
-	return true
+	return state.exit_code == 0
 }
 
 must_run_proc :: proc(desc: os.Process_Desc, timeout := os.TIMEOUT_INFINITE) {
@@ -132,9 +139,10 @@ must_run_proc :: proc(desc: os.Process_Desc, timeout := os.TIMEOUT_INFINITE) {
 check :: proc(cfg: Config) {
 	log.info("Checking code for compilation errors")
 
-	must_run_proc(
+	ok := run_proc(
 		{command = {"odin", "check", cfg.game.src, "-no-entry-point", "-warnings-as-errors"}},
 	)
+	if !ok {cmd_failed = true}
 }
 
 docs :: proc(cfg: Config) {
@@ -149,7 +157,8 @@ docs :: proc(cfg: Config) {
 	assert(err_build_doc == os.ERROR_NONE)
 	defer os.close(file_build_doc)
 
-	run_proc({command = {"odin", "doc", "build.odin", "-file"}, stdout = file_build_doc})
+	ok := run_proc({command = {"odin", "doc", "build.odin", "-file"}, stdout = file_build_doc})
+	if !ok {cmd_failed = true}
 
 	// game package
 	path = filepath.join({out_dir, "game.odin-doc"})
@@ -157,7 +166,10 @@ docs :: proc(cfg: Config) {
 	assert(err_game_doc == os.ERROR_NONE)
 	defer os.close(file_game_doc)
 
-	run_proc({command = {"odin", "doc", cfg.game.src, "-no-entry-point"}, stdout = file_game_doc})
+	ok = run_proc(
+		{command = {"odin", "doc", cfg.game.src, "-no-entry-point"}, stdout = file_game_doc},
+	)
+	if !ok {cmd_failed = true}
 }
 
 
@@ -185,7 +197,8 @@ gamelib :: proc(opt: Options, cfg: Config) {
 		append(&cmd_build, flag)
 	}
 
-	run_proc({command = cmd_build[:]})
+	ok := run_proc({command = cmd_build[:]})
+	if !ok {cmd_failed = true}
 }
 
 dev :: proc(opt: Options, cfg: Config) {
@@ -201,9 +214,10 @@ dev :: proc(opt: Options, cfg: Config) {
 		append(&cmd_build, flag)
 	}
 
-	run_proc({command = cmd_build[:]})
+	ok := run_proc({command = cmd_build[:]})
+	if !ok {cmd_failed = true}
 
-	if opt.run || opt.check {
+	if opt.run || opt.check && ok {
 		log.info("Running development build")
 
 		cmd_run := [dynamic]string{out}
@@ -215,7 +229,8 @@ dev :: proc(opt: Options, cfg: Config) {
 
 		append(&cmd_run, ..opt.run_arg[:])
 
-		run_proc({command = cmd_run[:]})
+		ok = run_proc({command = cmd_run[:]})
+		if !ok {cmd_failed = true}
 	}
 }
 
@@ -232,9 +247,10 @@ release :: proc(opt: Options, cfg: Config) {
 		append(&cmd_build, flag)
 	}
 
-	run_proc({command = cmd_build[:]})
+	ok := run_proc({command = cmd_build[:]})
+	if !ok {cmd_failed = true}
 
-	if opt.run || opt.check {
+	if opt.run || opt.check && ok {
 		log.info("Running release build")
 
 		cmd_run := [dynamic]string{out}
@@ -246,7 +262,8 @@ release :: proc(opt: Options, cfg: Config) {
 
 		append(&cmd_run, ..opt.run_arg[:])
 
-		run_proc({command = cmd_run[:]})
+		ok = run_proc({command = cmd_run[:]})
+		if !ok {cmd_failed = true}
 	}
 }
 

@@ -11,12 +11,5 @@ outputs = ["build"]
 description = "Build the project in dev mode"
 run = "$MISE_PROJECT_ROOT/build -dev -gamelib"
 sources = ["src/**/*.odin"]
-outputs = ["bin/dev/game"]
-depends = ["bootstrap"]
-
-[tasks.build-release]
-description = "Build the project in release mode"
-run = "$MISE_PROJECT_ROOT/build -release"
-sources = ["src/**/*.odin"]
-outputs = ["bin/release/game"]
+outputs = ["bin/dev/game", "bin/gamelib/game"]
 depends = ["bootstrap"]
