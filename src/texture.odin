@@ -21,74 +21,11 @@ texture_repository_init :: proc(w: ^WGPU, r: ^Render, repo: ^Texture_Repository)
 
 	repo.textures = map[string]Texture{}
 
-	// TODO: Move the creation of the default texture into the Render init
-	// Then just register that here
-	// Load the default white texture into the repository
-	{
-		t: Texture
-		t.name = "default"
-		t.wgpu.texture = must(
-			wgpu.DeviceCreateTexture(
-				w.device,
-				&wgpu.TextureDescriptor {
-					label = t.name,
-					usage = {.CopyDst, .TextureBinding},
-					dimension = ._2D,
-					size = {1, 1, 1},
-					format = w.default.texture_format,
-					mipLevelCount = 1,
-					sampleCount = 1,
-				},
-			),
-		)
-
-		t.wgpu.view = must(
-			wgpu.TextureCreateView(
-				t.wgpu.texture,
-				&wgpu.TextureViewDescriptor {
-					label = "default",
-					format = w.default.texture_format,
-					dimension = ._2DArray,
-					mipLevelCount = 1,
-					arrayLayerCount = 1,
-					aspect = .All,
-				},
-			),
-		)
-
-		t.wgpu.bindgroup = must(
-			wgpu.DeviceCreateBindGroup(
-				w.device,
-				&wgpu.BindGroupDescriptor {
-					label = t.name,
-					layout = w.default.texture_bind_group_layout,
-					entryCount = 2,
-					entries = raw_data(
-						[]wgpu.BindGroupEntry {
-							{binding = 0, textureView = t.wgpu.view},
-							{binding = 1, sampler = r.default.sampler},
-						},
-					),
-				},
-			),
-		)
-
-		data: []u8 = {255, 255, 255, 255}
-
-		wgpu.QueueWriteTexture(
-			w.queue,
-			&wgpu.TexelCopyTextureInfo{texture = t.wgpu.texture, aspect = .All, mipLevel = 0},
-			raw_data(data),
-			len(data),
-			&wgpu.TexelCopyBufferLayout{bytesPerRow = 4, rowsPerImage = 1},
-			&wgpu.Extent3D{width = 1, height = 1, depthOrArrayLayers = 1},
-		)
-
-		texture_repository_register(repo, t.name, t)
-	}
+	texture_repository_register(repo, r.default.texture.name, r.default.texture)
 }
 
 texture_repository_deinit :: proc(repo: ^Texture_Repository) {
+	delete(repo.textures)
 }
 
 texture_repository_register :: proc(repo: ^Texture_Repository, name: string, texture: Texture) {
@@ -133,4 +70,17 @@ texture_repository_deregister :: proc(repo: ^Texture_Repository, name: string) {
 // 	repo.textures[name] = texture
 // 	return texture
 // }
+
+texture_repository_get :: proc(repo: ^Texture_Repository, name: string) -> Texture {
+	texture, exists := repo.textures[name]
+	if !exists {
+		log.warn("Texture not found: %", name)
+		return Texture{}
+	}
+	return texture
+}
+
+texture_repository_count :: proc(repo: ^Texture_Repository) -> int {
+	return len(repo.textures)
+}
 

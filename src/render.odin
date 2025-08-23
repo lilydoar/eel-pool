@@ -3,6 +3,10 @@ package game
 import "core:log"
 import "vendor:wgpu"
 
+atlas_width: u32 = 4096
+atlas_height: u32 = 4096
+atlas_layers: u32 = 4
+
 sprite_batcher_shader_source := #load("sprite_batcher.wgsl", string)
 sprite_batcher_label := "Sprite Batcher"
 
@@ -10,8 +14,9 @@ Render :: struct {
 	textures:       Texture_Repository,
 	sprite_batcher: Sprite_Batcher,
 	default:        struct {
-		texture: Texture,
-		sampler: wgpu.Sampler,
+		texture:         Texture,
+		sampler:         wgpu.Sampler,
+		view_projection: Mat4,
 	},
 
 	//
@@ -25,7 +30,7 @@ RenderPass :: struct {
 }
 
 Sprite_Raw :: struct {
-	position: Vec4,
+	position: Vec4, // rotation stored in radians in w component
 	atlas_uv: Vec4,
 	color:    Vec4,
 	scale:    Vec2,
@@ -50,7 +55,7 @@ Sprite_Batcher :: struct {
 }
 
 Sprite_Batcher_RenderPass :: struct {
-	atlas:   WGPU_Texture,
+	atlas:   Texture,
 	uniform: Sprite_Batcher_Uniform,
 	batch:   [dynamic]Sprite_Raw,
 	default: struct {
@@ -70,44 +75,65 @@ render_init :: proc(w: ^WGPU, r: ^Render) {
 
 	sprite_batcher_init(w, &r.sprite_batcher)
 
-	// r.default.texture = must(
-	// 	wgpu.DeviceCreateTexture(
-	// 		w.device,
-	// 		&wgpu.TextureDescriptor {
-	// 			label = "default",
-	// 			usage = {.CopyDst, .TextureBinding},
-	// 			dimension = ._2D,
-	// 			size = wgpu.Extent3D{width = 1, height = 1, depthOrArrayLayers = 1},
-	// 			format = w.default.texture_format,
-	// 			mipLevelCount = 1,
-	// 			sampleCount = 1,
-	// 		},
-	// 	),
-	// )
-	//
-	// r.default.texture_view = must(
-	// 	wgpu.TextureCreateView(
-	// 		r.default.texture,
-	// 		&wgpu.TextureViewDescriptor {
-	// 			label = "default",
-	// 			format = w.default.texture_format,
-	// 			dimension = ._2DArray,
-	// 			mipLevelCount = 1,
-	// 			arrayLayerCount = 1,
-	// 			aspect = .All,
-	// 			usage = {.CopyDst, .TextureBinding},
-	// 		},
-	// 	),
-	// )
+	r.default.texture.name = "default"
+
+	r.default.texture.wgpu.texture = must(
+		wgpu.DeviceCreateTexture(
+			w.device,
+			&wgpu.TextureDescriptor {
+				label = "default",
+				usage = {.CopyDst, .TextureBinding},
+				dimension = ._2D,
+				size = wgpu.Extent3D {
+					width = atlas_width,
+					height = atlas_height,
+					depthOrArrayLayers = atlas_layers,
+				},
+				format = w.default.texture_format,
+				mipLevelCount = 1,
+				sampleCount = 1,
+			},
+		),
+	)
+
+	data: []u8 = {255, 255, 255, 255}
+
+	wgpu.QueueWriteTexture(
+		w.queue,
+		&wgpu.TexelCopyTextureInfo {
+			texture = r.default.texture.wgpu.texture,
+			mipLevel = 0,
+			origin = wgpu.Origin3D{x = 0, y = 0, z = 0},
+			aspect = .All,
+		},
+		raw_data(data),
+		len(data),
+		&wgpu.TexelCopyBufferLayout{bytesPerRow = 4, rowsPerImage = 1},
+		&wgpu.Extent3D{width = 1, height = 1, depthOrArrayLayers = 1},
+	)
+
+	r.default.texture.wgpu.view = must(
+		wgpu.TextureCreateView(
+			r.default.texture.wgpu.texture,
+			&wgpu.TextureViewDescriptor {
+				label = r.default.texture.name,
+				format = r.default.texture.wgpu.format,
+				dimension = ._2DArray,
+				mipLevelCount = 1,
+				arrayLayerCount = 4,
+				aspect = .All,
+			},
+		),
+	)
 
 	r.default.sampler = must(
 		wgpu.DeviceCreateSampler(
 			w.device,
 			&wgpu.SamplerDescriptor {
 				label = "default",
-				addressModeU = .Repeat,
-				addressModeV = .Repeat,
-				addressModeW = .Repeat,
+				addressModeU = .MirrorRepeat,
+				addressModeV = .MirrorRepeat,
+				addressModeW = .MirrorRepeat,
 				magFilter = .Linear,
 				minFilter = .Linear,
 				mipmapFilter = .Nearest,
@@ -116,7 +142,8 @@ render_init :: proc(w: ^WGPU, r: ^Render) {
 		),
 	)
 
-	r.render_pass.sprite_batcher.atlas.bindgroup = must(
+	// r.render_pass.sprite_batcher.atlas.bindgroup = must(
+	r.default.texture.wgpu.bindgroup = must(
 		wgpu.DeviceCreateBindGroup(
 			w.device,
 			&wgpu.BindGroupDescriptor {
@@ -133,14 +160,18 @@ render_init :: proc(w: ^WGPU, r: ^Render) {
 		),
 	)
 
-	r.render_pass.sprite_batcher.uniform = Sprite_Batcher_Uniform {
-		view_projection = Mat4 {
-			Vec4{1.0, 0.0, 0.0, 0.0},
-			Vec4{0.0, 1.0, 0.0, 0.0},
-			Vec4{0.0, 0.0, 1.0, 0.0},
-			Vec4{0.0, 0.0, 0.0, 1.0},
-		},
+	r.default.view_projection = Mat4 {
+		Vec4{1.0, 0.0, 0.0, 0.0},
+		Vec4{0.0, 1.0, 0.0, 0.0},
+		Vec4{0.0, 0.0, 1.0, 0.0},
+		Vec4{0.0, 0.0, 0.0, 1.0},
 	}
+
+	r.render_pass.sprite_batcher.uniform = Sprite_Batcher_Uniform {
+		view_projection = r.default.view_projection,
+	}
+
+	r.render_pass.sprite_batcher.atlas = r.default.texture
 
 	r.render_pass.sprite_batcher.default.sprite = Sprite_Raw {
 		position = Vec4{0.0, 0.0, 0.0, 1.0},
@@ -149,7 +180,6 @@ render_init :: proc(w: ^WGPU, r: ^Render) {
 		scale    = Vec2{1.0, 1.0},
 		atlas_id = 0,
 	}
-
 }
 
 render_deinit :: proc(w: ^WGPU, r: ^Render) {
@@ -221,7 +251,8 @@ renderpass_begin :: proc(w: ^WGPU, r: ^Render, window_size: Vec2i) {
 
 renderpass_end :: proc(w: ^WGPU, r: ^Render) {
 	when FRAME_DEBUG {
-		log.debug("Ending render pass...")
+		log.debug("Ending render pass, submitting all draw calls...")
+		defer log.debug("Render pass ended.")
 		wgpu.RenderPassEncoderInsertDebugMarker(r.render_pass.wgpu.render_encoder, "end")
 	}
 
@@ -322,7 +353,11 @@ sprite_batcher_init :: proc(w: ^WGPU, s: ^Sprite_Batcher, cfg: struct {
 						{
 							binding = 0,
 							visibility = {.Fragment},
-							texture = {sampleType = .Float, viewDimension = ._2DArray},
+							texture = {
+								sampleType = .Float,
+								viewDimension = ._2DArray,
+								multisampled = false,
+							},
 						},
 						{binding = 1, visibility = {.Fragment}, sampler = {type = .Filtering}},
 					},
@@ -417,11 +452,9 @@ sprite_batcher_deinit :: proc(s: ^Sprite_Batcher) {
 
 	wgpu.ShaderModuleRelease(s.shader)
 }
+
 sprite_batcher_begin :: proc(w: ^WGPU, r: ^Render) {
-	when FRAME_DEBUG {
-		log.debug("Begin Sprite Batcher...")
-		defer log.debug("End Sprite Batcher.")
-	}
+	when FRAME_DEBUG {log.debug("Begin Sprite Batcher...")}
 
 	assert(w != nil)
 	assert(r != nil)
@@ -429,6 +462,17 @@ sprite_batcher_begin :: proc(w: ^WGPU, r: ^Render) {
 	assert(r.sprite_batcher.initialized)
 
 	clear(&r.render_pass.sprite_batcher.batch)
+}
+
+sprite_batcher_append :: proc(r: ^RenderPass, sprite: Sprite_Raw) {
+	assert(r != nil)
+	assert(r.active)
+
+	when FRAME_DEBUG {
+		log.debugf("Appending sprite: {}", sprite)
+	}
+
+	append(&r.sprite_batcher.batch, sprite)
 }
 
 sprite_batcher_draw :: proc(w: ^WGPU, r: ^Render) {
@@ -448,6 +492,8 @@ sprite_batcher_draw :: proc(w: ^WGPU, r: ^Render) {
 	if sprite_count == 0 {return}
 
 	when FRAME_DEBUG {
+		log.debugf("Uniform: view_projection = {}", p.sprite_batcher.uniform.view_projection)
+
 		log.debugf("Drawing {} sprites", sprite_count)
 
 		truncate_at := 10
@@ -457,8 +503,6 @@ sprite_batcher_draw :: proc(w: ^WGPU, r: ^Render) {
 			idx += 1
 			log.debugf("{}. {}", idx, s)
 		}
-
-		log.debugf("Uniform: view_projection = {}", p.sprite_batcher.uniform.view_projection)
 	}
 
 	wgpu.QueueWriteBuffer(
@@ -479,7 +523,11 @@ sprite_batcher_draw :: proc(w: ^WGPU, r: ^Render) {
 
 	wgpu.RenderPassEncoderSetPipeline(p.wgpu.render_encoder, s.pipeline)
 	wgpu.RenderPassEncoderSetBindGroup(p.wgpu.render_encoder, 0, s.bindgroups.frame_data)
-	wgpu.RenderPassEncoderSetBindGroup(p.wgpu.render_encoder, 1, p.sprite_batcher.atlas.bindgroup)
+	wgpu.RenderPassEncoderSetBindGroup(
+		p.wgpu.render_encoder,
+		1,
+		p.sprite_batcher.atlas.wgpu.bindgroup,
+	)
 
 	wgpu.RenderPassEncoderDraw(p.wgpu.render_encoder, 4, cast(u32)sprite_count, 0, 0)
 }

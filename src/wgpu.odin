@@ -31,6 +31,7 @@ WGPU_RenderPass :: struct {
 
 WGPU_Texture :: struct {
 	texture:   wgpu.Texture,
+	format:    wgpu.TextureFormat,
 	view:      wgpu.TextureView,
 	bindgroup: wgpu.BindGroup,
 }
