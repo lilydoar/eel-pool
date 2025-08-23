@@ -49,7 +49,7 @@ game_draw :: proc(game: ^Game, render_pass: ^RenderPass) {
 	when FRAME_DEBUG {defer log.debug("End drawing game frame")}
 
 	// TODO: Draw some number of sprites
-
-	append(&render_pass.sprite_batcher.batch, Sprite_Raw{})
+	default := render_pass.sprite_batcher.default.sprite
+	append(&render_pass.sprite_batcher.batch, default)
 }
 

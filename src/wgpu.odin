@@ -14,7 +14,8 @@ WGPU :: struct {
 	device:      wgpu.Device,
 	queue:       wgpu.Queue,
 	default:     struct {
-		texture_format: wgpu.TextureFormat,
+		texture_format:            wgpu.TextureFormat,
+		texture_bind_group_layout: wgpu.BindGroupLayout,
 	},
 }
 
@@ -26,6 +27,12 @@ WGPU_RenderPass :: struct {
 	surface_view:    wgpu.TextureView,
 	command_encoder: wgpu.CommandEncoder,
 	render_encoder:  wgpu.RenderPassEncoder,
+}
+
+WGPU_Texture :: struct {
+	texture:   wgpu.Texture,
+	view:      wgpu.TextureView,
+	bindgroup: wgpu.BindGroup,
 }
 
 wgpu_init :: proc(w: ^WGPU, s: ^SDL) {
@@ -106,8 +113,33 @@ wgpu_init :: proc(w: ^WGPU, s: ^SDL) {
 
 		data.w.queue = must(wgpu.DeviceGetQueue(data.w.device), "device get queue")
 
+		// TODO: Save capabilities and move this out of the callback
 		data.w.default.texture_format = capabilities.formats[0]
 	}
+
+	w.default.texture_bind_group_layout = must(
+		wgpu.DeviceCreateBindGroupLayout(
+			w.device,
+			&wgpu.BindGroupLayoutDescriptor {
+				label = "default",
+				entryCount = 2,
+				entries = raw_data(
+					[]wgpu.BindGroupLayoutEntry {
+						wgpu.BindGroupLayoutEntry {
+							binding = 0,
+							visibility = {.Fragment},
+							texture = {sampleType = .Float, viewDimension = ._2DArray},
+						},
+						wgpu.BindGroupLayoutEntry {
+							binding = 1,
+							visibility = {.Fragment},
+							sampler = {type = .Filtering},
+						},
+					},
+				),
+			},
+		),
+	)
 }
 
 wgpu_deinit :: proc(w: ^WGPU) {
