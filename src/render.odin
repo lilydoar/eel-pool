@@ -425,7 +425,9 @@ sprite_batcher_draw :: proc(w: ^WGPU, r: ^Render) {
 	sprite_count := len(p.sprite_batcher.batch)
 	if sprite_count == 0 {return}
 
-	log.debugf("Drawing {} sprites", sprite_count)
+	when FRAME_DEBUG {
+		log.debugf("Drawing {} sprites", sprite_count)
+	}
 
 	wgpu.QueueWriteBuffer(
 		w.queue,
