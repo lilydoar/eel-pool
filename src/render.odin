@@ -76,6 +76,7 @@ render_init :: proc(w: ^WGPU, r: ^Render) {
 	sprite_batcher_init(w, &r.sprite_batcher)
 
 	r.default.texture.name = "default"
+	r.default.texture.wgpu.format = w.default.texture_format
 
 	r.default.texture.wgpu.texture = must(
 		wgpu.DeviceCreateTexture(
@@ -97,6 +98,10 @@ render_init :: proc(w: ^WGPU, r: ^Render) {
 	)
 
 	data: []u8 = {255, 255, 255, 255}
+	when FRAME_DEBUG {log.debugf(
+			"Writing white pixel data to texture: {} bytes at layer 0",
+			len(data),
+		)}
 
 	wgpu.QueueWriteTexture(
 		w.queue,
@@ -111,6 +116,7 @@ render_init :: proc(w: ^WGPU, r: ^Render) {
 		&wgpu.TexelCopyBufferLayout{bytesPerRow = 4, rowsPerImage = 1},
 		&wgpu.Extent3D{width = 1, height = 1, depthOrArrayLayers = 1},
 	)
+	when FRAME_DEBUG {log.debugf("Texture data written successfully to layer 0")}
 
 	r.default.texture.wgpu.view = must(
 		wgpu.TextureCreateView(
@@ -125,6 +131,11 @@ render_init :: proc(w: ^WGPU, r: ^Render) {
 			},
 		),
 	)
+	when FRAME_DEBUG {log.debugf(
+			"Created texture view as 2D array with {} layers, format: {}",
+			4,
+			r.default.texture.wgpu.format,
+		)}
 
 	r.default.sampler = must(
 		wgpu.DeviceCreateSampler(
@@ -141,6 +152,7 @@ render_init :: proc(w: ^WGPU, r: ^Render) {
 			},
 		),
 	)
+	when FRAME_DEBUG {log.debugf("Created texture sampler")}
 
 	// r.render_pass.sprite_batcher.atlas.bindgroup = must(
 	r.default.texture.wgpu.bindgroup = must(
@@ -159,6 +171,11 @@ render_init :: proc(w: ^WGPU, r: ^Render) {
 			},
 		),
 	)
+	when FRAME_DEBUG {log.debugf(
+			"Created bind group for texture array with view: {}, sampler: {}",
+			r.default.texture.wgpu.view != nil,
+			r.default.sampler != nil,
+		)}
 
 	r.default.view_projection = Mat4 {
 		Vec4{1.0, 0.0, 0.0, 0.0},
@@ -180,6 +197,20 @@ render_init :: proc(w: ^WGPU, r: ^Render) {
 		scale    = Vec2{1.0, 1.0},
 		atlas_id = 0,
 	}
+
+	when FRAME_DEBUG {
+		log.debugf("Default texture before registration:")
+		log.debugf("  - name: '{}'", r.default.texture.name)
+		log.debugf("  - texture ptr: {}", r.default.texture.wgpu.texture != nil)
+		log.debugf("  - format: {}", r.default.texture.wgpu.format)
+		log.debugf("  - view ptr: {}", r.default.texture.wgpu.view != nil)
+		log.debugf("  - bindgroup ptr: {}", r.default.texture.wgpu.bindgroup != nil)
+	}
+	texture_repository_register(&r.textures, r.default.texture.name, r.default.texture)
+	when FRAME_DEBUG {log.debugf(
+			"Registered default texture '{}' in repository",
+			r.default.texture.name,
+		)}
 }
 
 render_deinit :: proc(w: ^WGPU, r: ^Render) {
@@ -509,9 +540,13 @@ sprite_batcher_draw :: proc(w: ^WGPU, r: ^Render) {
 		w.queue,
 		s.uniform,
 		0,
-		&r.sprite_batcher.uniform,
+		&p.sprite_batcher.uniform,
 		size_of(Sprite_Batcher_Uniform),
 	)
+	when FRAME_DEBUG {log.debugf(
+			"Writing uniform buffer: {} bytes",
+			size_of(Sprite_Batcher_Uniform),
+		)}
 
 	wgpu.QueueWriteBuffer(
 		w.queue,
@@ -520,15 +555,41 @@ sprite_batcher_draw :: proc(w: ^WGPU, r: ^Render) {
 		&p.sprite_batcher.batch,
 		cast(uint)(size_of(Sprite_Raw) * sprite_count),
 	)
+	when FRAME_DEBUG {log.debugf(
+			"Writing sprite buffer: {} bytes ({} sprites)",
+			size_of(Sprite_Raw) * sprite_count,
+			sprite_count,
+		)}
 
+	when FRAME_DEBUG {log.debugf("Setting render pipeline: {}", s.pipeline != nil)}
 	wgpu.RenderPassEncoderSetPipeline(p.wgpu.render_encoder, s.pipeline)
+	when FRAME_DEBUG {log.debugf(
+			"Setting bind group 0 (uniforms): {}",
+			s.bindgroups.frame_data != nil,
+		)}
 	wgpu.RenderPassEncoderSetBindGroup(p.wgpu.render_encoder, 0, s.bindgroups.frame_data)
+
+	when FRAME_DEBUG {
+		log.debugf(
+			"Setting bind group 1 (texture): bindgroup={}, atlas_name='{}'",
+			p.sprite_batcher.atlas.wgpu.bindgroup != nil,
+			p.sprite_batcher.atlas.name,
+		)
+		log.debugf(
+			"Atlas texture details: texture={}, view={}, format={}",
+			p.sprite_batcher.atlas.wgpu.texture != nil,
+			p.sprite_batcher.atlas.wgpu.view != nil,
+			p.sprite_batcher.atlas.wgpu.format,
+		)
+	}
 	wgpu.RenderPassEncoderSetBindGroup(
 		p.wgpu.render_encoder,
 		1,
 		p.sprite_batcher.atlas.wgpu.bindgroup,
 	)
 
+	when FRAME_DEBUG {log.debugf("Issuing draw call: {} vertices, {} instances", 4, sprite_count)}
 	wgpu.RenderPassEncoderDraw(p.wgpu.render_encoder, 4, cast(u32)sprite_count, 0, 0)
+	when FRAME_DEBUG {log.debugf("Draw call completed")}
 }
 

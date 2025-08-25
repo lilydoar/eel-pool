@@ -11,8 +11,7 @@ Texture :: struct {
 }
 
 Texture_Repository :: struct {
-	textures:          map[string]Texture,
-	bind_group_layout: wgpu.BindGroupLayout,
+	textures: map[string]Texture,
 }
 
 texture_repository_init :: proc(w: ^WGPU, r: ^Render, repo: ^Texture_Repository) {
@@ -20,8 +19,6 @@ texture_repository_init :: proc(w: ^WGPU, r: ^Render, repo: ^Texture_Repository)
 	defer log.debugf("End initializing texture repository: {}", repo)
 
 	repo.textures = map[string]Texture{}
-
-	texture_repository_register(repo, r.default.texture.name, r.default.texture)
 }
 
 texture_repository_deinit :: proc(repo: ^Texture_Repository) {
