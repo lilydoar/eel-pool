@@ -1168,3 +1168,8 @@ thread caused non-unwinding panic. aborting.
 Finished in 1.16s
 [diagnostic] ERROR task failed
 ```
+
+# Sun Aug 24 2025
+
+- [ ] Design the database for the game systems
+  - Inspiration: <https://www.youtube.com/watch?v=8WqYQ1OwxJ4>
