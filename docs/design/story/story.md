@@ -1,4 +1,4 @@
-# Desert Wizard
+# Story
 
 ## Template
 
