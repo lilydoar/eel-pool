@@ -9,8 +9,6 @@ App :: struct {
 	opts:        Options,
 	cfg:         Config,
 	sdl:         SDL,
-	wgpu:        WGPU,
-	render:      Render,
 	game:        Game,
 
 	// Runtime
@@ -54,10 +52,6 @@ app_init :: proc(app: ^App, ctx: runtime.Context) {
 	}
 	sdl_init(&app.sdl, sdl_opts)
 
-	wgpu_init(&app.wgpu, &app.sdl)
-
-	render_init(&app.wgpu, &app.render)
-
 	game_init(&app.game, app.ctx, app.ctx.logger)
 
 	// TODO: Initialize other subsystems (e.g., job system, ...)
@@ -70,8 +64,6 @@ app_deinit :: proc(app: ^App) {
 	defer log.info("Application deinitialized")
 
 	game_deinit(&app.game)
-	render_deinit(&app.wgpu, &app.render)
-	wgpu_deinit(&app.wgpu)
 	sdl_deinit(&app.sdl)
 }
 
@@ -111,18 +103,10 @@ app_update :: proc(app: ^App) -> (quit: bool) {
 
 	quit = sdl_frame_begin(&app.sdl)
 	if quit {return}
-
-	if sdl_is_window_resized(&app.sdl) {
-		wgpu_resize(&app.wgpu, app.sdl.window.size_curr)
-	}
+	defer sdl_frame_end(&app.sdl)
 
 	game_update(&app.game)
-
-	wgpu_frame_begin(&app.wgpu, &app.render, app.sdl.window.size_curr)
-
-	game_draw(&app.game, &app.render.render_pass)
-
-	wgpu_frame_end(&app.wgpu, &app.render)
+	game_draw(&app.game, &app.sdl.renderer)
 
 	return
 }
