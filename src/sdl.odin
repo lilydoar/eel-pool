@@ -6,10 +6,11 @@ import sdl3 "vendor:sdl3"
 
 SDL :: struct {
 	initialized: bool,
-	window:      Window,
-	keyboard:    Keyboard,
-	mouse:       Mouse,
-	gamepad:     Gamepad,
+	window:      SDL_Window,
+	keyboard:    SDL_Keyboard,
+	mouse:       SDL_Mouse,
+	gamepad:     SDL_Gamepad,
+	renderer:    SDL_Renderer,
 }
 
 SDL_Options :: struct {
@@ -18,7 +19,7 @@ SDL_Options :: struct {
 	window_flags: sdl3.WindowFlags,
 }
 
-Window :: struct {
+SDL_Window :: struct {
 	ptr:          ^sdl3.Window,
 	title:        cstring,
 	size_prev:    Vec2i,
@@ -26,7 +27,7 @@ Window :: struct {
 	is_minimized: bool,
 }
 
-Keyboard :: struct {
+SDL_Keyboard :: struct {
 	// Physical keys on the keyboard.
 	scancodes_prev: [len(sdl3.Scancode)]bool,
 	scancodes_curr: [len(sdl3.Scancode)]bool,
@@ -36,7 +37,7 @@ Keyboard :: struct {
 	keycodes_curr:  map[sdl3.Keycode]bool,
 }
 
-Mouse :: struct {
+SDL_Mouse :: struct {
 	// Mouse position in pixels relative to the window's top-left corner.
 	pos_prev:     Vec2,
 	pos_curr:     Vec2,
@@ -46,7 +47,12 @@ Mouse :: struct {
 	buttons_curr: sdl3.MouseButtonFlags,
 }
 
-Gamepad :: ^sdl3.Gamepad
+SDL_Gamepad :: ^sdl3.Gamepad
+
+SDL_Renderer :: struct {
+	ptr:         ^sdl3.Renderer,
+	clear_color: sdl3.Color,
+}
 
 sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 	log.info("Initializing SDL...")
@@ -55,10 +61,20 @@ sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 	assert(!s.initialized)
 	defer s.initialized = true
 
-	must(sdl3.Init({.VIDEO}), "init SDL")
+	must(sdl3.Init({.AUDIO, .VIDEO, .GAMEPAD}), "init SDL")
 
-	s.window.title = must(strings.clone_to_cstring(opts.window_title))
+	assert(len(opts.window_title) > 0)
+	title := strings.clone_to_cstring(opts.window_title)
 
+	log.debugf(
+		"Creating window: '{}' Size: {} x {} Flags: {}",
+		opts.window_title,
+		opts.window_size.x,
+		opts.window_size.y,
+		opts.window_flags,
+	)
+
+	s.window.title = must(title)
 	s.window.ptr = must(
 		sdl3.CreateWindow(
 			s.window.title,
@@ -71,12 +87,17 @@ sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 
 	s.keyboard.keycodes_prev = make(map[sdl3.Keycode]bool)
 	s.keyboard.keycodes_curr = make(map[sdl3.Keycode]bool)
+
+	s.renderer.ptr = must(sdl3.CreateRenderer(s.window.ptr, nil), "create renderer")
+	s.renderer.clear_color = sdl3.Color{0, 0, 0, 255}
 }
 
 sdl_deinit :: proc(s: ^SDL) {
 	log.info("Deinitializing SDL...")
 
 	assert(s.initialized)
+
+	sdl3.DestroyRenderer(s.renderer.ptr)
 
 	delete(s.keyboard.keycodes_prev)
 	delete(s.keyboard.keycodes_curr)
@@ -107,7 +128,14 @@ sdl_frame_begin :: proc(s: ^SDL) -> (quit: bool) {
 	quit = sdl_poll_events(s)
 	if quit {log.debug("SDL event loop requested quit.")}
 
-	s.window.size_curr = sdl_get_window_size(s)
+	sdl3.SetRenderDrawColor(
+		s.renderer.ptr,
+		s.renderer.clear_color[0],
+		s.renderer.clear_color[1],
+		s.renderer.clear_color[2],
+		s.renderer.clear_color[3],
+	)
+	sdl3.RenderClear(s.renderer.ptr)
 
 	return
 }
@@ -167,15 +195,16 @@ sdl_handle_event :: proc(s: ^SDL, e: sdl3.Event) -> (quit: bool) {
 	return
 }
 
+sdl_frame_end :: proc(s: ^SDL) {
+	assert(s.initialized)
+
+	sdl3.RenderPresent(s.renderer.ptr)
+}
+
+// Helpers
 sdl_get_window_size :: proc(s: ^SDL) -> (size: Vec2i) {
 	assert(s.initialized)
 	sdl3.GetWindowSize(s.window.ptr, &size.x, &size.y)
-	return
-}
-
-sdl_is_window_resized :: proc(s: ^SDL) -> (resized: bool) {
-	assert(s.initialized)
-	resized = s.window.size_curr != s.window.size_prev
 	return
 }
 

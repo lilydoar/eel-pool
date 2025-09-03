@@ -3,6 +3,8 @@ package game
 import "base:runtime"
 import "core:log"
 
+import sdl3 "vendor:sdl3"
+
 Game :: struct {
 	// Runtime
 	frame_count:  u64,
@@ -39,10 +41,8 @@ game_update :: proc(game: ^Game) {
 	when FRAME_DEBUG {defer log.debug("End updating game state")}
 }
 
-game_draw :: proc(game: ^Game, render_pass: ^RenderPass) {
+game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 	context = game.ctx
-
-	assert(render_pass.active)
 
 	// Drawing logic for the game module
 	when FRAME_DEBUG {log.debug("Begin drawing game frame")}
@@ -50,6 +50,7 @@ game_draw :: proc(game: ^Game, render_pass: ^RenderPass) {
 
 	// TODO: Draw some number of sprites
 
-	append(&render_pass.sprite_batcher.batch, Sprite_Raw{})
+	sdl3.SetRenderDrawColor(r.ptr, 255, 0, 0, 255)
+	sdl3.RenderLine(r.ptr, 0, 0, 1280, 720)
 }
 
