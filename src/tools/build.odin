@@ -22,16 +22,16 @@ log_opts :: log.Options {
 }
 
 Options :: struct {
-	clean:   bool `usage:"Clean the build directory"`,
 	release: bool `usage:"Produce a release build"`,
 	dev:     bool `usage:"Produce a development build"`,
 	gamelib: bool `usage:"Build the game code as a dynamic library"`,
+	clean:   bool `usage:"Clean the build directory"`,
+	check:   bool `usage:"Check for compilation errors and successful app init"`,
 	test:    bool `usage:"Build and run all test functions"`,
 	docs:    bool `usage:"Generate documentation"`,
-	check:   bool `usage:"Check for compilation errors and successful initialization"`,
 	run:     bool `usage:"Run the targets after building"`,
-	run_arg: [dynamic]string `usage:"Arguments to pass to the application when running"`,
-	run_env: [dynamic]string `usage:"Environment to pass to the application when running"`,
+	run_arg: [dynamic]string `usage:"Arguments passed to the app when run enabled"`,
+	run_env: [dynamic]string `usage:"Environment passed to the app when run enabled"`,
 	verbose: bool `usage:"Enable verbose output"`,
 	debug:   bool `usage:"Enable debug mode"`,
 }
