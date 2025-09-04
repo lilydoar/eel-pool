@@ -6,6 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Read the @README.md file to understand project context and setup instructions
 
+## Build and Validation Guidelines
+
+- Run `mise build -dev -check` to validate code changes
+- Run `mise build -dev -run` when you want to demonstrate new behavior to the user
+
 ## Communication Guidelines
 
 - When completing a task, write a short final response instead of a long final response unless asked for a report or something similar.
@@ -32,8 +37,3 @@ Higher-level allocation procedures follow the following naming scheme:
 - free: Free a single object (opposite of new)
 - make: Allocate a group of objects
 - delete: Free a group of objects (opposite of make)
-
-## Build and Validation Guidelines
-
-- Run `./build -develop` and `./build -develop -check` to validate code changes
-- Run `./build -develop -run` when you want to demonstrate new behavior to the user
