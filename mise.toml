@@ -3,7 +3,7 @@
 
 [tasks.bootstrap]
 description = "Build the build tool"
-run = "odin build build.odin -file"
+run = "odin build src/tools/build.odin -out:build -file"
 sources = ["build.odin"]
 outputs = ["build"]
 
