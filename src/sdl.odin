@@ -56,11 +56,13 @@ SDL_Renderer :: struct {
 	textures:    struct {
 		player: struct {
 			idle_atlas: SDL_Texture,
+			run_atlas:  SDL_Texture,
 		},
 	},
 	animations:  struct {
 		player: struct {
 			idle: SDL_Animation,
+			run:  SDL_Animation,
 		},
 	},
 }
@@ -117,11 +119,26 @@ sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 	player_idle_len := 8
 	player_idle_frame_width: i32 = 192
 	player_idle_frame_height: i32 = 192
+	player_idle_frame_delay_ms: u32 = 10
 
+	player_run_name := "player_run"
+	player_run_path := "assets/Tiny_Swords/Units/Blue_Units/Warrior/Warrior_Run.png"
+	player_run_len := 6
+	player_run_frame_width: i32 = 192
+	player_run_frame_height: i32 = 192
+	player_run_frame_delay_ms: u32 = 10
+
+	// load textures
 	s.renderer.textures.player.idle_atlas = sdl_texture_load(
 		&s.renderer,
 		player_idle_path,
 		player_idle_name,
+	)
+
+	s.renderer.textures.player.run_atlas = sdl_texture_load(
+		&s.renderer,
+		player_run_path,
+		player_run_name,
 	)
 
 	// load idle anim
@@ -144,6 +161,30 @@ sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 		frame := sdl3.DuplicateSurface(s.renderer.textures.player.idle_atlas.surface)
 		sdl3.SetSurfaceClipRect(frame, rect)
 		s.renderer.animations.player.idle.frame[idx] = frame
+		s.renderer.animations.player.idle.delay_ms[idx] = player_idle_frame_delay_ms
+	}
+
+	// load run anim
+	s.renderer.animations.player.run = SDL_Animation {
+		name     = player_run_name,
+		texture  = s.renderer.textures.player.run_atlas.texture,
+		frame    = make([]^sdl3.Surface, player_run_len),
+		delay_ms = make([]u32, player_run_len),
+	}
+
+	for idx in 0 ..< player_run_len {
+		rect: Maybe(^sdl3.Rect)
+		rect =
+		&sdl3.Rect {
+			player_run_frame_width * cast(i32)idx,
+			0,
+			player_run_frame_width,
+			player_run_frame_height,
+		}
+		frame := sdl3.DuplicateSurface(s.renderer.textures.player.run_atlas.surface)
+		sdl3.SetSurfaceClipRect(frame, rect)
+		s.renderer.animations.player.run.frame[idx] = frame
+		s.renderer.animations.player.run.delay_ms[idx] = player_run_frame_delay_ms
 	}
 }
 
