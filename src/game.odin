@@ -44,9 +44,36 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 	when FRAME_DEBUG {log.debug("Begin drawing game frame")}
 	when FRAME_DEBUG {defer log.debug("End drawing game frame")}
 
-	src: Maybe(^sdl3.FRect) = &sdl3.FRect{0, 0, 192, 192}
-	dst: Maybe(^sdl3.FRect) = &sdl3.FRect{x = 0, y = 0, w = 192, h = 192}
+	// Draw idle atlas
+	for frame in 0 ..< len(r.animations.player.idle.frame) {
+		when FRAME_DEBUG {log.debugf("Begin player idle frame {}", frame)}
 
-	sdl3.RenderTexture(r.ptr, r.textures.player.texture, src, dst)
+		clip: sdl3.Rect
+		sdl3.GetSurfaceClipRect(r.animations.player.idle.frame[frame], &clip)
+
+		src: Maybe(^sdl3.FRect) = &sdl3.FRect {
+			cast(f32)clip.x,
+			cast(f32)clip.y,
+			cast(f32)clip.w,
+			cast(f32)clip.h,
+		}
+		dst: Maybe(^sdl3.FRect) = &sdl3.FRect {
+			cast(f32)clip.x,
+			cast(f32)clip.y,
+			cast(f32)clip.w,
+			cast(f32)clip.h,
+		}
+
+		when FRAME_DEBUG {log.debugf(
+				"Render {} frame {}: src: {}, dest: {}",
+				r.animations.player.idle.name,
+				frame,
+				src,
+				dst,
+			)}
+		sdl3.RenderTexture(r.ptr, r.animations.player.idle.texture, src, dst)
+	}
+
+	// TODO: Draw idle animation
 }
 
