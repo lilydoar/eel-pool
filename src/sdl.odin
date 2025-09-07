@@ -28,6 +28,7 @@ SDL_Window :: struct {
 	is_minimized: bool,
 }
 
+
 SDL_Keyboard :: struct {
 	// Physical keys on the keyboard.
 	scancodes_prev: [len(sdl3.Scancode)]bool,
@@ -77,7 +78,7 @@ SDL_Animation :: struct {
 	name:     string,
 	texture:  ^sdl3.Texture,
 	frame:    []^sdl3.Surface,
-	delay_ms: []u32,
+	delay_ms: u32,
 }
 
 sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
@@ -146,7 +147,7 @@ sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 		name     = player_idle_name,
 		texture  = s.renderer.textures.player.idle_atlas.texture,
 		frame    = make([]^sdl3.Surface, player_idle_len),
-		delay_ms = make([]u32, player_idle_len),
+		delay_ms = player_idle_frame_delay_ms,
 	}
 
 	for idx in 0 ..< player_idle_len {
@@ -161,7 +162,6 @@ sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 		frame := sdl3.DuplicateSurface(s.renderer.textures.player.idle_atlas.surface)
 		sdl3.SetSurfaceClipRect(frame, rect)
 		s.renderer.animations.player.idle.frame[idx] = frame
-		s.renderer.animations.player.idle.delay_ms[idx] = player_idle_frame_delay_ms
 	}
 
 	// load run anim
@@ -169,7 +169,7 @@ sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 		name     = player_run_name,
 		texture  = s.renderer.textures.player.run_atlas.texture,
 		frame    = make([]^sdl3.Surface, player_run_len),
-		delay_ms = make([]u32, player_run_len),
+		delay_ms = player_run_frame_delay_ms,
 	}
 
 	for idx in 0 ..< player_run_len {
@@ -184,7 +184,6 @@ sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 		frame := sdl3.DuplicateSurface(s.renderer.textures.player.run_atlas.surface)
 		sdl3.SetSurfaceClipRect(frame, rect)
 		s.renderer.animations.player.run.frame[idx] = frame
-		s.renderer.animations.player.run.delay_ms[idx] = player_run_frame_delay_ms
 	}
 }
 
@@ -394,8 +393,8 @@ sdl_mouse_did_move :: proc(s: ^SDL) -> bool {
 // Renderer utilities
 
 sdl_texture_load :: proc(r: ^SDL_Renderer, file: string, name: string) -> (texture: SDL_Texture) {
-	log.debugf("Loading texture from file: '{}'", file)
-	defer log.debugf("Loaded texture from file: '{}'", file)
+	log.debugf("Loading texture {} from file: '{}'", name, file)
+	defer log.debugf("Loaded texture {} from file: '{}'", name, file)
 
 	f := strings.clone_to_cstring(file)
 	defer delete(f)
@@ -425,4 +424,10 @@ sdl_texture_deinit :: proc(t: ^SDL_Texture) {
 // TODO
 // sdl_animation_load :: proc() -> SDL_Animation {}
 // sdl_animation_deinit :: proc(a: ^SDL_Animation) {}
+
+sdl_draw_debug :: proc(sdl: ^SDL) {
+	// Draw debug information (e.g., FPS, frame time, etc.)
+
+	// TODO: Draw FPS
+}
 

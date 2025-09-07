@@ -3,14 +3,24 @@ package game
 import "base:runtime"
 import "core:log"
 import os "core:os/os2"
+import "core:time"
 
 App :: struct {
-	ctx:         runtime.Context,
-	opts:        Options,
-	cfg:         Config,
-	sdl:         SDL,
-	game:        Game,
-	frame_count: u64,
+	ctx:  runtime.Context,
+	opts: Options,
+	cfg:  Config,
+	sdl:  SDL,
+	time: App_Time,
+	game: Game,
+}
+
+App_Time :: struct {
+	curr:                 time.Time,
+	prev:                 time.Time,
+	frame_count:          u64,
+	// The number of game updates performed in the current frame
+	frame_updates:        u32,
+	frame_accumulator_ms: f64,
 }
 
 app_create_logger :: proc(app: ^App) -> (l: log.Logger) {
@@ -61,10 +71,24 @@ app_deinit :: proc(app: ^App) {
 	defer log.info("Application deinitialized")
 
 	game_deinit(&app.game)
+
 	sdl_deinit(&app.sdl)
 }
 
 should_loop: proc(a: ^App) -> bool = proc(a: ^App) -> bool {return true}
+
+should_update: proc(a: ^App) -> bool = proc(a: ^App) -> bool {
+	if a.time.frame_updates >= a.cfg.max_updates_per_frame {
+		log.warn("Dropping accumulated time")
+		a.time.frame_accumulator_ms = 0
+		return false
+	}
+
+	ok := a.time.frame_accumulator_ms >= a.game.frame_step_ms
+	if ok {a.time.frame_accumulator_ms -= a.game.frame_step_ms}
+
+	return ok
+}
 
 app_run :: proc(app: ^App) {
 	context = app.ctx
@@ -77,13 +101,18 @@ app_run :: proc(app: ^App) {
 	if app.opts.run_for > 0 {
 		log.infof("Running App for {} frames then exiting.", app.opts.run_for)
 		should_loop = proc(a: ^App) -> bool {
-			return a.frame_count < a.opts.run_for
+			return a.time.frame_count < a.opts.run_for
 		}
 	}
 
+	app.time.curr = time.now()
+
 	quit: bool
 	for should_loop(app) {
-		defer app.frame_count += 1
+		app.time.prev = app.time.curr
+		app.time.curr = time.now()
+		app.time.frame_count += 1
+
 		quit = app_update(app)
 		if quit {break}
 	}
@@ -92,12 +121,30 @@ app_run :: proc(app: ^App) {
 app_update :: proc(app: ^App) -> (quit: bool) {
 	context = app.ctx
 
+	when FRAME_DEBUG {log.debug("Begin app frame")}
+	when FRAME_DEBUG {defer log.debug("End app frame")}
+
 	quit = sdl_frame_begin(&app.sdl)
 	if quit {return}
 	defer sdl_frame_end(&app.sdl)
 
-	game_update(&app.game)
+	time_delta := time.diff(app.time.prev, app.time.curr)
+	app.time.frame_accumulator_ms += time.duration_milliseconds(time_delta)
+	app.time.frame_updates = 0
+
+	when FRAME_DEBUG {
+		log.debugf(
+			"App frame {}: dt=%fms, accumulator=%fms",
+			app.time.frame_count,
+			time.duration_milliseconds(time_delta),
+			app.time.frame_accumulator_ms,
+		)
+	}
+
+	for should_update(app) {game_update(&app.game)}
+
 	game_draw(&app.game, &app.sdl.renderer)
+	sdl_draw_debug(&app.sdl)
 
 	return
 }

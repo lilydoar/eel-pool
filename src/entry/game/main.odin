@@ -1,7 +1,6 @@
 package main
 
 import game "../../"
-import "core:log"
 
 main :: proc() {
 	app: game.App
