@@ -5,7 +5,8 @@ import "core:log"
 FRAME_DEBUG :: #config(FRAME_DEBUG, false)
 
 Config :: struct {
-	logger: Config_Logger,
+	logger:                Config_Logger,
+	max_updates_per_frame: u32,
 }
 
 Config_Logger :: struct {
@@ -35,6 +36,8 @@ config_logger_default := Config_Logger {
 config_load :: proc(opts: Options) -> (cfg: Config) {
 	cfg.logger = config_logger_default
 	if opts.verbose {cfg.logger.level = .Debug}
+
+	cfg.max_updates_per_frame = 5
 
 	return
 }
