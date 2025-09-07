@@ -23,7 +23,7 @@ Indie game fans.
 
 Action Role-Playing Fighting Game
 
-Isometric 2D view.
+2D iso view.
 
 ## Story
 
@@ -44,6 +44,9 @@ Desperation. Desolation.
   - Failure restarts arena/section
 ...
 - Achieve level goal
+
+- map screen
+- move between levels
 
 ## Mechanics
 

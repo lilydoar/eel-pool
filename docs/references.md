@@ -16,4 +16,5 @@ https://github.com/jakubtomsu/awesome-odin
 
 ## Blogs
 
+https://www.parallelrealities.co.uk/tutorials/
 https://www.gingerbill.org/series/memory-allocation-strategies/

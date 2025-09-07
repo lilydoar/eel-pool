@@ -164,6 +164,7 @@ check :: proc(cfg: Config) {
 	if !ok {cmd_failed = true}
 }
 
+// TODO: Fix paths
 docs :: proc(cfg: Config) {
 	out_dir := filepath.join({cfg.out, cfg.docs.out})
 
@@ -171,21 +172,21 @@ docs :: proc(cfg: Config) {
 	must_run_proc({command = {"mkdir", "-p", out_dir}})
 
 	// build.odin
-	path := filepath.join({out_dir, "build.odin-doc"})
-	file_build_doc, err_build_doc := os.create(path)
-	assert(err_build_doc == os.ERROR_NONE)
-	defer os.close(file_build_doc)
-
-	ok := run_proc({command = {"odin", "doc", "build.odin", "-file"}, stdout = file_build_doc})
-	if !ok {cmd_failed = true}
+	// path := filepath.join({out_dir, "build.odin-doc"})
+	// file_build_doc, err_build_doc := os.create(path)
+	// assert(err_build_doc == os.ERROR_NONE)
+	// defer os.close(file_build_doc)
+	//
+	// ok := run_proc({command = {"odin", "doc", "build.odin", "-file"}, stdout = file_build_doc})
+	// if !ok {cmd_failed = true}
 
 	// game package
-	path = filepath.join({out_dir, "game.odin-doc"})
+	path := filepath.join({out_dir, "game.odin-doc"})
 	file_game_doc, err_game_doc := os.create(path)
 	assert(err_game_doc == os.ERROR_NONE)
 	defer os.close(file_game_doc)
 
-	ok = run_proc({command = {"odin", "doc", cfg.src, "-no-entry-point"}, stdout = file_game_doc})
+	ok := run_proc({command = {"odin", "doc", cfg.src, "-no-entry-point"}, stdout = file_game_doc})
 	if !ok {cmd_failed = true}
 }
 
