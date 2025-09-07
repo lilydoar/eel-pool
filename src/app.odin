@@ -77,12 +77,6 @@ app_run :: proc(app: ^App) {
 		return
 	}
 
-	if app.opts.diagnose {
-		log.infof("Running in diagnose mode")
-		diagnose_frames := 30
-		app.opts.run_for = cast(u64)diagnose_frames
-	}
-
 	if app.opts.run_for > 0 {
 		log.infof("Running App for {} frames then exiting.", app.opts.run_for)
 		should_loop = proc(a: ^App) -> bool {

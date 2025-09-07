@@ -4,13 +4,10 @@ import "core:flags"
 import os "core:os/os2"
 
 Options :: struct {
-	check:    bool `usage:"Run app initialization then exit"`,
-	diagnose: bool `usage:"Run the game for 30 frames then exit"`,
-	run_for:  u64 `usage:"Run a fixed number of game frames then exit"`,
-	verbose:  bool `usage:"Enable verbose logging output"`,
+	verbose: bool `usage:"Enable verbose logging output"`,
+	check:   bool `usage:"Run app initialization then exit"`,
+	run_for: u64 `usage:"Run a fixed number of game frames then exit"`,
 }
-
-opt: Options
 
 cli_parse :: proc() -> (opts: Options) {
 	flags.parse_or_exit(&opts, os.args)

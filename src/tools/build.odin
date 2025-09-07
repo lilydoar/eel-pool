@@ -234,7 +234,7 @@ dev :: proc(opt: Options, cfg: Config) {
 	ok := run_proc({command = cmd_build[:]})
 	if !ok {cmd_failed = true}
 
-	if opt.run || opt.check && ok {
+	if (opt.run || opt.check) && ok {
 		log.info("Running development build")
 
 		cmd_run := [dynamic]string{out}
@@ -267,7 +267,7 @@ release :: proc(opt: Options, cfg: Config) {
 	ok := run_proc({command = cmd_build[:]})
 	if !ok {cmd_failed = true}
 
-	if opt.run || opt.check && ok {
+	if (opt.run || opt.check) && ok {
 		log.info("Running release build")
 
 		cmd_run := [dynamic]string{out}
