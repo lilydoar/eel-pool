@@ -23,7 +23,7 @@ Indie game fans.
 
 Action Role-Playing Fighting Game
 
-2D iso view.
+three quarter 2D view
 
 ## Story
 
