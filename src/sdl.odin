@@ -2,6 +2,7 @@ package game
 
 import "core:log"
 import "core:strings"
+import "core:time"
 import sdl3 "vendor:sdl3"
 import sdl3img "vendor:sdl3/image"
 
@@ -53,7 +54,14 @@ SDL_Renderer :: struct {
 	ptr:         ^sdl3.Renderer,
 	clear_color: sdl3.Color,
 	textures:    struct {
-		player: SDL_Texture,
+		player: struct {
+			idle_atlas: SDL_Texture,
+		},
+	},
+	animations:  struct {
+		player: struct {
+			idle: SDL_Animation,
+		},
 	},
 }
 
@@ -61,6 +69,13 @@ SDL_Texture :: struct {
 	name:    string,
 	surface: ^sdl3.Surface,
 	texture: ^sdl3.Texture,
+}
+
+SDL_Animation :: struct {
+	name:     string,
+	texture:  ^sdl3.Texture,
+	frame:    []^sdl3.Surface,
+	delay_ms: []u32,
 }
 
 sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
@@ -97,14 +112,48 @@ sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 	s.renderer.ptr = must(sdl3.CreateRenderer(s.window.ptr, nil), "create renderer")
 	s.renderer.clear_color = sdl3.Color{0, 0, 0, 255}
 
+	player_idle_name := "player_idle"
 	player_idle_path := "assets/Tiny_Swords/Units/Blue_Units/Warrior/Warrior_Idle.png"
-	s.renderer.textures.player = sdl_texture_load(&s.renderer, player_idle_path, "player")
+	player_idle_len := 8
+	player_idle_frame_width: i32 = 192
+	player_idle_frame_height: i32 = 192
+
+	s.renderer.textures.player.idle_atlas = sdl_texture_load(
+		&s.renderer,
+		player_idle_path,
+		player_idle_name,
+	)
+
+	// load idle anim
+	s.renderer.animations.player.idle = SDL_Animation {
+		name     = player_idle_name,
+		texture  = s.renderer.textures.player.idle_atlas.texture,
+		frame    = make([]^sdl3.Surface, player_idle_len),
+		delay_ms = make([]u32, player_idle_len),
+	}
+
+	for idx in 0 ..< player_idle_len {
+		rect: Maybe(^sdl3.Rect)
+		rect =
+		&sdl3.Rect {
+			player_idle_frame_width * cast(i32)idx,
+			0,
+			player_idle_frame_width,
+			player_idle_frame_height,
+		}
+		frame := sdl3.DuplicateSurface(s.renderer.textures.player.idle_atlas.surface)
+		sdl3.SetSurfaceClipRect(frame, rect)
+		s.renderer.animations.player.idle.frame[idx] = frame
+	}
 }
 
 sdl_deinit :: proc(s: ^SDL) {
 	log.info("Deinitializing SDL...")
 
-	sdl_texture_deinit(&s.renderer.textures.player)
+	// TODO
+	// anim deinit
+
+	sdl_texture_deinit(&s.renderer.textures.player.idle_atlas)
 
 	sdl3.DestroyRenderer(s.renderer.ptr)
 
@@ -316,6 +365,11 @@ sdl_texture_load :: proc(r: ^SDL_Renderer, file: string, name: string) -> (textu
 		sdl3.CreateTextureFromSurface(r.ptr, texture.surface),
 		"texture from surface",
 	)
+
+	assert(texture.surface != nil)
+	assert(texture.texture != nil)
+	assert(texture.surface.w == texture.texture.w)
+	assert(texture.surface.h == texture.texture.h)
 	return
 }
 
@@ -326,4 +380,8 @@ sdl_texture_deinit :: proc(t: ^SDL_Texture) {
 	if t.texture != nil {sdl3.DestroyTexture(t.texture)}
 	if t.surface != nil {sdl3.DestroySurface(t.surface)}
 }
+
+// TODO
+// sdl_animation_load :: proc() -> SDL_Animation {}
+// sdl_animation_deinit :: proc(a: ^SDL_Animation) {}
 
