@@ -6,12 +6,8 @@ import "core:log"
 import sdl3 "vendor:sdl3"
 
 Game :: struct {
-	// Runtime
-	frame_count:  u64,
-	ctx:          runtime.Context,
-
-	// Game state
-	chunk_system: Chunk_S,
+	ctx:         runtime.Context,
+	frame_count: u64,
 }
 
 game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger) {

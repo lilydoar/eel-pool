@@ -5,12 +5,11 @@ import "core:strings"
 import sdl3 "vendor:sdl3"
 
 SDL :: struct {
-	initialized: bool,
-	window:      SDL_Window,
-	keyboard:    SDL_Keyboard,
-	mouse:       SDL_Mouse,
-	gamepad:     SDL_Gamepad,
-	renderer:    SDL_Renderer,
+	window:   SDL_Window,
+	keyboard: SDL_Keyboard,
+	mouse:    SDL_Mouse,
+	gamepad:  SDL_Gamepad,
+	renderer: SDL_Renderer,
 }
 
 SDL_Options :: struct {
@@ -58,9 +57,6 @@ sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 	log.info("Initializing SDL...")
 	defer log.info("SDL initialized")
 
-	assert(!s.initialized)
-	defer s.initialized = true
-
 	must(sdl3.Init({.AUDIO, .VIDEO, .GAMEPAD}), "init SDL")
 
 	assert(len(opts.window_title) > 0)
@@ -95,8 +91,6 @@ sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 sdl_deinit :: proc(s: ^SDL) {
 	log.info("Deinitializing SDL...")
 
-	assert(s.initialized)
-
 	sdl3.DestroyRenderer(s.renderer.ptr)
 
 	delete(s.keyboard.keycodes_prev)
@@ -111,8 +105,6 @@ sdl_deinit :: proc(s: ^SDL) {
 }
 
 sdl_frame_begin :: proc(s: ^SDL) -> (quit: bool) {
-	assert(s.initialized)
-
 	// Track state across time steps.
 	s.window.size_prev = s.window.size_curr
 	s.keyboard.scancodes_prev = s.keyboard.scancodes_curr
@@ -141,8 +133,6 @@ sdl_frame_begin :: proc(s: ^SDL) -> (quit: bool) {
 }
 
 sdl_poll_events :: proc(s: ^SDL) -> (quit: bool) {
-	assert(s.initialized)
-
 	e: sdl3.Event
 	for sdl3.PollEvent(&e) {
 		quit = sdl_handle_event(s, e)
@@ -153,8 +143,6 @@ sdl_poll_events :: proc(s: ^SDL) -> (quit: bool) {
 }
 
 sdl_handle_event :: proc(s: ^SDL, e: sdl3.Event) -> (quit: bool) {
-	assert(s.initialized)
-
 	#partial switch e.type {
 	case .QUIT, .WINDOW_CLOSE_REQUESTED:
 		quit = true
@@ -196,14 +184,11 @@ sdl_handle_event :: proc(s: ^SDL, e: sdl3.Event) -> (quit: bool) {
 }
 
 sdl_frame_end :: proc(s: ^SDL) {
-	assert(s.initialized)
-
 	sdl3.RenderPresent(s.renderer.ptr)
 }
 
 // Helpers
 sdl_get_window_size :: proc(s: ^SDL) -> (size: Vec2i) {
-	assert(s.initialized)
 	sdl3.GetWindowSize(s.window.ptr, &size.x, &size.y)
 	return
 }
@@ -245,12 +230,10 @@ sdl_mouse_button_was_released :: proc {
 }
 
 sdl_mouse_button_is_down_flag :: proc(s: ^SDL, button: sdl3.MouseButtonFlag) -> bool {
-	assert(s.initialized)
 	return button in s.mouse.buttons_curr
 }
 
 sdl_mouse_button_is_down_num :: proc(s: ^SDL, button: u8) -> bool {
-	assert(s.initialized)
 	if flag, ok := sdl_mouse_button_to_flag(button); ok {
 		return flag in s.mouse.buttons_curr
 	}
@@ -258,12 +241,10 @@ sdl_mouse_button_is_down_num :: proc(s: ^SDL, button: u8) -> bool {
 }
 
 sdl_mouse_button_is_up_flag :: proc(s: ^SDL, button: sdl3.MouseButtonFlag) -> bool {
-	assert(s.initialized)
 	return button not_in s.mouse.buttons_curr
 }
 
 sdl_mouse_button_is_up_num :: proc(s: ^SDL, button: u8) -> bool {
-	assert(s.initialized)
 	if flag, ok := sdl_mouse_button_to_flag(button); ok {
 		return flag not_in s.mouse.buttons_curr
 	}
@@ -271,12 +252,10 @@ sdl_mouse_button_is_up_num :: proc(s: ^SDL, button: u8) -> bool {
 }
 
 sdl_mouse_button_was_pressed_flag :: proc(s: ^SDL, button: sdl3.MouseButtonFlag) -> bool {
-	assert(s.initialized)
 	return button in s.mouse.buttons_curr && button not_in s.mouse.buttons_prev
 }
 
 sdl_mouse_button_was_pressed_num :: proc(s: ^SDL, button: u8) -> bool {
-	assert(s.initialized)
 	if flag, ok := sdl_mouse_button_to_flag(button); ok {
 		return flag in s.mouse.buttons_curr && flag not_in s.mouse.buttons_prev
 	}
@@ -284,12 +263,10 @@ sdl_mouse_button_was_pressed_num :: proc(s: ^SDL, button: u8) -> bool {
 }
 
 sdl_mouse_button_was_released_flag :: proc(s: ^SDL, button: sdl3.MouseButtonFlag) -> bool {
-	assert(s.initialized)
 	return button not_in s.mouse.buttons_curr && button in s.mouse.buttons_prev
 }
 
 sdl_mouse_button_was_released_num :: proc(s: ^SDL, button: u8) -> bool {
-	assert(s.initialized)
 	if flag, ok := sdl_mouse_button_to_flag(button); ok {
 		return flag not_in s.mouse.buttons_curr && flag in s.mouse.buttons_prev
 	}
@@ -298,17 +275,14 @@ sdl_mouse_button_was_released_num :: proc(s: ^SDL, button: u8) -> bool {
 
 // Mouse position utilities
 sdl_mouse_get_position :: proc(s: ^SDL) -> Vec2 {
-	assert(s.initialized)
 	return s.mouse.pos_curr
 }
 
 sdl_mouse_get_delta :: proc(s: ^SDL) -> Vec2 {
-	assert(s.initialized)
 	return Vec2{s.mouse.pos_curr.x - s.mouse.pos_prev.x, s.mouse.pos_curr.y - s.mouse.pos_prev.y}
 }
 
 sdl_mouse_did_move :: proc(s: ^SDL) -> bool {
-	assert(s.initialized)
 	return s.mouse.pos_curr != s.mouse.pos_prev
 }
 
