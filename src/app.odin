@@ -10,10 +10,7 @@ App :: struct {
 	cfg:         Config,
 	sdl:         SDL,
 	game:        Game,
-
-	// Runtime
 	frame_count: u64,
-	// game_api:    GameAPI,
 }
 
 app_create_logger :: proc(app: ^App) -> (l: log.Logger) {

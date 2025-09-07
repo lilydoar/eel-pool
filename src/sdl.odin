@@ -3,6 +3,7 @@ package game
 import "core:log"
 import "core:strings"
 import sdl3 "vendor:sdl3"
+import sdl3img "vendor:sdl3/image"
 
 SDL :: struct {
 	window:   SDL_Window,
@@ -51,6 +52,15 @@ SDL_Gamepad :: ^sdl3.Gamepad
 SDL_Renderer :: struct {
 	ptr:         ^sdl3.Renderer,
 	clear_color: sdl3.Color,
+	textures:    struct {
+		player: SDL_Texture,
+	},
+}
+
+SDL_Texture :: struct {
+	name:    string,
+	surface: ^sdl3.Surface,
+	texture: ^sdl3.Texture,
 }
 
 sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
@@ -86,10 +96,15 @@ sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 
 	s.renderer.ptr = must(sdl3.CreateRenderer(s.window.ptr, nil), "create renderer")
 	s.renderer.clear_color = sdl3.Color{0, 0, 0, 255}
+
+	player_idle_path := "assets/Tiny_Swords/Units/Blue_Units/Warrior/Warrior_Idle.png"
+	s.renderer.textures.player = sdl_texture_load(&s.renderer, player_idle_path, "player")
 }
 
 sdl_deinit :: proc(s: ^SDL) {
 	log.info("Deinitializing SDL...")
+
+	sdl_texture_deinit(&s.renderer.textures.player)
 
 	sdl3.DestroyRenderer(s.renderer.ptr)
 
@@ -284,5 +299,31 @@ sdl_mouse_get_delta :: proc(s: ^SDL) -> Vec2 {
 
 sdl_mouse_did_move :: proc(s: ^SDL) -> bool {
 	return s.mouse.pos_curr != s.mouse.pos_prev
+}
+
+// Renderer utilities
+
+sdl_texture_load :: proc(r: ^SDL_Renderer, file: string, name: string) -> (texture: SDL_Texture) {
+	log.debugf("Loading texture from file: '{}'", file)
+	defer log.debugf("Loaded texture from file: '{}'", file)
+
+	f := strings.clone_to_cstring(file)
+	defer delete(f)
+
+	texture.name = name
+	texture.surface = must(sdl3img.Load(f), "load image")
+	texture.texture = must(
+		sdl3.CreateTextureFromSurface(r.ptr, texture.surface),
+		"texture from surface",
+	)
+	return
+}
+
+sdl_texture_deinit :: proc(t: ^SDL_Texture) {
+	log.debugf("Deinitializing texture: '{}'", t.name)
+	defer log.debugf("Deinitialized texture: '{}'", t.name)
+
+	if t.texture != nil {sdl3.DestroyTexture(t.texture)}
+	if t.surface != nil {sdl3.DestroySurface(t.surface)}
 }
 

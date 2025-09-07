@@ -44,9 +44,9 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 	when FRAME_DEBUG {log.debug("Begin drawing game frame")}
 	when FRAME_DEBUG {defer log.debug("End drawing game frame")}
 
-	// TODO: Draw some number of sprites
+	src: Maybe(^sdl3.FRect) = &sdl3.FRect{0, 0, 192, 192}
+	dst: Maybe(^sdl3.FRect) = &sdl3.FRect{x = 0, y = 0, w = 192, h = 192}
 
-	sdl3.SetRenderDrawColor(r.ptr, 255, 0, 0, 255)
-	sdl3.RenderLine(r.ptr, 0, 0, 1280, 720)
+	sdl3.RenderTexture(r.ptr, r.textures.player.texture, src, dst)
 }
 
