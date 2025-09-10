@@ -242,7 +242,6 @@ sdl_poll_events :: proc(s: ^SDL) -> (quit: bool) {
 		quit = sdl_handle_event(s, e)
 		if quit {return}
 	}
-
 	return
 }
 
