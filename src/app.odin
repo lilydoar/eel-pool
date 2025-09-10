@@ -94,7 +94,7 @@ app_run :: proc(app: ^App) {
 	context = app.ctx
 
 	if app.opts.check {
-		log.info("App initialized successfully and -check flag is enabled, exiting.")
+		log.info("App initialized successfully and -check flag is enabled, exiting...")
 		return
 	}
 
