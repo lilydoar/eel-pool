@@ -23,6 +23,12 @@ Game :: struct {
 			// The player's size on the screen in pixels
 			screen_w: f32,
 			screen_h: f32,
+
+			//
+			facing:   enum {
+				right,
+				left,
+			},
 		},
 	},
 }
@@ -105,6 +111,12 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 	player_final_move_y := cast(f32)(cast(f64)player_desire_move_y *
 		cast(f64)game.cfg.entity.player.player_move_speed_y_axis)
 
+	if player_final_move_x < 0 {
+		game.entity.player.facing = .left
+	} else {
+		game.entity.player.facing = .right
+	}
+
 	game.entity.player.screen_x += player_final_move_x
 	game.entity.player.screen_y += player_final_move_y
 
@@ -156,11 +168,23 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 		sdl3.RenderTexture(r.ptr, r.animations.player.idle.texture, src, dst)
 	}
 
-	game_draw_animation(game, r, {r.animations.player.idle, sdl3.FRect{0, 192, 192, 192}})
-	game_draw_animation(game, r, {r.animations.player.run, sdl3.FRect{192, 192, 192, 192}})
-	game_draw_animation(game, r, {r.animations.player.guard, sdl3.FRect{192 * 2, 192, 192, 192}})
-	game_draw_animation(game, r, {r.animations.player.attack1, sdl3.FRect{192 * 3, 192, 192, 192}})
-	game_draw_animation(game, r, {r.animations.player.attack2, sdl3.FRect{192 * 4, 192, 192, 192}})
+	game_draw_animation(game, r, {r.animations.player.idle, sdl3.FRect{0, 192, 192, 192}, false})
+	game_draw_animation(game, r, {r.animations.player.run, sdl3.FRect{192, 192, 192, 192}, false})
+	game_draw_animation(
+		game,
+		r,
+		{r.animations.player.guard, sdl3.FRect{192 * 2, 192, 192, 192}, false},
+	)
+	game_draw_animation(
+		game,
+		r,
+		{r.animations.player.attack1, sdl3.FRect{192 * 3, 192, 192, 192}, false},
+	)
+	game_draw_animation(
+		game,
+		r,
+		{r.animations.player.attack2, sdl3.FRect{192 * 4, 192, 192, 192}, false},
+	)
 
 	{
 		// Draw player()
@@ -172,7 +196,12 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 			cast(f32)game.entity.player.screen_h,
 		}
 
-		game_draw_animation(game, r, {r.animations.player.run, dst})
+		switch game.entity.player.facing {
+		case .right:
+			game_draw_animation(game, r, {r.animations.player.run, dst, false})
+		case .left:
+			game_draw_animation(game, r, {r.animations.player.run, dst, true})
+		}
 	}
 }
 
@@ -181,8 +210,9 @@ game_bind_control_to_key :: proc(game: ^Game, ctrl: game_control, key: sdl3.Keyc
 }
 
 game_draw_animation :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
-		anim: SDL_Animation,
-		dest: sdl3.FRect,
+		anim:     SDL_Animation,
+		dest:     sdl3.FRect,
+		mirror_x: bool,
 	}) {
 	elapsed_ms: u64 = game.frame_count
 	frame := (elapsed_ms / cast(u64)cmd.anim.delay_ms) % cast(u64)len(cmd.anim.frame)
@@ -210,6 +240,14 @@ game_draw_animation :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 	// 		src,
 	// 		dst,
 	// 	)}
-	sdl3.RenderTexture(r.ptr, cmd.anim.texture, src, dst)
+	sdl3.RenderTextureRotated(
+		r.ptr,
+		cmd.anim.texture,
+		src,
+		dst,
+		0,
+		{0, 0},
+		.NONE if !cmd.mirror_x else .HORIZONTAL,
+	)
 }
 
