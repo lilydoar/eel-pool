@@ -90,7 +90,7 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 	for k, v in game.cfg.control {
 		if sdl.keyboard.keycodes_curr[v] {game.input = game.input + {k}}
 	}
-	log.debugf("Current game input: {}", game.input)
+	when FRAME_DEBUG {log.debugf("Current game input: {}", game.input)}
 
 	player_desire_move_x: f32
 	player_desire_move_y: f32
@@ -156,110 +156,60 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 		sdl3.RenderTexture(r.ptr, r.animations.player.idle.texture, src, dst)
 	}
 
-	{
-		// Draw idle animation
-		elapsed_ms: u64 = game.frame_count
-		frame :=
-			(elapsed_ms / cast(u64)r.animations.player.idle.delay_ms) %
-			cast(u64)len(r.animations.player.idle.frame)
-		// when FRAME_DEBUG {
-		// 	log.debugf("animation {} frame: {}", r.animations.player.idle.name, frame)
-		// }
-
-		clip: sdl3.Rect
-		sdl3.GetSurfaceClipRect(r.animations.player.idle.frame[frame], &clip)
-
-		src: Maybe(^sdl3.FRect) = &sdl3.FRect {
-			cast(f32)clip.x,
-			cast(f32)clip.y,
-			cast(f32)clip.w,
-			cast(f32)clip.h,
-		}
-		dst: Maybe(^sdl3.FRect) = &sdl3.FRect{0, cast(f32)clip.h, cast(f32)clip.w, cast(f32)clip.h}
-
-		// when FRAME_DEBUG {log.debugf(
-		// 		"Render {} frame {}: src: {}, dest: {}",
-		// 		r.animations.player.idle.name,
-		// 		frame,
-		// 		src,
-		// 		dst,
-		// 	)}
-		sdl3.RenderTexture(r.ptr, r.animations.player.idle.texture, src, dst)
-	}
-
-	{
-		// Draw run animation
-		elapsed_ms: u64 = game.frame_count
-		frame :=
-			(elapsed_ms / cast(u64)r.animations.player.run.delay_ms) %
-			cast(u64)len(r.animations.player.run.frame)
-		// when FRAME_DEBUG {
-		// 	log.debugf("animation {} frame: {}", r.animations.player.run.name, frame)
-		// }
-
-		clip: sdl3.Rect
-		sdl3.GetSurfaceClipRect(r.animations.player.run.frame[frame], &clip)
-
-		src: Maybe(^sdl3.FRect) = &sdl3.FRect {
-			cast(f32)clip.x,
-			cast(f32)clip.y,
-			cast(f32)clip.w,
-			cast(f32)clip.h,
-		}
-		dst: Maybe(^sdl3.FRect) = &sdl3.FRect {
-			cast(f32)clip.w,
-			cast(f32)clip.h,
-			cast(f32)clip.w,
-			cast(f32)clip.h,
-		}
-
-		// when FRAME_DEBUG {log.debugf(
-		// 		"Render {} frame {}: src: {}, dest: {}",
-		// 		r.animations.player.run.name,
-		// 		frame,
-		// 		src,
-		// 		dst,
-		// 	)}
-		sdl3.RenderTexture(r.ptr, r.animations.player.run.texture, src, dst)
-	}
+	game_draw_animation(game, r, {r.animations.player.idle, sdl3.FRect{0, 192, 192, 192}})
+	game_draw_animation(game, r, {r.animations.player.run, sdl3.FRect{192, 192, 192, 192}})
+	game_draw_animation(game, r, {r.animations.player.guard, sdl3.FRect{192 * 2, 192, 192, 192}})
+	game_draw_animation(game, r, {r.animations.player.attack1, sdl3.FRect{192 * 3, 192, 192, 192}})
+	game_draw_animation(game, r, {r.animations.player.attack2, sdl3.FRect{192 * 4, 192, 192, 192}})
 
 	{
 		// Draw player()
-		elapsed_ms: u64 = game.frame_count
-		frame :=
-			(elapsed_ms / cast(u64)r.animations.player.run.delay_ms) %
-			cast(u64)len(r.animations.player.run.frame)
-		// when FRAME_DEBUG {
-		// 	log.debugf("animation {} frame: {}", r.animations.player.run.name, frame)
-		// }
 
-		clip: sdl3.Rect
-		sdl3.GetSurfaceClipRect(r.animations.player.run.frame[frame], &clip)
-		src: Maybe(^sdl3.FRect) = &sdl3.FRect {
-			cast(f32)clip.x,
-			cast(f32)clip.y,
-			cast(f32)clip.w,
-			cast(f32)clip.h,
-		}
-
-		dst: Maybe(^sdl3.FRect) = &sdl3.FRect {
+		dst := sdl3.FRect {
 			cast(f32)game.entity.player.screen_x,
 			cast(f32)game.entity.player.screen_y,
 			cast(f32)game.entity.player.screen_w,
 			cast(f32)game.entity.player.screen_h,
 		}
-		when FRAME_DEBUG {log.debugf(
-				"Render {} frame {}: src: {}, dest: {}",
-				r.animations.player.run.name,
-				frame,
-				src,
-				dst,
-			)}
-		sdl3.RenderTexture(r.ptr, r.animations.player.run.texture, src, dst)
+
+		game_draw_animation(game, r, {r.animations.player.run, dst})
 	}
 }
 
 game_bind_control_to_key :: proc(game: ^Game, ctrl: game_control, key: sdl3.Keycode) {
 	game.cfg.control[ctrl] = key
+}
+
+game_draw_animation :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
+		anim: SDL_Animation,
+		dest: sdl3.FRect,
+	}) {
+	elapsed_ms: u64 = game.frame_count
+	frame := (elapsed_ms / cast(u64)cmd.anim.delay_ms) % cast(u64)len(cmd.anim.frame)
+	// when FRAME_DEBUG {
+	// 	log.debugf("animation {} frame: {}", r.animations.player.idle.name, frame)
+	// }
+
+	clip: sdl3.Rect
+	sdl3.GetSurfaceClipRect(cmd.anim.frame[frame], &clip)
+
+	src: Maybe(^sdl3.FRect) = &sdl3.FRect {
+		cast(f32)clip.x,
+		cast(f32)clip.y,
+		cast(f32)clip.w,
+		cast(f32)clip.h,
+	}
+
+	dst_local := cmd.dest
+	dst: Maybe(^sdl3.FRect) = &dst_local
+
+	// when FRAME_DEBUG {log.debugf(
+	// 		"Render {} frame {}: src: {}, dest: {}",
+	// 		r.animations.player.idle.name,
+	// 		frame,
+	// 		src,
+	// 		dst,
+	// 	)}
+	sdl3.RenderTexture(r.ptr, cmd.anim.texture, src, dst)
 }
 
