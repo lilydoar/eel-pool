@@ -159,6 +159,27 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 	when FRAME_DEBUG {log.debug("Begin drawing game frame")}
 	when FRAME_DEBUG {defer log.debug("End drawing game frame")}
 
+	// Draw tilemap
+	{
+		clip: sdl3.Rect
+		sdl3.GetSurfaceClipRect(r.textures.terrain.tilemap_color1.surface, &clip)
+		src: Maybe(^sdl3.FRect) = &sdl3.FRect {
+			cast(f32)clip.x,
+			cast(f32)clip.y,
+			cast(f32)clip.w,
+			cast(f32)clip.h,
+		}
+
+		dst: Maybe(^sdl3.FRect) = &sdl3.FRect {
+			cast(f32)clip.x,
+			cast(f32)clip.y,
+			cast(f32)clip.w,
+			cast(f32)clip.h,
+		}
+
+		sdl3.RenderTexture(r.ptr, r.textures.terrain.tilemap_color1.texture, src, dst)
+	}
+
 	// Draw idle atlas
 	for frame in 0 ..< len(r.animations.player.idle.frame) {
 		clip: sdl3.Rect

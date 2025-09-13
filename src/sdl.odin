@@ -55,7 +55,12 @@ SDL_Renderer :: struct {
 	ptr:         ^sdl3.Renderer,
 	clear_color: sdl3.Color,
 	textures:    struct {
-		player: struct {
+		terrain: struct {
+			tilemap_color1: SDL_Texture,
+			tilemap_color2: SDL_Texture,
+			tilemap_color3: SDL_Texture,
+		},
+		player:  struct {
 			idle_atlas:    SDL_Texture,
 			run_atlas:     SDL_Texture,
 			guard_atlas:   SDL_Texture,
@@ -121,6 +126,15 @@ sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 	s.renderer.ptr = must(sdl3.CreateRenderer(s.window.ptr, nil), "create renderer")
 	s.renderer.clear_color = sdl3.Color{0, 0, 0, 255}
 
+	terrain_tilemap_color1_name := "terrain_tilemap_color1"
+	terrain_tilemap_color1_path := "assets/Tiny_Swords/Terrain/Tilemap_color1.png"
+
+	terrain_tilemap_color2_name := "terrain_tilemap_color2"
+	terrain_tilemap_color2_path := "assets/Tiny_Swords/Terrain/Tilemap_color2.png"
+
+	terrain_tilemap_color3_name := "terrain_tilemap_color3"
+	terrain_tilemap_color3_path := "assets/Tiny_Swords/Terrain/Tilemap_color3.png"
+
 	player_idle_name := "player_idle"
 	player_idle_path := "assets/Tiny_Swords/Units/Blue_Units/Warrior/Warrior_Idle.png"
 
@@ -137,6 +151,24 @@ sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 	player_attack2_path := "assets/Tiny_Swords/Units/Blue_Units/Warrior/Warrior_attack2.png"
 
 	// load textures
+	s.renderer.textures.terrain.tilemap_color1 = sdl_texture_load(
+		&s.renderer,
+		terrain_tilemap_color1_path,
+		terrain_tilemap_color1_name,
+	)
+
+	s.renderer.textures.terrain.tilemap_color2 = sdl_texture_load(
+		&s.renderer,
+		terrain_tilemap_color2_path,
+		terrain_tilemap_color2_name,
+	)
+
+	s.renderer.textures.terrain.tilemap_color3 = sdl_texture_load(
+		&s.renderer,
+		terrain_tilemap_color3_path,
+		terrain_tilemap_color3_name,
+	)
+
 	s.renderer.textures.player.idle_atlas = sdl_texture_load(
 		&s.renderer,
 		player_idle_path,
