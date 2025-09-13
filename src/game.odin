@@ -161,23 +161,32 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 
 	// Draw tilemap
 	{
-		clip: sdl3.Rect
-		sdl3.GetSurfaceClipRect(r.textures.terrain.tilemap_color1.surface, &clip)
-		src: Maybe(^sdl3.FRect) = &sdl3.FRect {
-			cast(f32)clip.x,
-			cast(f32)clip.y,
-			cast(f32)clip.w,
-			cast(f32)clip.h,
-		}
+		dim_x := r.tilemaps.terrain.color1.dimension.x
+		dim_y := r.tilemaps.terrain.color1.dimension.y
 
-		dst: Maybe(^sdl3.FRect) = &sdl3.FRect {
-			cast(f32)clip.x,
-			cast(f32)clip.y,
-			cast(f32)clip.w,
-			cast(f32)clip.h,
-		}
+		padding: f32 = 20
 
-		sdl3.RenderTexture(r.ptr, r.textures.terrain.tilemap_color1.texture, src, dst)
+		for x in 0 ..< dim_x {
+			for y in 0 ..< dim_y {
+				tile_idx := cast(u32)(y * dim_x + x)
+				game_draw_tilemap_tile(
+					game,
+					r,
+					{
+						r.tilemaps.terrain.color1,
+						tile_idx,
+						sdl3.FRect {
+							cast(f32)(x * r.tilemaps.terrain.color1.tile_size.x) +
+							(padding * cast(f32)x),
+							cast(f32)(y * r.tilemaps.terrain.color1.tile_size.y) +
+							(padding * cast(f32)y),
+							cast(f32)r.tilemaps.terrain.color1.tile_size.x,
+							cast(f32)r.tilemaps.terrain.color1.tile_size.y,
+						},
+					},
+				)
+			}
+		}
 	}
 
 	// Draw idle atlas
@@ -243,6 +252,35 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 
 game_bind_control_to_key :: proc(game: ^Game, ctrl: game_control, key: sdl3.Keycode) {
 	game.cfg.control[ctrl] = key
+}
+
+game_draw_tilemap_tile :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
+		tilemap:  SDL_Tilemap,
+		tile_idx: u32,
+		dest:     sdl3.FRect,
+	}) {
+
+	clip: sdl3.Rect
+	sdl3.GetSurfaceClipRect(cmd.tilemap.tile[cmd.tile_idx], &clip)
+
+	src: Maybe(^sdl3.FRect) = &sdl3.FRect {
+		cast(f32)clip.x,
+		cast(f32)clip.y,
+		cast(f32)clip.w,
+		cast(f32)clip.h,
+	}
+
+	dst_local := cmd.dest
+	dst: Maybe(^sdl3.FRect) = &dst_local
+
+	when FRAME_DEBUG {log.debugf(
+			"Render tilemap tile {}: src: {}, dest: {}",
+			cmd.tile_idx,
+			src,
+			dst,
+		)}
+
+	sdl3.RenderTexture(r.ptr, cmd.tilemap.texture, src, dst)
 }
 
 game_draw_animation :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {

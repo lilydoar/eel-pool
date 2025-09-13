@@ -56,9 +56,9 @@ SDL_Renderer :: struct {
 	clear_color: sdl3.Color,
 	textures:    struct {
 		terrain: struct {
-			tilemap_color1: SDL_Texture,
-			tilemap_color2: SDL_Texture,
-			tilemap_color3: SDL_Texture,
+			tilemap_atlas_color1: SDL_Texture,
+			tilemap_atlas_color2: SDL_Texture,
+			tilemap_atlas_color3: SDL_Texture,
 		},
 		player:  struct {
 			idle_atlas:    SDL_Texture,
@@ -66,6 +66,13 @@ SDL_Renderer :: struct {
 			guard_atlas:   SDL_Texture,
 			attack1_atlas: SDL_Texture,
 			attack2_atlas: SDL_Texture,
+		},
+	},
+	tilemaps:    struct {
+		terrain: struct {
+			color1: SDL_Tilemap,
+			color2: SDL_Tilemap,
+			color3: SDL_Tilemap,
 		},
 	},
 	animations:  struct {
@@ -83,6 +90,14 @@ SDL_Texture :: struct {
 	name:    string,
 	surface: ^sdl3.Surface,
 	texture: ^sdl3.Texture,
+}
+
+SDL_Tilemap :: struct {
+	name:      string,
+	dimension: Vec2i,
+	tile_size: Vec2i,
+	texture:   ^sdl3.Texture,
+	tile:      []^sdl3.Surface,
 }
 
 SDL_Animation :: struct {
@@ -151,19 +166,19 @@ sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 	player_attack2_path := "assets/Tiny_Swords/Units/Blue_Units/Warrior/Warrior_attack2.png"
 
 	// load textures
-	s.renderer.textures.terrain.tilemap_color1 = sdl_texture_load(
+	s.renderer.textures.terrain.tilemap_atlas_color1 = sdl_texture_load(
 		&s.renderer,
 		terrain_tilemap_color1_path,
 		terrain_tilemap_color1_name,
 	)
 
-	s.renderer.textures.terrain.tilemap_color2 = sdl_texture_load(
+	s.renderer.textures.terrain.tilemap_atlas_color2 = sdl_texture_load(
 		&s.renderer,
 		terrain_tilemap_color2_path,
 		terrain_tilemap_color2_name,
 	)
 
-	s.renderer.textures.terrain.tilemap_color3 = sdl_texture_load(
+	s.renderer.textures.terrain.tilemap_atlas_color3 = sdl_texture_load(
 		&s.renderer,
 		terrain_tilemap_color3_path,
 		terrain_tilemap_color3_name,
@@ -195,6 +210,80 @@ sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 		player_attack2_name,
 	)
 
+	load_tilemap :: proc(s: ^SDL, cfg: struct {
+			name:      string,
+			dimension: Vec2i,
+			atlas:     ^SDL_Texture,
+		}) -> SDL_Tilemap {
+		assert(cfg.dimension.x > 0)
+		assert(cfg.dimension.y > 0)
+		assert(cfg.atlas != nil)
+
+		tilemap := SDL_Tilemap {
+			name      = cfg.name,
+			dimension = cfg.dimension,
+			tile_size = Vec2i {
+				cfg.atlas.surface.w / cfg.dimension.x,
+				cfg.atlas.surface.h / cfg.dimension.y,
+			},
+			texture   = cfg.atlas.texture,
+			tile      = make([]^sdl3.Surface, cfg.dimension.x * cfg.dimension.y),
+		}
+
+		log.debugf(
+			"Loading tilemap '{}' with dimension {} x {} (tile size: {} x {})",
+			cfg.name,
+			cfg.dimension.x,
+			cfg.dimension.y,
+			tilemap.tile_size.x,
+			tilemap.tile_size.y,
+		)
+
+		for y in 0 ..< cfg.dimension.y {
+			for x in 0 ..< cfg.dimension.x {
+				idx := y * cfg.dimension.x + x
+				rect: Maybe(^sdl3.Rect) = &sdl3.Rect {
+					tilemap.tile_size.x * cast(i32)x,
+					tilemap.tile_size.y * cast(i32)y,
+					cast(i32)tilemap.tile_size.x,
+					cast(i32)tilemap.tile_size.y,
+				}
+				tile := sdl3.DuplicateSurface(cfg.atlas.surface)
+				sdl3.SetSurfaceClipRect(tile, rect)
+				tilemap.tile[idx] = tile
+			}
+		}
+
+		return tilemap
+	}
+
+	s.renderer.tilemaps.terrain.color1 = load_tilemap(
+		s,
+		{
+			terrain_tilemap_color1_name,
+			Vec2i{20, 8},
+			&s.renderer.textures.terrain.tilemap_atlas_color1,
+		},
+	)
+
+	s.renderer.tilemaps.terrain.color2 = load_tilemap(
+		s,
+		{
+			terrain_tilemap_color2_name,
+			Vec2i{20, 8},
+			&s.renderer.textures.terrain.tilemap_atlas_color2,
+		},
+	)
+
+	s.renderer.tilemaps.terrain.color3 = load_tilemap(
+		s,
+		{
+			terrain_tilemap_color3_name,
+			Vec2i{20, 8},
+			&s.renderer.textures.terrain.tilemap_atlas_color3,
+		},
+	)
+
 	load_animation :: proc(s: ^SDL, cfg: struct {
 			name:     string,
 			len:      u32,
@@ -202,6 +291,10 @@ sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 			delay_ms: u32,
 			atlas:    ^SDL_Texture,
 		}) -> SDL_Animation {
+		assert(cfg.len > 0)
+		assert(cfg.size.x > 0)
+		assert(cfg.size.y > 0)
+		assert(cfg.atlas != nil)
 
 		anim := SDL_Animation {
 			name     = cfg.name,
