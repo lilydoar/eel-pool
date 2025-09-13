@@ -25,6 +25,12 @@ Game :: struct {
 			screen_h: f32,
 
 			//
+			state:    enum {
+				idle,
+				running,
+				guard,
+				attack,
+			},
 			facing:   enum {
 				right,
 				left,
@@ -111,9 +117,15 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 	player_final_move_y := cast(f32)(cast(f64)player_desire_move_y *
 		cast(f64)game.cfg.entity.player.player_move_speed_y_axis)
 
+	if player_final_move_x == 0 && player_final_move_y == 0 {
+		game.entity.player.state = .idle
+	} else {
+		game.entity.player.state = .running
+	}
+
 	if player_final_move_x < 0 {
 		game.entity.player.facing = .left
-	} else {
+	} else if player_final_move_x > 0 {
 		game.entity.player.facing = .right
 	}
 
@@ -188,7 +200,6 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 
 	{
 		// Draw player()
-
 		dst := sdl3.FRect {
 			cast(f32)game.entity.player.screen_x,
 			cast(f32)game.entity.player.screen_y,
@@ -196,11 +207,15 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 			cast(f32)game.entity.player.screen_h,
 		}
 
-		switch game.entity.player.facing {
-		case .right:
-			game_draw_animation(game, r, {r.animations.player.run, dst, false})
-		case .left:
-			game_draw_animation(game, r, {r.animations.player.run, dst, true})
+		mirror_x := false if game.entity.player.facing == .right else true
+
+		switch game.entity.player.state {
+		case .idle:
+			game_draw_animation(game, r, {r.animations.player.idle, dst, mirror_x})
+		case .running:
+			game_draw_animation(game, r, {r.animations.player.run, dst, mirror_x})
+		case .guard:
+		case .attack:
 		}
 	}
 }
