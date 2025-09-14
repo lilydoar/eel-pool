@@ -1266,3 +1266,11 @@ Create an animation tag for organization:
 - **Cel linking**: Link identical elements across frames to save time
 - **Animation curves**: Adjust frame timing for more natural motion
 - **Tilemap mode**: Useful if character will walk across repeating ground tiles
+
+# Sat Sep 13 2025
+
+TODO: Debug text stack that allows for in-game modification of the text stack
+
+Display text starting at the top left of the screen.
+For each call to debug_text_stack, add a new row to the stack.
+Use this to print out value of select vars across frames.
