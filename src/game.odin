@@ -1,7 +1,9 @@
 package game
 
 import "base:runtime"
+import "core:encoding/json"
 import "core:log"
+import os "core:os/os2"
 
 import sdl3 "vendor:sdl3"
 
@@ -15,11 +17,7 @@ Game :: struct {
 	input:         bit_set[game_control],
 
 	// 
-	level:         struct {
-		size:      Vec2i,
-		tiles:     []u32,
-		collision: []game_tile_collision_kind,
-	},
+	level:         game_level,
 	entity:        struct {
 		player: struct {
 			// The player's position in pixels relative to the top-left corner of the screen
@@ -61,6 +59,15 @@ game_control :: enum {
 	player_move_right,
 }
 
+game_level :: struct {
+	layers: []struct {
+		name:      string,
+		size:      Vec2i,
+		tile:      []u32,
+		collision: []game_tile_collision_kind,
+	},
+}
+
 game_tile_collision_kind :: enum {
 	empty,
 	solid,
@@ -82,8 +89,8 @@ game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger) {
 
 	game.frame_step_ms = 1000 / 60 // 16.666 ms per frame at 60 FPS
 
-	game.entity.player.screen_w = 128
-	game.entity.player.screen_h = 128
+	game.entity.player.screen_w = 192
+	game.entity.player.screen_h = 192
 
 	game.cfg.control = make(map[game_control]sdl3.Keycode)
 	game_bind_control_to_key(game, .player_move_up, sdl3.K_W)
@@ -94,14 +101,39 @@ game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger) {
 	game.cfg.entity.player.player_move_speed_x_axis = 4
 	game.cfg.entity.player.player_move_speed_y_axis = 4
 
-	game.level.size = {12, 12}
-	game.level.tiles = make([]u32, game.level.size.x * game.level.size.y)
-	game.level.collision = make([]game_tile_collision_kind, game.level.size.x * game.level.size.y)
+	load_level :: proc(path: string) -> game_level {
+		log.debugf("Loading level from file: {}", path)
+		defer log.debugf("Finished loading level from file: {}", path)
 
-	// TODO Load level data
-	for i in 0 ..< len(game.level.tiles) {
-		game.level.tiles[i] = 22
+		data, err := os.read_entire_file_from_path(path, context.allocator)
+		if err != nil {
+			log.panicf("Failed to load level file {}: {}", path, err)
+		}
+
+		level: game_level
+		if err := json.unmarshal(data, &level); err != nil {
+			log.panicf("Failed to parse level file {}: {}", path, err)
+		}
+
+		assert(
+			level.layers[0].size.x * level.layers[0].size.y == cast(i32)len(level.layers[0].tile),
+		)
+		assert(
+			level.layers[0].size.x * level.layers[0].size.y ==
+			cast(i32)len(level.layers[0].collision),
+		)
+
+		log.debugf(
+			"Loaded level: size: {}, tiles: {}, collision: {}",
+			level.layers[0].size,
+			level.layers[0].tile,
+			level.layers[0].collision,
+		)
+
+		return level
 	}
+
+	game.level = load_level("data/levels/default.json")
 }
 
 game_deinit :: proc(game: ^Game) {
@@ -127,12 +159,11 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 	}
 	when FRAME_DEBUG {log.debugf("Current game input: {}", game.input)}
 
+	player_desire_move_x: f32
+	player_desire_move_y: f32
 	player_final_move_x: f32
 	player_final_move_y: f32
 	{
-		player_desire_move_x: f32
-		player_desire_move_y: f32
-
 		if .player_move_up in game.input {player_desire_move_y -= 1.0}
 		if .player_move_down in game.input {player_desire_move_y += 1.0}
 		if .player_move_left in game.input {player_desire_move_x -= 1.0}
@@ -196,19 +227,20 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 
 	{
 		// Draw level tilemap
-		for x in 0 ..< len(game.level.tiles) {
+		for x in 0 ..< len(game.level.layers[0].tile) {
+
 			game_draw_tilemap_tile(
 				game,
 				r,
 				{
 					r.tilemaps.terrain.color1,
-					game.level.tiles[x],
+					game.level.layers[0].tile[x],
 					sdl3.FRect {
 						cast(f32)(cast(i32)x %
-							game.level.size.x *
+							game.level.layers[0].size.x *
 							r.tilemaps.terrain.color1.tile_size.x),
 						cast(f32)(cast(i32)x /
-							game.level.size.x *
+							game.level.layers[0].size.x *
 							r.tilemaps.terrain.color1.tile_size.y),
 						cast(f32)r.tilemaps.terrain.color1.tile_size.x,
 						cast(f32)r.tilemaps.terrain.color1.tile_size.y,
