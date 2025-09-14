@@ -15,6 +15,11 @@ Game :: struct {
 	input:         bit_set[game_control],
 
 	// 
+	level:         struct {
+		size:      Vec2i,
+		tiles:     []u32,
+		collision: []game_tile_collision_kind,
+	},
 	entity:        struct {
 		player: struct {
 			// The player's position in pixels relative to the top-left corner of the screen
@@ -25,7 +30,7 @@ Game :: struct {
 			screen_h: f32,
 
 			//
-			state:    enum {
+			action:   enum {
 				idle,
 				running,
 				guard,
@@ -56,6 +61,15 @@ game_control :: enum {
 	player_move_right,
 }
 
+game_tile_collision_kind :: enum {
+	empty,
+	solid,
+	slope_up,
+	slope_down,
+	slope_left,
+	slope_right,
+}
+
 game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger) {
 	context = ctx
 
@@ -79,6 +93,15 @@ game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger) {
 
 	game.cfg.entity.player.player_move_speed_x_axis = 4
 	game.cfg.entity.player.player_move_speed_y_axis = 4
+
+	game.level.size = {12, 12}
+	game.level.tiles = make([]u32, game.level.size.x * game.level.size.y)
+	game.level.collision = make([]game_tile_collision_kind, game.level.size.x * game.level.size.y)
+
+	// TODO Load level data
+	for i in 0 ..< len(game.level.tiles) {
+		game.level.tiles[i] = 22
+	}
 }
 
 game_deinit :: proc(game: ^Game) {
@@ -104,23 +127,29 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 	}
 	when FRAME_DEBUG {log.debugf("Current game input: {}", game.input)}
 
-	player_desire_move_x: f32
-	player_desire_move_y: f32
+	player_final_move_x: f32
+	player_final_move_y: f32
+	{
+		player_desire_move_x: f32
+		player_desire_move_y: f32
 
-	if .player_move_up in game.input {player_desire_move_y -= 1.0}
-	if .player_move_down in game.input {player_desire_move_y += 1.0}
-	if .player_move_left in game.input {player_desire_move_x -= 1.0}
-	if .player_move_right in game.input {player_desire_move_x += 1.0}
+		if .player_move_up in game.input {player_desire_move_y -= 1.0}
+		if .player_move_down in game.input {player_desire_move_y += 1.0}
+		if .player_move_left in game.input {player_desire_move_x -= 1.0}
+		if .player_move_right in game.input {player_desire_move_x += 1.0}
 
-	player_final_move_x := cast(f32)(cast(f64)player_desire_move_x *
-		cast(f64)game.cfg.entity.player.player_move_speed_x_axis)
-	player_final_move_y := cast(f32)(cast(f64)player_desire_move_y *
-		cast(f64)game.cfg.entity.player.player_move_speed_y_axis)
+		player_final_move_x =
+		cast(f32)(cast(f64)player_desire_move_x *
+			cast(f64)game.cfg.entity.player.player_move_speed_x_axis)
+		player_final_move_y =
+		cast(f32)(cast(f64)player_desire_move_y *
+			cast(f64)game.cfg.entity.player.player_move_speed_y_axis)
+	}
 
 	if player_final_move_x == 0 && player_final_move_y == 0 {
-		game.entity.player.state = .idle
+		game.entity.player.action = .idle
 	} else {
-		game.entity.player.state = .running
+		game.entity.player.action = .running
 	}
 
 	if player_final_move_x < 0 {
@@ -132,12 +161,14 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 	game.entity.player.screen_x += player_final_move_x
 	game.entity.player.screen_y += player_final_move_y
 
-	bounds_x: f32 = cast(f32)sdl.window.size_curr.x - game.entity.player.screen_w
-	bounds_y: f32 = cast(f32)sdl.window.size_curr.y - game.entity.player.screen_h
-	if game.entity.player.screen_x < 0.0 {game.entity.player.screen_x = 0.0}
-	if game.entity.player.screen_y < 0.0 {game.entity.player.screen_y = 0.0}
-	if game.entity.player.screen_x > bounds_x {game.entity.player.screen_x = bounds_x}
-	if game.entity.player.screen_y > bounds_y {game.entity.player.screen_y = bounds_y}
+	{
+		bounds_x: f32 = cast(f32)sdl.window.size_curr.x - game.entity.player.screen_w
+		bounds_y: f32 = cast(f32)sdl.window.size_curr.y - game.entity.player.screen_h
+		if game.entity.player.screen_x < 0.0 {game.entity.player.screen_x = 0.0}
+		if game.entity.player.screen_y < 0.0 {game.entity.player.screen_y = 0.0}
+		if game.entity.player.screen_x > bounds_x {game.entity.player.screen_x = bounds_x}
+		if game.entity.player.screen_y > bounds_y {game.entity.player.screen_y = bounds_y}
+	}
 
 	when FRAME_DEBUG {
 		log.debugf("player desire move: {}, {}", player_desire_move_x, player_desire_move_y)
@@ -159,74 +190,34 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 	when FRAME_DEBUG {log.debug("Begin drawing game frame")}
 	when FRAME_DEBUG {defer log.debug("End drawing game frame")}
 
-	// Draw tilemap
+	// demo_draw_tilemap_atlas(game, r)
+	// demo_draw_idle_atlas(game, r)
+	// demo_draw_player_animations(game, r)
+
 	{
-		dim_x := r.tilemaps.terrain.color1.dimension.x
-		dim_y := r.tilemaps.terrain.color1.dimension.y
-
-		padding: f32 = 20
-
-		for x in 0 ..< dim_x {
-			for y in 0 ..< dim_y {
-				tile_idx := cast(u32)(y * dim_x + x)
-				game_draw_tilemap_tile(
-					game,
-					r,
-					{
-						r.tilemaps.terrain.color1,
-						tile_idx,
-						sdl3.FRect {
-							cast(f32)(x * r.tilemaps.terrain.color1.tile_size.x) +
-							(padding * cast(f32)x),
-							cast(f32)(y * r.tilemaps.terrain.color1.tile_size.y) +
-							(padding * cast(f32)y),
-							cast(f32)r.tilemaps.terrain.color1.tile_size.x,
-							cast(f32)r.tilemaps.terrain.color1.tile_size.y,
-						},
+		// Draw level tilemap
+		for x in 0 ..< len(game.level.tiles) {
+			game_draw_tilemap_tile(
+				game,
+				r,
+				{
+					r.tilemaps.terrain.color1,
+					game.level.tiles[x],
+					sdl3.FRect {
+						cast(f32)(cast(i32)x %
+							game.level.size.x *
+							r.tilemaps.terrain.color1.tile_size.x),
+						cast(f32)(cast(i32)x /
+							game.level.size.x *
+							r.tilemaps.terrain.color1.tile_size.y),
+						cast(f32)r.tilemaps.terrain.color1.tile_size.x,
+						cast(f32)r.tilemaps.terrain.color1.tile_size.y,
 					},
-				)
-			}
+				},
+			)
+
 		}
 	}
-
-	// Draw idle atlas
-	for frame in 0 ..< len(r.animations.player.idle.frame) {
-		clip: sdl3.Rect
-		sdl3.GetSurfaceClipRect(r.animations.player.idle.frame[frame], &clip)
-
-		src: Maybe(^sdl3.FRect) = &sdl3.FRect {
-			cast(f32)clip.x,
-			cast(f32)clip.y,
-			cast(f32)clip.w,
-			cast(f32)clip.h,
-		}
-		dst: Maybe(^sdl3.FRect) = &sdl3.FRect {
-			cast(f32)clip.x,
-			cast(f32)clip.y,
-			cast(f32)clip.w,
-			cast(f32)clip.h,
-		}
-
-		sdl3.RenderTexture(r.ptr, r.animations.player.idle.texture, src, dst)
-	}
-
-	game_draw_animation(game, r, {r.animations.player.idle, sdl3.FRect{0, 192, 192, 192}, false})
-	game_draw_animation(game, r, {r.animations.player.run, sdl3.FRect{192, 192, 192, 192}, false})
-	game_draw_animation(
-		game,
-		r,
-		{r.animations.player.guard, sdl3.FRect{192 * 2, 192, 192, 192}, false},
-	)
-	game_draw_animation(
-		game,
-		r,
-		{r.animations.player.attack1, sdl3.FRect{192 * 3, 192, 192, 192}, false},
-	)
-	game_draw_animation(
-		game,
-		r,
-		{r.animations.player.attack2, sdl3.FRect{192 * 4, 192, 192, 192}, false},
-	)
 
 	{
 		// Draw player()
@@ -239,7 +230,7 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 
 		mirror_x := false if game.entity.player.facing == .right else true
 
-		switch game.entity.player.state {
+		switch game.entity.player.action {
 		case .idle:
 			game_draw_animation(game, r, {r.animations.player.idle, dst, mirror_x})
 		case .running:
