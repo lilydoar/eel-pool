@@ -1,0 +1,52 @@
+[
+    {
+        "name": "player_idle",
+        "path": "assets/Tiny_Swords/Units/Blue_Units/Warrior/Warrior_Idle.png",
+        "frame_count": 8,
+        "delay_ms": 10,
+        "size": {
+            "x": 192,
+            "y": 192
+        }
+    },
+    {
+        "name": "player_run",
+        "path": "assets/Tiny_Swords/Units/Blue_Units/Warrior/Warrior_run.png",
+        "frame_count": 6,
+        "delay_ms": 10,
+        "size": {
+            "x": 192,
+            "y": 192
+        }
+    },
+    {
+        "name": "player_guard",
+        "path": "assets/Tiny_Swords/Units/Blue_Units/Warrior/Warrior_guard.png",
+        "frame_count": 6,
+        "delay_ms": 10,
+        "size": {
+            "x": 192,
+            "y": 192
+        }
+    },
+    {
+        "name": "player_attack1",
+        "path": "assets/Tiny_Swords/Units/Blue_Units/Warrior/Warrior_attack1.png",
+        "frame_count": 4,
+        "delay_ms": 10,
+        "size": {
+            "x": 192,
+            "y": 192
+        }
+    },
+    {
+        "name": "player_attack2",
+        "path": "assets/Tiny_Swords/Units/Blue_Units/Warrior/Warrior_attack2.png",
+        "frame_count": 4,
+        "delay_ms": 10,
+        "size": {
+            "x": 192,
+            "y": 192
+        }
+    }
+]

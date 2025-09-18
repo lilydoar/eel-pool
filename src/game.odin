@@ -221,10 +221,6 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 	when FRAME_DEBUG {log.debug("Begin drawing game frame")}
 	when FRAME_DEBUG {defer log.debug("End drawing game frame")}
 
-	// demo_draw_tilemap_atlas(game, r)
-	// demo_draw_idle_atlas(game, r)
-	// demo_draw_player_animations(game, r)
-
 	{
 		// Draw level tilemap
 		for x in 0 ..< len(game.level.layers[0].tile) {
@@ -251,6 +247,10 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 		}
 	}
 
+	// demo_draw_tilemap_atlas(game, r)
+	// demo_draw_idle_atlas(game, r)
+	// demo_draw_player_animations(game, r)
+
 	{
 		// Draw player()
 		dst := sdl3.FRect {
@@ -264,9 +264,9 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 
 		switch game.entity.player.action {
 		case .idle:
-			game_draw_animation(game, r, {r.animations.player.idle, dst, mirror_x})
+			game_draw_animation(game, r, {animation_player_idle, dst, mirror_x})
 		case .running:
-			game_draw_animation(game, r, {r.animations.player.run, dst, mirror_x})
+			game_draw_animation(game, r, {animation_player_run, dst, mirror_x})
 		case .guard:
 		case .attack:
 		}
@@ -296,12 +296,12 @@ game_draw_tilemap_tile :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 	dst_local := cmd.dest
 	dst: Maybe(^sdl3.FRect) = &dst_local
 
-	when FRAME_DEBUG {log.debugf(
-			"Render tilemap tile {}: src: {}, dest: {}",
-			cmd.tile_idx,
-			src,
-			dst,
-		)}
+	// when FRAME_DEBUG {log.debugf(
+	// 		"Render tilemap tile {}: src: {}, dest: {}",
+	// 		cmd.tile_idx,
+	// 		src,
+	// 		dst,
+	// 	)}
 
 	sdl3.RenderTexture(r.ptr, cmd.tilemap.texture, src, dst)
 }
@@ -313,9 +313,11 @@ game_draw_animation :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 	}) {
 	elapsed_ms: u64 = game.frame_count
 	frame := (elapsed_ms / cast(u64)cmd.anim.delay_ms) % cast(u64)len(cmd.anim.frame)
-	// when FRAME_DEBUG {
-	// 	log.debugf("animation {} frame: {}", r.animations.player.idle.name, frame)
-	// }
+	when FRAME_DEBUG {
+		log.debugf("animation {} frame: {}", cmd.anim.name, frame)
+		log.debugf("elapsed_ms: {}, delay_ms: {}", elapsed_ms, cmd.anim.delay_ms)
+		log.debugf("total frames: {}", len(cmd.anim.frame))
+	}
 
 	clip: sdl3.Rect
 	sdl3.GetSurfaceClipRect(cmd.anim.frame[frame], &clip)
@@ -332,14 +334,15 @@ game_draw_animation :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 
 	// when FRAME_DEBUG {log.debugf(
 	// 		"Render {} frame {}: src: {}, dest: {}",
-	// 		r.animations.player.idle.name,
+	// 		cmd.anim.name,
 	// 		frame,
 	// 		src,
 	// 		dst,
 	// 	)}
+
 	sdl3.RenderTextureRotated(
 		r.ptr,
-		cmd.anim.texture,
+		cmd.anim.texture.texture,
 		src,
 		dst,
 		0,

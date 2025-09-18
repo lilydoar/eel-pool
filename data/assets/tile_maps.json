@@ -1,0 +1,26 @@
+[
+    {
+        "name": "tiny_swords_ground_color1",
+        "path": "assets/Tiny_Swords/Terrain/Tilemap_color1.png",
+        "size": {
+            "x": 20,
+            "y": 20
+        }
+    },
+    {
+        "name": "tiny_swords_ground_color2",
+        "path": "assets/Tiny_Swords/Terrain/Tilemap_color2.png",
+        "size": {
+            "x": 20,
+            "y": 20
+        }
+    },
+    {
+        "name": "tiny_swords_ground_color3",
+        "path": "assets/Tiny_Swords/Terrain/Tilemap_color3.png",
+        "size": {
+            "x": 20,
+            "y": 20
+        }
+    }
+]

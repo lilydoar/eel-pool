@@ -60,28 +60,12 @@ SDL_Renderer :: struct {
 			tilemap_atlas_color2: SDL_Texture,
 			tilemap_atlas_color3: SDL_Texture,
 		},
-		player:  struct {
-			idle_atlas:    SDL_Texture,
-			run_atlas:     SDL_Texture,
-			guard_atlas:   SDL_Texture,
-			attack1_atlas: SDL_Texture,
-			attack2_atlas: SDL_Texture,
-		},
 	},
 	tilemaps:    struct {
 		terrain: struct {
 			color1: SDL_Tilemap,
 			color2: SDL_Tilemap,
 			color3: SDL_Tilemap,
-		},
-	},
-	animations:  struct {
-		player: struct {
-			idle:    SDL_Animation,
-			run:     SDL_Animation,
-			guard:   SDL_Animation,
-			attack1: SDL_Animation,
-			attack2: SDL_Animation,
 		},
 	},
 }
@@ -102,7 +86,7 @@ SDL_Tilemap :: struct {
 
 SDL_Animation :: struct {
 	name:     string,
-	texture:  ^sdl3.Texture,
+	texture:  SDL_Texture,
 	frame:    []^sdl3.Surface,
 	delay_ms: u32,
 }
@@ -150,21 +134,6 @@ sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 	terrain_tilemap_color3_name := "terrain_tilemap_color3"
 	terrain_tilemap_color3_path := "assets/Tiny_Swords/Terrain/Tilemap_color3.png"
 
-	player_idle_name := "player_idle"
-	player_idle_path := "assets/Tiny_Swords/Units/Blue_Units/Warrior/Warrior_Idle.png"
-
-	player_run_name := "player_run"
-	player_run_path := "assets/Tiny_Swords/Units/Blue_Units/Warrior/Warrior_Run.png"
-
-	player_guard_name := "player_guard"
-	player_guard_path := "assets/Tiny_Swords/Units/Blue_Units/Warrior/Warrior_guard.png"
-
-	player_attack1_name := "player_attack1"
-	player_attack1_path := "assets/Tiny_Swords/Units/Blue_Units/Warrior/Warrior_attack1.png"
-
-	player_attack2_name := "player_attack2"
-	player_attack2_path := "assets/Tiny_Swords/Units/Blue_Units/Warrior/Warrior_attack2.png"
-
 	// load textures
 	s.renderer.textures.terrain.tilemap_atlas_color1 = sdl_texture_load(
 		&s.renderer,
@@ -182,32 +151,6 @@ sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 		&s.renderer,
 		terrain_tilemap_color3_path,
 		terrain_tilemap_color3_name,
-	)
-
-	s.renderer.textures.player.idle_atlas = sdl_texture_load(
-		&s.renderer,
-		player_idle_path,
-		player_idle_name,
-	)
-	s.renderer.textures.player.run_atlas = sdl_texture_load(
-		&s.renderer,
-		player_run_path,
-		player_run_name,
-	)
-	s.renderer.textures.player.guard_atlas = sdl_texture_load(
-		&s.renderer,
-		player_guard_path,
-		player_guard_name,
-	)
-	s.renderer.textures.player.attack1_atlas = sdl_texture_load(
-		&s.renderer,
-		player_attack1_path,
-		player_attack1_name,
-	)
-	s.renderer.textures.player.attack2_atlas = sdl_texture_load(
-		&s.renderer,
-		player_attack2_path,
-		player_attack2_name,
 	)
 
 	load_tilemap :: proc(s: ^SDL, cfg: struct {
@@ -283,102 +226,10 @@ sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 			&s.renderer.textures.terrain.tilemap_atlas_color3,
 		},
 	)
-
-	load_animation :: proc(s: ^SDL, cfg: struct {
-			name:     string,
-			len:      u32,
-			size:     Vec2i,
-			delay_ms: u32,
-			atlas:    ^SDL_Texture,
-		}) -> SDL_Animation {
-		assert(cfg.len > 0)
-		assert(cfg.size.x > 0)
-		assert(cfg.size.y > 0)
-		assert(cfg.atlas != nil)
-
-		anim := SDL_Animation {
-			name     = cfg.name,
-			texture  = cfg.atlas.texture,
-			frame    = make([]^sdl3.Surface, cfg.len),
-			delay_ms = cfg.delay_ms,
-		}
-
-		for idx in 0 ..< cfg.len {
-			rect: Maybe(^sdl3.Rect) = &sdl3.Rect {
-				cfg.size.x * cast(i32)idx,
-				0,
-				cast(i32)cfg.size.x,
-				cast(i32)cfg.size.y,
-			}
-			frame := sdl3.DuplicateSurface(cfg.atlas.surface)
-			sdl3.SetSurfaceClipRect(frame, rect)
-			anim.frame[idx] = frame
-		}
-
-		return anim
-	}
-
-	s.renderer.animations.player.idle = load_animation(
-		s,
-		{
-			player_idle_name,
-			cast(u32)8,
-			Vec2i{192, 192},
-			10,
-			&s.renderer.textures.player.idle_atlas,
-		},
-	)
-
-	s.renderer.animations.player.run = load_animation(
-		s,
-		{player_run_name, cast(u32)6, Vec2i{192, 192}, 10, &s.renderer.textures.player.run_atlas},
-	)
-
-	s.renderer.animations.player.guard = load_animation(
-		s,
-		{
-			player_guard_name,
-			cast(u32)6,
-			Vec2i{192, 192},
-			10,
-			&s.renderer.textures.player.guard_atlas,
-		},
-	)
-
-	s.renderer.animations.player.attack1 = load_animation(
-		s,
-		{
-			player_attack1_name,
-			cast(u32)4,
-			Vec2i{192, 192},
-			10,
-			&s.renderer.textures.player.attack1_atlas,
-		},
-	)
-
-	s.renderer.animations.player.attack2 = load_animation(
-		s,
-		{
-			player_attack2_name,
-			cast(u32)4,
-			Vec2i{192, 192},
-			10,
-			&s.renderer.textures.player.attack2_atlas,
-		},
-	)
 }
 
 sdl_deinit :: proc(s: ^SDL) {
 	log.info("Deinitializing SDL...")
-
-	// TODO
-	// anim deinit
-
-	sdl_texture_deinit(&s.renderer.textures.player.idle_atlas)
-	sdl_texture_deinit(&s.renderer.textures.player.run_atlas)
-	sdl_texture_deinit(&s.renderer.textures.player.guard_atlas)
-	sdl_texture_deinit(&s.renderer.textures.player.attack1_atlas)
-	sdl_texture_deinit(&s.renderer.textures.player.attack2_atlas)
 
 	sdl3.DestroyRenderer(s.renderer.ptr)
 
@@ -577,8 +428,11 @@ sdl_mouse_did_move :: proc(s: ^SDL) -> bool {
 // Renderer utilities
 
 sdl_texture_load :: proc(r: ^SDL_Renderer, file: string, name: string) -> (texture: SDL_Texture) {
+	assert(len(file) > 0)
+	assert(len(name) > 0)
+
 	log.debugf("Loading texture {} from file: '{}'", name, file)
-	defer log.debugf("Loaded texture {} from file: '{}'", name, file)
+	defer log.debugf("Loaded texture {}", name)
 
 	f := strings.clone_to_cstring(file)
 	defer delete(f)

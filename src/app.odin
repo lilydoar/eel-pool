@@ -59,6 +59,8 @@ app_init :: proc(app: ^App, ctx: runtime.Context) {
 	}
 	sdl_init(&app.sdl, sdl_opts)
 
+	animations_init(&app.sdl)
+
 	game_init(&app.game, app.ctx, app.ctx.logger)
 
 	// TODO: Initialize other subsystems (e.g., job system, ...)
@@ -71,6 +73,8 @@ app_deinit :: proc(app: ^App) {
 	defer log.info("Application deinitialized")
 
 	game_deinit(&app.game)
+
+	animations_deinit(&app.sdl)
 
 	sdl_deinit(&app.sdl)
 }
