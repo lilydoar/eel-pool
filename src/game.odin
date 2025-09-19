@@ -77,6 +77,11 @@ game_tile_collision_kind :: enum {
 	slope_right,
 }
 
+game_sprite :: struct {
+	texture:      SDL_Texture,
+	world_offset: Vec2,
+}
+
 game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger) {
 	context = ctx
 
@@ -330,10 +335,12 @@ game_draw_animation :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 	}
 
 	dst_local := cmd.dest
+	dst_local.x -= cmd.anim.world_offset.x
+	dst_local.y -= cmd.anim.world_offset.y
 	dst: Maybe(^sdl3.FRect) = &dst_local
 
 	// when FRAME_DEBUG {log.debugf(
-	// 		"Render {} frame {}: src: {}, dest: {}",
+	// 		"Render {} animation frame {}: src: {}, dest: {}",
 	// 		cmd.anim.name,
 	// 		frame,
 	// 		src,
@@ -346,6 +353,50 @@ game_draw_animation :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 		src,
 		dst,
 		0,
+		{0, 0},
+		.NONE if !cmd.mirror_x else .HORIZONTAL,
+	)
+}
+
+
+game_draw_sprite :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
+		sprite:       game_sprite,
+		dest:         sdl3.FRect,
+		rotation_rad: f32,
+		mirror_x:     bool,
+	}) {
+	clip: sdl3.Rect
+	sdl3.GetSurfaceClipRect(cmd.sprite.texture.surface, &clip)
+
+	src: Maybe(^sdl3.FRect) = &sdl3.FRect {
+		cast(f32)clip.x,
+		cast(f32)clip.y,
+		cast(f32)clip.w,
+		cast(f32)clip.h,
+	}
+
+	dst_local := cmd.dest
+	dst_local.x -= cmd.sprite.world_offset.x
+	dst_local.y -= cmd.sprite.world_offset.y
+	dst: Maybe(^sdl3.FRect) = &dst_local
+
+	// when FRAME_DEBUG {log.debugf(
+	// 		"Render sprite {}: src: {}, dest: {}, rotation_rad: {}, mirror_x: {} world_offset: ({}, {})",
+	// 		cmd.sprite.texture.name,
+	// 		src,
+	// 		dst,
+	// 		cmd.rotation_rad,
+	// 		cmd.mirror_x,
+	// 		cmd.sprite.world_offset.x,
+	// 		cmd.sprite.world_offset.y,
+	// 	)}
+
+	sdl3.RenderTextureRotated(
+		r.ptr,
+		cmd.sprite.texture.texture,
+		src,
+		dst,
+		cast(f64)cmd.rotation_rad,
 		{0, 0},
 		.NONE if !cmd.mirror_x else .HORIZONTAL,
 	)

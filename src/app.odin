@@ -59,6 +59,8 @@ app_init :: proc(app: ^App, ctx: runtime.Context) {
 	}
 	sdl_init(&app.sdl, sdl_opts)
 
+	sprites_init(&app.sdl)
+
 	animations_init(&app.sdl)
 
 	game_init(&app.game, app.ctx, app.ctx.logger)
@@ -75,6 +77,8 @@ app_deinit :: proc(app: ^App) {
 	game_deinit(&app.game)
 
 	animations_deinit(&app.sdl)
+
+	sprites_deinit(&app.sdl)
 
 	sdl_deinit(&app.sdl)
 }
