@@ -39,6 +39,17 @@ Game :: struct {
 				left,
 			},
 		},
+		enemy:  struct {
+			screen_x:     f32,
+			screen_y:     f32,
+			screen_w:     f32,
+			screen_h:     f32,
+			rotation_rad: f32,
+			action:       enum {
+				idle,
+				track_player,
+			},
+		},
 	},
 }
 
@@ -102,6 +113,9 @@ game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger) {
 
 	game.entity.player.screen_w = 192
 	game.entity.player.screen_h = 192
+
+	game.entity.enemy.screen_w = 64
+	game.entity.enemy.screen_h = 64
 
 	game.cfg.control_key = make(map[game_control]sdl3.Keycode)
 	game.cfg.control_button = make(map[game_control]sdl3.MouseButtonFlag)
@@ -304,6 +318,24 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 			game_draw_animation(game, r, {animation_player_run, dst, mirror_x})
 		case .guard:
 		case .attack:
+		}
+	}
+
+	{
+		// Draw enemy()
+		dst := sdl3.FRect {
+			cast(f32)game.entity.enemy.screen_x,
+			cast(f32)game.entity.enemy.screen_y,
+			cast(f32)game.entity.enemy.screen_w,
+			cast(f32)game.entity.enemy.screen_h,
+		}
+
+		switch game.entity.enemy.action {
+		case .idle:
+			game_draw_sprite(game, r, {sprite_archer_arrow, dst, 0, false})
+		case .track_player:
+			// TODO: Rotate to face player
+			game_draw_sprite(game, r, {sprite_archer_arrow, dst, 0, false})
 		}
 	}
 }
