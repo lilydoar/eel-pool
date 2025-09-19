@@ -85,10 +85,13 @@ SDL_Tilemap :: struct {
 }
 
 SDL_Animation :: struct {
-	name:     string,
-	texture:  SDL_Texture,
-	frame:    []^sdl3.Surface,
-	delay_ms: u32,
+	name:         string,
+	texture:      SDL_Texture,
+	frame:        []^sdl3.Surface,
+	delay_ms:     u32,
+
+	// world_offset is the vector from the top left of the frame surface to the world_position of the "thing" the animation represents
+	world_offset: Vec2,
 }
 
 sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
