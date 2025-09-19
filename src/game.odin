@@ -42,9 +42,11 @@ Game :: struct {
 	},
 }
 
+
 Game_Config :: struct {
-	control: map[game_control]sdl3.Keycode,
-	entity:  struct {
+	control_key:    map[game_control]sdl3.Keycode,
+	control_button: map[game_control]sdl3.MouseButtonFlag,
+	entity:         struct {
 		player: struct {
 			player_move_speed_x_axis: f32,
 			player_move_speed_y_axis: f32,
@@ -57,6 +59,10 @@ game_control :: enum {
 	player_move_down,
 	player_move_left,
 	player_move_right,
+
+	//
+	editor_place_player,
+	editor_place_enemy,
 }
 
 game_level :: struct {
@@ -97,11 +103,16 @@ game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger) {
 	game.entity.player.screen_w = 192
 	game.entity.player.screen_h = 192
 
-	game.cfg.control = make(map[game_control]sdl3.Keycode)
+	game.cfg.control_key = make(map[game_control]sdl3.Keycode)
+	game.cfg.control_button = make(map[game_control]sdl3.MouseButtonFlag)
+
 	game_bind_control_to_key(game, .player_move_up, sdl3.K_W)
 	game_bind_control_to_key(game, .player_move_down, sdl3.K_S)
 	game_bind_control_to_key(game, .player_move_left, sdl3.K_A)
 	game_bind_control_to_key(game, .player_move_right, sdl3.K_D)
+
+	game_bind_control_to_mouse_button(game, .editor_place_player, .LEFT)
+	game_bind_control_to_mouse_button(game, .editor_place_enemy, .RIGHT)
 
 	game.cfg.entity.player.player_move_speed_x_axis = 4
 	game.cfg.entity.player.player_move_speed_y_axis = 4
@@ -148,7 +159,8 @@ game_deinit :: proc(game: ^Game) {
 	log.debug("Begin deinitializing game module")
 	defer log.debug("End deinitializing game module")
 
-	delete(game.cfg.control)
+	delete(game.cfg.control_key)
+	delete(game.cfg.control_button)
 }
 
 game_update :: proc(sdl: ^SDL, game: ^Game) {
@@ -159,11 +171,26 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 	when FRAME_DEBUG {defer log.debug("End game update")}
 
 	game.input = {}
-	for k, v in game.cfg.control {
-		if sdl.keyboard.keycodes_curr[v] {game.input = game.input + {k}}
+	for k, keycode in game.cfg.control_key {
+		if sdl.keyboard.keycodes_curr[keycode] {game.input = game.input + {k}}
+	}
+	for k, v in game.cfg.control_button {
+		if sdl_mouse_button_is_down(sdl, v) {game.input = game.input + {k}}
 	}
 	when FRAME_DEBUG {log.debugf("Current game input: {}", game.input)}
 
+	// Editor actions
+	if .editor_place_player in game.input {
+		mouse_pos := sdl_mouse_get_position(sdl)
+		game.entity.player.screen_x = mouse_pos.x
+		game.entity.player.screen_y = mouse_pos.y
+	} else if .editor_place_enemy in game.input {
+		mouse_pos := sdl_mouse_get_position(sdl)
+		game.entity.enemy.screen_x = mouse_pos.x
+		game.entity.enemy.screen_y = mouse_pos.y
+	}
+
+	// Player input -> movement
 	player_desire_move_x: f32
 	player_desire_move_y: f32
 	player_final_move_x: f32
@@ -182,6 +209,7 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 			cast(f64)game.cfg.entity.player.player_move_speed_y_axis)
 	}
 
+	// Player state
 	if player_final_move_x == 0 && player_final_move_y == 0 {
 		game.entity.player.action = .idle
 	} else {
@@ -194,9 +222,11 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 		game.entity.player.facing = .right
 	}
 
+	// Apply player movement
 	game.entity.player.screen_x += player_final_move_x
 	game.entity.player.screen_y += player_final_move_y
 
+	// Apply player screen bounds
 	{
 		bounds_x: f32 = cast(f32)sdl.window.size_curr.x - game.entity.player.screen_w
 		bounds_y: f32 = cast(f32)sdl.window.size_curr.y - game.entity.player.screen_h
@@ -279,7 +309,15 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 }
 
 game_bind_control_to_key :: proc(game: ^Game, ctrl: game_control, key: sdl3.Keycode) {
-	game.cfg.control[ctrl] = key
+	game.cfg.control_key[ctrl] = key
+}
+
+game_bind_control_to_mouse_button :: proc(
+	game: ^Game,
+	ctrl: game_control,
+	button: sdl3.MouseButtonFlag,
+) {
+	game.cfg.control_button[ctrl] = button
 }
 
 game_draw_tilemap_tile :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
