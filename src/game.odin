@@ -45,14 +45,13 @@ Game :: struct {
 			screen_w:     f32,
 			screen_h:     f32,
 			rotation_rad: f32,
-			action:       enum {
-				idle,
-				track_player,
-			},
+			// Is the enemy entity active?
+			active:       bool,
+			velocity:     Vec2,
+			behavior:     Behavior_Range_Activated_Missile,
 		},
 	},
 }
-
 
 Game_Config :: struct {
 	control_key:    map[game_control]sdl3.Keycode,
@@ -116,6 +115,19 @@ game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger) {
 
 	game.entity.enemy.screen_w = 64
 	game.entity.enemy.screen_h = 64
+
+	game.entity.enemy.behavior.cfg = {
+		// TODO: Draw debug circle of this radius for tuning purposes
+		trigger_radius       = 240,
+		acceleration         = 11,
+		acceleration_time_ms = 1000,
+		// NOTE: The intention of the above acc and acc_t is to design missiles with different motion dynamics
+		// What might be more effective as a design tool is "drawing" velocity curves
+		// Example: Start slow, speed up for most of the length of the shot, slow down at the end
+		// Design experience of drawing line along which the missile will travel, be able to tweak how the missile proceeds along the line 
+		// Once again, interpolation
+		lifetime_ms          = 1800,
+	}
 
 	game.cfg.control_key = make(map[game_control]sdl3.Keycode)
 	game.cfg.control_button = make(map[game_control]sdl3.MouseButtonFlag)
@@ -181,7 +193,11 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 	context = game.ctx
 
 	// Update logic for the game module
-	when FRAME_DEBUG {log.debugf("Begin game update: frame_count: {}", game.frame_count)}
+	when FRAME_DEBUG {log.debugf(
+			"Begin game update: frame_count: {}, game time: {}ms",
+			game.frame_count,
+			cast(f64)game.frame_count * game.frame_step_ms,
+		)}
 	when FRAME_DEBUG {defer log.debug("End game update")}
 
 	game.input = {}
@@ -193,13 +209,14 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 	}
 	when FRAME_DEBUG {log.debugf("Current game input: {}", game.input)}
 
+	mouse_pos := sdl_mouse_get_position(sdl)
+
 	// Editor actions
 	if .editor_place_player in game.input {
-		mouse_pos := sdl_mouse_get_position(sdl)
 		game.entity.player.screen_x = mouse_pos.x
 		game.entity.player.screen_y = mouse_pos.y
 	} else if .editor_place_enemy in game.input {
-		mouse_pos := sdl_mouse_get_position(sdl)
+		if !game.entity.enemy.active {game.entity.enemy.active = true}
 		game.entity.enemy.screen_x = mouse_pos.x
 		game.entity.enemy.screen_y = mouse_pos.y
 	}
@@ -223,7 +240,17 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 			cast(f64)game.cfg.entity.player.player_move_speed_y_axis)
 	}
 
-	// Player state
+	game_do_enemy_behavior(game)
+	when FRAME_DEBUG {
+		log.debugf("Enemy active: {}", game.entity.enemy.active)
+		if game.entity.enemy.active {log.debugf("Enemy: {}", game.entity.enemy)}
+	}
+
+	// Apply player movement
+	game.entity.player.screen_x += player_final_move_x
+	game.entity.player.screen_y += player_final_move_y
+
+	// Apply player state
 	if player_final_move_x == 0 && player_final_move_y == 0 {
 		game.entity.player.action = .idle
 	} else {
@@ -236,10 +263,6 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 		game.entity.player.facing = .right
 	}
 
-	// Apply player movement
-	game.entity.player.screen_x += player_final_move_x
-	game.entity.player.screen_y += player_final_move_y
-
 	// Apply player screen bounds
 	{
 		bounds_x: f32 = cast(f32)sdl.window.size_curr.x - game.entity.player.screen_w
@@ -250,15 +273,15 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 		if game.entity.player.screen_y > bounds_y {game.entity.player.screen_y = bounds_y}
 	}
 
-	when FRAME_DEBUG {
-		log.debugf("player desire move: {}, {}", player_desire_move_x, player_desire_move_y)
-		log.debugf("player final move: {}, {}", player_final_move_x, player_final_move_y)
-		log.debugf(
-			"player position: {}, {}",
-			game.entity.player.screen_x,
-			game.entity.player.screen_y,
-		)
-	}
+	// when FRAME_DEBUG {
+	// 	log.debugf("player desire move: {}, {}", player_desire_move_x, player_desire_move_y)
+	// 	log.debugf("player final move: {}, {}", player_final_move_x, player_final_move_y)
+	// 	log.debugf(
+	// 		"player position: {}, {}",
+	// 		game.entity.player.screen_x,
+	// 		game.entity.player.screen_y,
+	// 	)
+	// }
 
 	game.frame_count += 1
 }
@@ -322,6 +345,8 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 	}
 
 	{
+		if !game.entity.enemy.active {return}
+
 		// Draw enemy()
 		dst := sdl3.FRect {
 			cast(f32)game.entity.enemy.screen_x,
@@ -330,10 +355,10 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 			cast(f32)game.entity.enemy.screen_h,
 		}
 
-		switch game.entity.enemy.action {
+		switch game.entity.enemy.behavior.state {
 		case .idle:
 			game_draw_sprite(game, r, {sprite_archer_arrow, dst, 0, false})
-		case .track_player:
+		case .active:
 			// TODO: Rotate to face player
 			game_draw_sprite(game, r, {sprite_archer_arrow, dst, 0, false})
 		}
@@ -388,11 +413,11 @@ game_draw_animation :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 	}) {
 	elapsed_ms: u64 = game.frame_count
 	frame := (elapsed_ms / cast(u64)cmd.anim.delay_ms) % cast(u64)len(cmd.anim.frame)
-	when FRAME_DEBUG {
-		log.debugf("animation {} frame: {}", cmd.anim.name, frame)
-		log.debugf("elapsed_ms: {}, delay_ms: {}", elapsed_ms, cmd.anim.delay_ms)
-		log.debugf("total frames: {}", len(cmd.anim.frame))
-	}
+	// when FRAME_DEBUG {
+	// 	log.debugf("animation {} frame: {}", cmd.anim.name, frame)
+	// 	log.debugf("elapsed_ms: {}, delay_ms: {}", elapsed_ms, cmd.anim.delay_ms)
+	// 	log.debugf("total frames: {}", len(cmd.anim.frame))
+	// }
 
 	clip: sdl3.Rect
 	sdl3.GetSurfaceClipRect(cmd.anim.frame[frame], &clip)
@@ -470,5 +495,46 @@ game_draw_sprite :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 		{0, 0},
 		.NONE if !cmd.mirror_x else .HORIZONTAL,
 	)
+}
+
+
+game_do_enemy_behavior :: proc(game: ^Game) {
+	// Enemy behavior
+
+	if !game.entity.enemy.active {return}
+
+	curr_time := cast(f64)game.frame_count * game.frame_step_ms
+
+	switch game.entity.enemy.behavior.state {
+	case .idle:
+		if range_activated_missile_check_trigger(
+			&game.entity.enemy.behavior,
+			{game.entity.enemy.screen_x, game.entity.enemy.screen_y},
+			{game.entity.player.screen_x, game.entity.player.screen_y},
+			curr_time,
+		) {
+			when FRAME_DEBUG {log.debug("Enemy missile triggered!")}
+		}
+	case .active:
+		if range_activated_missile_is_lifetime_expired(
+			game.entity.enemy.behavior,
+			cast(f64)game.frame_count * game.frame_step_ms,
+		) {
+			when FRAME_DEBUG {log.debug("Enemy missile lifetime expired!")}
+			game.entity.enemy.active = false
+			game.entity.enemy.behavior.state = {}
+			game.entity.enemy.behavior.trigger_time = {}
+			game.entity.enemy.behavior.flying_dir = {}
+			return
+		}
+
+		next_pos := range_activated_missile_next_position(
+			game.entity.enemy.behavior,
+			{game.entity.enemy.screen_x, game.entity.enemy.screen_y},
+			{game.entity.enemy.velocity.x, game.entity.enemy.velocity.y},
+			curr_time,
+		)
+		game.entity.enemy.screen_x, game.entity.enemy.screen_y = next_pos.x, next_pos.y
+	}
 }
 
