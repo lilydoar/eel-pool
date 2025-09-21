@@ -36,10 +36,10 @@ range_activated_missile_check_trigger :: proc(
 	}
 	missile_to_target: Vec2
 	missile_to_target = vec2_sub(target_position, current_position)
-	if vec2_magnitude(missile_to_target) < m.cfg.trigger_radius {
+	if vec2_len(missile_to_target) < m.cfg.trigger_radius {
 		m.trigger_time = current_time
 		m.state = .active
-		m.flying_dir = vec2_normalize_safe(missile_to_target)
+		m.flying_dir = vec2_norm_safe(missile_to_target)
 		// Missile triggered
 		return true
 	}
