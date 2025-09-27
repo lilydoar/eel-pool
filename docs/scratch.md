@@ -1275,7 +1275,7 @@ Display text starting at the top left of the screen.
 For each call to debug_text_stack, add a new row to the stack.
 Use this to print out value of select vars across frames.
 
-# Fri Sep 26 2025
+# Fri Sep 26 2025 - 1
 
   ✅ Already Implemented
 
@@ -1361,3 +1361,6 @@ Use this to print out value of select vars across frames.
   - Save/load system
   - Score tracking
 
+# Sat Sep 27 2025 - 2
+
+TODO: Render game to an intermediate texture. Render layers to the intermediate texture. Render the intermediate texture to the screen.
