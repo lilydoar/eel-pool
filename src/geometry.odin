@@ -2,40 +2,6 @@ package game
 
 import "core:math"
 
-Ray2 :: struct {
-	origin:    Vec2,
-	direction: Vec2,
-}
-
-ray2_new :: proc(origin: Vec2, dir: Vec2) -> Ray2 {
-	return Ray2{origin = origin, direction = dir}
-}
-
-ray2_new_safe :: proc(origin: Vec2, dir: Vec2) -> Ray2 {
-	return Ray2{origin = origin, direction = vec2_norm_safe(dir)}
-}
-
-ray2_at :: proc(ray: Ray2, t: f32) -> Vec2 {
-	return vec2_add(ray.origin, vec2_scale(ray.direction, t))
-}
-
-Ray3 :: struct {
-	origin:    Vec3,
-	direction: Vec3,
-}
-
-ray3_new :: proc(origin: Vec3, dir: Vec3) -> Ray3 {
-	return Ray3{origin = origin, direction = dir}
-}
-
-ray3_new_safe :: proc(origin: Vec3, dir: Vec3) -> Ray3 {
-	return Ray3{origin = origin, direction = vec3_norm_safe(dir)}
-}
-
-ray3_at :: proc(ray: Ray3, t: f32) -> Vec3 {
-	return vec3_add(ray.origin, vec3_scale(ray.direction, t))
-}
-
 Line2 :: struct {
 	a: Vec2,
 	b: Vec2,
@@ -158,6 +124,40 @@ line3i_at :: proc(line: Line3i, t: f32) -> Vec3 {
 			t,
 		),
 	)
+}
+
+Ray2 :: struct {
+	origin:    Vec2,
+	direction: Vec2,
+}
+
+ray2_new :: proc(origin: Vec2, dir: Vec2) -> Ray2 {
+	return Ray2{origin = origin, direction = dir}
+}
+
+ray2_new_safe :: proc(origin: Vec2, dir: Vec2) -> Ray2 {
+	return Ray2{origin = origin, direction = vec2_norm_safe(dir)}
+}
+
+ray2_at :: proc(ray: Ray2, t: f32) -> Vec2 {
+	return vec2_add(ray.origin, vec2_scale(ray.direction, t))
+}
+
+Ray3 :: struct {
+	origin:    Vec3,
+	direction: Vec3,
+}
+
+ray3_new :: proc(origin: Vec3, dir: Vec3) -> Ray3 {
+	return Ray3{origin = origin, direction = dir}
+}
+
+ray3_new_safe :: proc(origin: Vec3, dir: Vec3) -> Ray3 {
+	return Ray3{origin = origin, direction = vec3_norm_safe(dir)}
+}
+
+ray3_at :: proc(ray: Ray3, t: f32) -> Vec3 {
+	return vec3_add(ray.origin, vec3_scale(ray.direction, t))
 }
 
 Circle :: struct {
