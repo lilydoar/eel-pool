@@ -339,9 +339,9 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 
 		switch game.entity.player.action {
 		case .idle:
-			game_draw_animation(game, r, {animation_player_idle, dst, mirror_x})
+			game_draw_animation(game, r, {animation_player_idle, dst, 0, mirror_x})
 		case .running:
-			game_draw_animation(game, r, {animation_player_run, dst, mirror_x})
+			game_draw_animation(game, r, {animation_player_run, dst, 0, mirror_x})
 		case .guard:
 		case .attack:
 		}
@@ -410,9 +410,10 @@ game_draw_tilemap_tile :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 }
 
 game_draw_animation :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
-		anim:     SDL_Animation,
-		dest:     sdl3.FRect,
-		mirror_x: bool,
+		anim:         SDL_Animation,
+		dest:         sdl3.FRect,
+		rotation_deg: f32,
+		mirror_x:     bool,
 	}) {
 	elapsed_ms: u64 = game.frame_count
 	frame := (elapsed_ms / cast(u64)cmd.anim.delay_ms) % cast(u64)len(cmd.anim.frame)
@@ -450,8 +451,8 @@ game_draw_animation :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 		cmd.anim.texture.texture,
 		src,
 		dst,
-		0,
-		{0, 0},
+		cast(f64)cmd.rotation_deg,
+		sdl3.FPoint{cast(f32)(cmd.dest.w / 2), cast(f32)(cmd.dest.h / 2)},
 		.NONE if !cmd.mirror_x else .HORIZONTAL,
 	)
 }
@@ -460,7 +461,7 @@ game_draw_animation :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 game_draw_sprite :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 		sprite:       game_sprite,
 		dest:         sdl3.FRect,
-		rotation_rad: f32,
+		rotation_deg: f32,
 		mirror_x:     bool,
 	}) {
 	clip: sdl3.Rect
@@ -494,8 +495,8 @@ game_draw_sprite :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 		cmd.sprite.texture.texture,
 		src,
 		dst,
-		cast(f64)cmd.rotation_rad,
-		{0, 0},
+		cast(f64)cmd.rotation_deg,
+		sdl3.FPoint{cast(f32)(cmd.dest.w / 2), cast(f32)(cmd.dest.h / 2)},
 		.NONE if !cmd.mirror_x else .HORIZONTAL,
 	)
 }
