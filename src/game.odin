@@ -41,15 +41,14 @@ Game :: struct {
 			},
 		},
 		enemy:  struct {
-			screen_x:     f32,
-			screen_y:     f32,
-			screen_w:     f32,
-			screen_h:     f32,
-			rotation_rad: f32,
+			screen_x: f32,
+			screen_y: f32,
+			screen_w: f32,
+			screen_h: f32,
 			// Is the enemy entity active?
-			active:       bool,
-			velocity:     Vec2,
-			behavior:     Behavior_Range_Activated_Missile,
+			active:   bool,
+			velocity: Vec2,
+			behavior: Behavior_Range_Activated_Missile,
 		},
 	},
 }
@@ -348,22 +347,82 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 	}
 
 	{
-		if !game.entity.enemy.active {return}
-
 		// Draw enemy()
-		dst := sdl3.FRect {
-			cast(f32)game.entity.enemy.screen_x,
-			cast(f32)game.entity.enemy.screen_y,
-			cast(f32)game.entity.enemy.screen_w,
-			cast(f32)game.entity.enemy.screen_h,
-		}
+		if game.entity.enemy.active {
+			dst := sdl3.FRect {
+				cast(f32)game.entity.enemy.screen_x,
+				cast(f32)game.entity.enemy.screen_y,
+				cast(f32)game.entity.enemy.screen_w,
+				cast(f32)game.entity.enemy.screen_h,
+			}
 
-		switch game.entity.enemy.behavior.state {
-		case .idle:
-			game_draw_sprite(game, r, {sprite_archer_arrow, dst, 0, false})
-		case .active:
-			// TODO: Rotate to face player
-			game_draw_sprite(game, r, {sprite_archer_arrow, dst, 0, false})
+			// rotate the enemy to face the player
+			vec_enemy_to_player := Vec2 {
+				game.entity.player.screen_x - game.entity.enemy.screen_x,
+				game.entity.player.screen_y - game.entity.enemy.screen_y,
+			}
+
+			rotation := rad_to_deg(vec2_angle(vec_enemy_to_player))
+
+			switch game.entity.enemy.behavior.state {
+			case .idle:
+				game_draw_sprite(game, r, {sprite_archer_arrow, dst, rotation, false})
+			case .active:
+				// TODO: Rotate to face player
+				game_draw_sprite(game, r, {sprite_archer_arrow, dst, rotation, false})
+			}
+		}
+	}
+
+	{
+		// Draw Debug ()
+
+		// // Draw player bounding box
+		// // NOTE: This AABB is drawn offset because the interaction between anim world_offset and screen size vars is not correct
+		// anim_offset := animation_player_idle.world_offset
+		// debug_draw_aabb(
+		// 	r,
+		// 	AABB2 {
+		// 		min = Vec2 {
+		// 			game.entity.player.screen_x -
+		// 			game.entity.player.screen_w * 0.5 -
+		// 			anim_offset.x,
+		// 			game.entity.player.screen_y -
+		// 			game.entity.player.screen_h * 0.5 -
+		// 			anim_offset.y,
+		// 		},
+		// 		max = Vec2 {
+		// 			game.entity.player.screen_x +
+		// 			game.entity.player.screen_w * 0.5 -
+		// 			anim_offset.x,
+		// 			game.entity.player.screen_y +
+		// 			game.entity.player.screen_h * 0.5 -
+		// 			anim_offset.y,
+		// 		},
+		// 	},
+		// 	color_new(0, 0, 255, 255),
+		// )
+
+		if game.entity.enemy.active {
+			// Draw trigger radius circle around enemy
+			debug_draw_circle(
+				r,
+				Circle {
+					Vec2{game.entity.enemy.screen_x, game.entity.enemy.screen_y},
+					cast(f32)game.entity.enemy.behavior.cfg.trigger_radius,
+				},
+				color_new(255, 0, 0, 255),
+			)
+
+			// Draw line from enemy to player
+			debug_draw_line(
+				r,
+				Line2 {
+					Vec2{game.entity.enemy.screen_x, game.entity.enemy.screen_y},
+					Vec2{game.entity.player.screen_x, game.entity.player.screen_y},
+				},
+				color_new(255, 255, 0, 255),
+			)
 		}
 	}
 }
