@@ -1266,3 +1266,98 @@ Create an animation tag for organization:
 - **Cel linking**: Link identical elements across frames to save time
 - **Animation curves**: Adjust frame timing for more natural motion
 - **Tilemap mode**: Useful if character will walk across repeating ground tiles
+
+# Sat Sep 13 2025
+
+TODO: Debug text stack that allows for in-game modification of the text stack
+
+Display text starting at the top left of the screen.
+For each call to debug_text_stack, add a new row to the stack.
+Use this to print out value of select vars across frames.
+
+# Fri Sep 26 2025
+
+  ✅ Already Implemented
+
+  - Linear algebra (comprehensive Vec2/3/4 + integer variants)
+  - Geometry primitives (lines, rays, circles, spheres, AABB)
+  - SDL3 integration (window, input, rendering)
+  - Asset management (sprites, animations, tilemaps from JSON)
+  - Game loop & timing (fixed timestep with accumulator)
+  - Animation system (frame-based with delays)
+  - Basic input handling (keyboard, mouse with configurable bindings)
+  - Configuration system (CLI parsing, logger config)
+  - Level loading (JSON-based tilemap system)
+  - Entity behaviors (range-activated missile pattern)
+
+  📋 Missing/Incomplete but Essential
+
+  Audio System
+
+  - Sound effect playback
+  - Music streaming
+  - Volume control
+
+  Enhanced Physics
+
+  - Collision response (you have detection via geometry)
+  - Gravity/acceleration systems beyond missiles
+  - Physics materials/friction
+
+  Memory Management
+
+  - Object pooling for entities/projectiles
+  - Custom allocators for game objects
+  - Memory profiling tools
+
+  Enhanced Entity System
+
+  - Multiple enemy types/behaviors
+  - Entity lifecycle management
+  - Component composition system
+
+  UI System
+
+  - Game menus/HUD
+  - Settings screens
+  - Debug overlay system
+
+  Particle Systems
+
+  - Explosion effects
+  - Environmental particles
+  - Trail/smoke effects
+
+  Camera System
+
+  - World-to-screen transformations
+  - Camera following/tracking
+  - Screen shake effects
+
+  Scene Management
+
+  - Multiple game states (menu, playing, paused)
+  - Scene transitions
+  - Level progression system
+
+  Advanced Rendering
+
+  - Rendering to an intermediate texture
+  - Z-ordering/layers
+  - Post-processing effects
+  - Lighting system
+
+  Debugging Tools
+
+  - Visual collision debugging
+  - Performance profiler
+  - Entity inspector
+  - Console commands
+
+  Game-Specific Features
+
+  - Health/damage systems
+  - Inventory/items
+  - Save/load system
+  - Score tracking
+

@@ -1,0 +1,14 @@
+[
+    {
+        "name": "archer_arrow",
+        "path": "assets/Tiny_Swords/Units/Red_Units/Archer/Arrow.png",
+        "size": {
+            "x": 64,
+            "y": 64
+        },
+        "world_offset": {
+            "x": 32,
+            "y": 32
+        }
+    }
+]
