@@ -8,17 +8,18 @@ import os "core:os/os2"
 import sdl3 "vendor:sdl3"
 
 Game :: struct {
-	ctx:           runtime.Context,
-	cfg:           Game_Config,
-	frame_count:   u64,
-	frame_step_ms: f64, // ms per game frame (fixed step)
+	ctx:              runtime.Context,
+	cfg:              Game_Config,
+	frame_count:      u64,
+	frame_step_ms:    f64, // ms per game frame (fixed step)
 
 	//
-	input:         bit_set[game_control],
+	input:            bit_set[game_control],
 
 	// 
-	level:         game_level,
-	entity:        struct {
+	tile_screen_size: Vec2u, // Size of a tile on screen in pixels
+	level:            game_level,
+	entity:           struct {
 		player: struct {
 			// The player's position in pixels relative to the top-left corner of the screen
 			screen_x: f32,
@@ -78,7 +79,7 @@ game_control :: enum {
 game_level :: struct {
 	layers: []struct {
 		name:      string,
-		size:      Vec2i,
+		size:      Vec2u,
 		tile:      []u32,
 		collision: []game_tile_collision_kind,
 	},
@@ -158,11 +159,11 @@ game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger) {
 		}
 
 		assert(
-			level.layers[0].size.x * level.layers[0].size.y == cast(i32)len(level.layers[0].tile),
+			level.layers[0].size.x * level.layers[0].size.y == cast(u32)len(level.layers[0].tile),
 		)
 		assert(
 			level.layers[0].size.x * level.layers[0].size.y ==
-			cast(i32)len(level.layers[0].collision),
+			cast(u32)len(level.layers[0].collision),
 		)
 
 		log.debugf(
@@ -176,6 +177,8 @@ game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger) {
 	}
 
 	game.level = load_level("data/levels/default.json")
+
+	game.tile_screen_size = {32, 32}
 }
 
 game_deinit :: proc(game: ^Game) {
@@ -304,12 +307,12 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 					r.tilemaps.terrain.color1,
 					game.level.layers[0].tile[x],
 					sdl3.FRect {
-						cast(f32)(cast(i32)x %
+						cast(f32)(cast(u32)x %
 							game.level.layers[0].size.x *
-							r.tilemaps.terrain.color1.tile_size.x),
-						cast(f32)(cast(i32)x /
+							game.tile_screen_size.x),
+						cast(f32)(cast(u32)x /
 							game.level.layers[0].size.x *
-							r.tilemaps.terrain.color1.tile_size.y),
+							game.tile_screen_size.y),
 						cast(f32)r.tilemaps.terrain.color1.tile_size.x,
 						cast(f32)r.tilemaps.terrain.color1.tile_size.y,
 					},
