@@ -209,7 +209,7 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 	}
 	when FRAME_DEBUG {log.debugf("Current game input: {}", game.input)}
 
-	mouse_pos := sdl_mouse_get_position(sdl)
+	mouse_pos := sdl_mouse_get_render_position(sdl)
 
 	// Editor actions
 	if .editor_place_player in game.input {
