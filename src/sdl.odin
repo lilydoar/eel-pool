@@ -6,6 +6,8 @@ import "core:time"
 import sdl3 "vendor:sdl3"
 import sdl3img "vendor:sdl3/image"
 
+RenderTargetSize :: Vec2u{640, 360}
+
 SDL :: struct {
 	window:   SDL_Window,
 	keyboard: SDL_Keyboard,
@@ -55,7 +57,8 @@ SDL_Renderer :: struct {
 	ptr:         ^sdl3.Renderer,
 	clear_color: sdl3.Color,
 	textures:    struct {
-		terrain: struct {
+		render_target: SDL_Texture,
+		terrain:       struct {
 			tilemap_atlas_color1: SDL_Texture,
 			tilemap_atlas_color2: SDL_Texture,
 			tilemap_atlas_color3: SDL_Texture,
@@ -127,6 +130,24 @@ sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 
 	s.renderer.ptr = must(sdl3.CreateRenderer(s.window.ptr, nil), "create renderer")
 	s.renderer.clear_color = sdl3.Color{0, 0, 0, 255}
+
+	must(
+		sdl3.SetRenderLogicalPresentation(
+			s.renderer.ptr,
+			cast(i32)RenderTargetSize.x,
+			cast(i32)RenderTargetSize.y,
+			.LETTERBOX,
+		),
+	)
+
+	s.renderer.textures.render_target.name = "render_target"
+	s.renderer.textures.render_target.surface = must(
+		sdl3.CreateSurface(cast(i32)RenderTargetSize.x, cast(i32)RenderTargetSize.y, .RGBA8888),
+	)
+	s.renderer.textures.render_target.texture = sdl3.CreateTextureFromSurface(
+		s.renderer.ptr,
+		s.renderer.textures.render_target.surface,
+	)
 
 	terrain_tilemap_color1_name := "terrain_tilemap_color1"
 	terrain_tilemap_color1_path := "assets/Tiny_Swords/Terrain/Tilemap_color1.png"
@@ -260,9 +281,7 @@ sdl_frame_begin :: proc(s: ^SDL) -> (quit: bool) {
 	s.mouse.pos_prev = s.mouse.pos_curr
 	s.mouse.buttons_prev = s.mouse.buttons_curr
 
-	quit = sdl_poll_events(s)
-	if quit {log.debug("SDL event loop requested quit.")}
-
+	sdl3.SetRenderTarget(s.renderer.ptr, s.renderer.textures.render_target.texture)
 	sdl3.SetRenderDrawColor(
 		s.renderer.ptr,
 		s.renderer.clear_color[0],
@@ -271,6 +290,9 @@ sdl_frame_begin :: proc(s: ^SDL) -> (quit: bool) {
 		s.renderer.clear_color[3],
 	)
 	sdl3.RenderClear(s.renderer.ptr)
+
+	quit = sdl_poll_events(s)
+	if quit {log.debug("SDL event loop requested quit.")}
 
 	return
 }
@@ -299,7 +321,6 @@ sdl_handle_event :: proc(s: ^SDL, e: sdl3.Event) -> (quit: bool) {
 		s.keyboard.keycodes_curr[e.key.key] = pressed
 	case .MOUSE_MOTION:
 		s.mouse.pos_curr = {e.motion.x, e.motion.y}
-	// s.mouse.buttons_curr = e.motion.state
 	case .MOUSE_BUTTON_DOWN, .MOUSE_BUTTON_UP:
 		if flag, ok := sdl_mouse_button_to_flag(e.button.button); ok {
 			if e.type == .MOUSE_BUTTON_DOWN {
@@ -326,6 +347,8 @@ sdl_handle_event :: proc(s: ^SDL, e: sdl3.Event) -> (quit: bool) {
 }
 
 sdl_frame_end :: proc(s: ^SDL) {
+	sdl3.SetRenderTarget(s.renderer.ptr, nil)
+	sdl3.RenderTexture(s.renderer.ptr, s.renderer.textures.render_target.texture, nil, nil)
 	sdl3.RenderPresent(s.renderer.ptr)
 }
 
@@ -428,6 +451,13 @@ sdl_mouse_did_move :: proc(s: ^SDL) -> bool {
 	return s.mouse.pos_curr != s.mouse.pos_prev
 }
 
+// Get mouse position relative to the current render target
+sdl_mouse_get_render_position :: proc(s: ^SDL) -> (pos: Vec2) {
+	m_pos := sdl_mouse_get_position(s)
+	sdl3.RenderCoordinatesFromWindow(s.renderer.ptr, m_pos.x, m_pos.y, &pos.x, &pos.y)
+	return
+}
+
 // Renderer utilities
 
 sdl_texture_load :: proc(r: ^SDL_Renderer, file: string, name: string) -> (texture: SDL_Texture) {
@@ -460,15 +490,5 @@ sdl_texture_deinit :: proc(t: ^SDL_Texture) {
 
 	if t.texture != nil {sdl3.DestroyTexture(t.texture)}
 	if t.surface != nil {sdl3.DestroySurface(t.surface)}
-}
-
-// TODO
-// sdl_animation_load :: proc() -> SDL_Animation {}
-// sdl_animation_deinit :: proc(a: ^SDL_Animation) {}
-
-sdl_draw_debug :: proc(sdl: ^SDL) {
-	// Draw debug information (e.g., FPS, frame time, etc.)
-
-	// TODO: Draw FPS
 }
 

@@ -8,17 +8,18 @@ import os "core:os/os2"
 import sdl3 "vendor:sdl3"
 
 Game :: struct {
-	ctx:           runtime.Context,
-	cfg:           Game_Config,
-	frame_count:   u64,
-	frame_step_ms: f64, // ms per game frame (fixed step)
+	ctx:              runtime.Context,
+	cfg:              Game_Config,
+	frame_count:      u64,
+	frame_step_ms:    f64, // ms per game frame (fixed step)
 
 	//
-	input:         bit_set[game_control],
+	input:            bit_set[game_control],
 
 	// 
-	level:         game_level,
-	entity:        struct {
+	tile_screen_size: Vec2u, // Size of a tile on screen in pixels
+	level:            game_level,
+	entity:           struct {
 		player: struct {
 			// The player's position in pixels relative to the top-left corner of the screen
 			screen_x: f32,
@@ -40,15 +41,14 @@ Game :: struct {
 			},
 		},
 		enemy:  struct {
-			screen_x:     f32,
-			screen_y:     f32,
-			screen_w:     f32,
-			screen_h:     f32,
-			rotation_rad: f32,
+			screen_x: f32,
+			screen_y: f32,
+			screen_w: f32,
+			screen_h: f32,
 			// Is the enemy entity active?
-			active:       bool,
-			velocity:     Vec2,
-			behavior:     Behavior_Range_Activated_Missile,
+			active:   bool,
+			velocity: Vec2,
+			behavior: Behavior_Range_Activated_Missile,
 		},
 	},
 }
@@ -78,7 +78,7 @@ game_control :: enum {
 game_level :: struct {
 	layers: []struct {
 		name:      string,
-		size:      Vec2i,
+		size:      Vec2u,
 		tile:      []u32,
 		collision: []game_tile_collision_kind,
 	},
@@ -158,11 +158,11 @@ game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger) {
 		}
 
 		assert(
-			level.layers[0].size.x * level.layers[0].size.y == cast(i32)len(level.layers[0].tile),
+			level.layers[0].size.x * level.layers[0].size.y == cast(u32)len(level.layers[0].tile),
 		)
 		assert(
 			level.layers[0].size.x * level.layers[0].size.y ==
-			cast(i32)len(level.layers[0].collision),
+			cast(u32)len(level.layers[0].collision),
 		)
 
 		log.debugf(
@@ -176,6 +176,8 @@ game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger) {
 	}
 
 	game.level = load_level("data/levels/default.json")
+
+	game.tile_screen_size = {32, 32}
 }
 
 game_deinit :: proc(game: ^Game) {
@@ -209,7 +211,7 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 	}
 	when FRAME_DEBUG {log.debugf("Current game input: {}", game.input)}
 
-	mouse_pos := sdl_mouse_get_position(sdl)
+	mouse_pos := sdl_mouse_get_render_position(sdl)
 
 	// Editor actions
 	if .editor_place_player in game.input {
@@ -304,12 +306,12 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 					r.tilemaps.terrain.color1,
 					game.level.layers[0].tile[x],
 					sdl3.FRect {
-						cast(f32)(cast(i32)x %
+						cast(f32)(cast(u32)x %
 							game.level.layers[0].size.x *
-							r.tilemaps.terrain.color1.tile_size.x),
-						cast(f32)(cast(i32)x /
+							game.tile_screen_size.x),
+						cast(f32)(cast(u32)x /
 							game.level.layers[0].size.x *
-							r.tilemaps.terrain.color1.tile_size.y),
+							game.tile_screen_size.y),
 						cast(f32)r.tilemaps.terrain.color1.tile_size.x,
 						cast(f32)r.tilemaps.terrain.color1.tile_size.y,
 					},
@@ -336,31 +338,91 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 
 		switch game.entity.player.action {
 		case .idle:
-			game_draw_animation(game, r, {animation_player_idle, dst, mirror_x})
+			game_draw_animation(game, r, {animation_player_idle, dst, 0, mirror_x})
 		case .running:
-			game_draw_animation(game, r, {animation_player_run, dst, mirror_x})
+			game_draw_animation(game, r, {animation_player_run, dst, 0, mirror_x})
 		case .guard:
 		case .attack:
 		}
 	}
 
 	{
-		if !game.entity.enemy.active {return}
-
 		// Draw enemy()
-		dst := sdl3.FRect {
-			cast(f32)game.entity.enemy.screen_x,
-			cast(f32)game.entity.enemy.screen_y,
-			cast(f32)game.entity.enemy.screen_w,
-			cast(f32)game.entity.enemy.screen_h,
-		}
+		if game.entity.enemy.active {
+			dst := sdl3.FRect {
+				cast(f32)game.entity.enemy.screen_x,
+				cast(f32)game.entity.enemy.screen_y,
+				cast(f32)game.entity.enemy.screen_w,
+				cast(f32)game.entity.enemy.screen_h,
+			}
 
-		switch game.entity.enemy.behavior.state {
-		case .idle:
-			game_draw_sprite(game, r, {sprite_archer_arrow, dst, 0, false})
-		case .active:
-			// TODO: Rotate to face player
-			game_draw_sprite(game, r, {sprite_archer_arrow, dst, 0, false})
+			// rotate the enemy to face the player
+			vec_enemy_to_player := Vec2 {
+				game.entity.player.screen_x - game.entity.enemy.screen_x,
+				game.entity.player.screen_y - game.entity.enemy.screen_y,
+			}
+
+			rotation := rad_to_deg(vec2_angle(vec_enemy_to_player))
+
+			switch game.entity.enemy.behavior.state {
+			case .idle:
+				game_draw_sprite(game, r, {sprite_archer_arrow, dst, rotation, false})
+			case .active:
+				// TODO: Rotate to face player
+				game_draw_sprite(game, r, {sprite_archer_arrow, dst, rotation, false})
+			}
+		}
+	}
+
+	{
+		// Draw Debug ()
+
+		// // Draw player bounding box
+		// // NOTE: This AABB is drawn offset because the interaction between anim world_offset and screen size vars is not correct
+		// anim_offset := animation_player_idle.world_offset
+		// debug_draw_aabb(
+		// 	r,
+		// 	AABB2 {
+		// 		min = Vec2 {
+		// 			game.entity.player.screen_x -
+		// 			game.entity.player.screen_w * 0.5 -
+		// 			anim_offset.x,
+		// 			game.entity.player.screen_y -
+		// 			game.entity.player.screen_h * 0.5 -
+		// 			anim_offset.y,
+		// 		},
+		// 		max = Vec2 {
+		// 			game.entity.player.screen_x +
+		// 			game.entity.player.screen_w * 0.5 -
+		// 			anim_offset.x,
+		// 			game.entity.player.screen_y +
+		// 			game.entity.player.screen_h * 0.5 -
+		// 			anim_offset.y,
+		// 		},
+		// 	},
+		// 	color_new(0, 0, 255, 255),
+		// )
+
+		if game.entity.enemy.active {
+			// Draw trigger radius circle around enemy
+			debug_draw_circle(
+				r,
+				Circle {
+					Vec2{game.entity.enemy.screen_x, game.entity.enemy.screen_y},
+					cast(f32)game.entity.enemy.behavior.cfg.trigger_radius,
+				},
+				color_new(255, 0, 0, 255),
+			)
+
+			// Draw line from enemy to player
+			debug_draw_line(
+				r,
+				Line2 {
+					Vec2{game.entity.enemy.screen_x, game.entity.enemy.screen_y},
+					Vec2{game.entity.player.screen_x, game.entity.player.screen_y},
+				},
+				color_new(255, 255, 0, 255),
+			)
 		}
 	}
 }
@@ -407,9 +469,10 @@ game_draw_tilemap_tile :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 }
 
 game_draw_animation :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
-		anim:     SDL_Animation,
-		dest:     sdl3.FRect,
-		mirror_x: bool,
+		anim:         SDL_Animation,
+		dest:         sdl3.FRect,
+		rotation_deg: f32,
+		mirror_x:     bool,
 	}) {
 	elapsed_ms: u64 = game.frame_count
 	frame := (elapsed_ms / cast(u64)cmd.anim.delay_ms) % cast(u64)len(cmd.anim.frame)
@@ -447,8 +510,8 @@ game_draw_animation :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 		cmd.anim.texture.texture,
 		src,
 		dst,
-		0,
-		{0, 0},
+		cast(f64)cmd.rotation_deg,
+		sdl3.FPoint{cast(f32)(cmd.dest.w / 2), cast(f32)(cmd.dest.h / 2)},
 		.NONE if !cmd.mirror_x else .HORIZONTAL,
 	)
 }
@@ -457,7 +520,7 @@ game_draw_animation :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 game_draw_sprite :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 		sprite:       game_sprite,
 		dest:         sdl3.FRect,
-		rotation_rad: f32,
+		rotation_deg: f32,
 		mirror_x:     bool,
 	}) {
 	clip: sdl3.Rect
@@ -491,8 +554,8 @@ game_draw_sprite :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 		cmd.sprite.texture.texture,
 		src,
 		dst,
-		cast(f64)cmd.rotation_rad,
-		{0, 0},
+		cast(f64)cmd.rotation_deg,
+		sdl3.FPoint{cast(f32)(cmd.dest.w / 2), cast(f32)(cmd.dest.h / 2)},
 		.NONE if !cmd.mirror_x else .HORIZONTAL,
 	)
 }
