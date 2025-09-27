@@ -1370,3 +1370,7 @@ TODO: Render game to an intermediate texture. Render layers to the intermediate 
 - [x] Render lines and shape primitives for debug purposes
   - draw line, draw aabb, draw circle, etc
 - [ ] Render text for debug purposes
+=======
+- [ ] Render lines and shape primitives for debug purposes
+  - draw line, draw aabb, draw circle, etc
+- [ ] Render text
