@@ -72,9 +72,24 @@ vec2_norm_safe :: proc(v: Vec2) -> Vec2 {
 	return vec2_scale(v, 1.0 / len)
 }
 
-vec2_angle_rad :: proc(a: Vec2, b: Vec2) -> f32 {
+// Range [-π, π]
+vec2_angle :: proc(a: Vec2) -> f32 {
+	return math.atan2(a.y, a.x)
+}
+
+// Range: [0, π]
+vec2_angle_between_unsigned :: proc(a: Vec2, b: Vec2) -> f32 {
 	cos_angle := vec2_dot(a, b) / (vec2_len(a) * vec2_len(b))
 	return math.acos(cos_angle)
+}
+
+// Range: [-π, π]
+vec2_angle_between_signed :: proc(a: Vec2, b: Vec2) -> f32 {
+	return math.atan2(a.x * b.y - a.y * b.x, vec2_dot(a, b))
+}
+
+vec2_from_angle :: proc(angle: f32) -> Vec2 {
+	return Vec2{x = math.cos(angle), y = math.sin(angle)}
 }
 
 Vec3 :: struct {
@@ -152,7 +167,8 @@ vec3_cross :: proc(a: Vec3, b: Vec3) -> Vec3 {
 	return Vec3{x = a.y * b.z - a.z * b.y, y = a.z * b.x - a.x * b.z, z = a.x * b.y - a.y * b.x}
 }
 
-vec3_angle_rad :: proc(a: Vec3, b: Vec3) -> f32 {
+// Range: [0, π]
+vec3_angle_between_unsigned :: proc(a: Vec3, b: Vec3) -> f32 {
 	cos_angle := vec3_dot(a, b) / (vec3_len(a) * vec3_len(b))
 	return math.acos(cos_angle)
 }
@@ -229,7 +245,8 @@ vec4_norm_safe :: proc(v: Vec4) -> Vec4 {
 	return vec4_scale(v, 1.0 / len)
 }
 
-vec4_angle_rad :: proc(a: Vec4, b: Vec4) -> f32 {
+// Range: [0, π]
+vec4_angle_between_unsigned :: proc(a: Vec4, b: Vec4) -> f32 {
 	cos_angle := vec4_dot(a, b) / (vec4_len(a) * vec4_len(b))
 	return math.acos(cos_angle)
 }
@@ -305,7 +322,8 @@ vec2i_norm_safe :: proc(v: Vec2i) -> Vec2 {
 	return Vec2{x = f32(v.x) / len, y = f32(v.y) / len}
 }
 
-vec2i_angle_rad :: proc(a: Vec2i, b: Vec2i) -> f32 {
+// Range: [0, π]
+vec2i_angle_between_unsigned :: proc(a: Vec2i, b: Vec2i) -> f32 {
 	cos_angle := f32(vec2i_dot(a, b)) / (vec2i_len(a) * vec2i_len(b))
 	return math.acos(cos_angle)
 }
@@ -386,7 +404,8 @@ vec3i_cross :: proc(a: Vec3i, b: Vec3i) -> Vec3i {
 	return Vec3i{x = a.y * b.z - a.z * b.y, y = a.z * b.x - a.x * b.z, z = a.x * b.y - a.y * b.x}
 }
 
-vec3i_angle_rad :: proc(a: Vec3i, b: Vec3i) -> f32 {
+// Range: [0, π]
+vec3i_angle_between_unsigned :: proc(a: Vec3i, b: Vec3i) -> f32 {
 	cos_angle := f32(vec3i_dot(a, b)) / (vec3i_len(a) * vec3i_len(b))
 	return math.acos(cos_angle)
 }
@@ -464,7 +483,8 @@ vec4i_norm_safe :: proc(v: Vec4i) -> Vec4 {
 	return Vec4{x = f32(v.x) / len, y = f32(v.y) / len, z = f32(v.z) / len, w = f32(v.w) / len}
 }
 
-vec4i_angle_rad :: proc(a: Vec4i, b: Vec4i) -> f32 {
+// Range: [0, π]
+vec4i_angle_between_unsigned :: proc(a: Vec4i, b: Vec4i) -> f32 {
 	cos_angle := f32(vec4i_dot(a, b)) / (vec4i_len(a) * vec4i_len(b))
 	return math.acos(cos_angle)
 }
@@ -540,7 +560,8 @@ vec2u_norm_safe :: proc(v: Vec2u) -> Vec2 {
 	return Vec2{x = f32(v.x) / len, y = f32(v.y) / len}
 }
 
-vec2u_angle_rad :: proc(a: Vec2u, b: Vec2u) -> f32 {
+// Range: [0, π]
+vec2u_angle_between_unsigned :: proc(a: Vec2u, b: Vec2u) -> f32 {
 	cos_angle := f32(vec2u_dot(a, b)) / (vec2u_len(a) * vec2u_len(b))
 	return math.acos(cos_angle)
 }
@@ -621,7 +642,8 @@ vec3u_cross :: proc(a: Vec3u, b: Vec3u) -> Vec3u {
 	return Vec3u{x = a.y * b.z - a.z * b.y, y = a.z * b.x - a.x * b.z, z = a.x * b.y - a.y * b.x}
 }
 
-vec3u_angle_rad :: proc(a: Vec3u, b: Vec3u) -> f32 {
+// Range: [0, π]
+vec3u_angle_between_unsigned :: proc(a: Vec3u, b: Vec3u) -> f32 {
 	cos_angle := f32(vec3u_dot(a, b)) / (vec3u_len(a) * vec3u_len(b))
 	return math.acos(cos_angle)
 }
@@ -699,7 +721,8 @@ vec4u_norm_safe :: proc(v: Vec4u) -> Vec4 {
 	return Vec4{x = f32(v.x) / len, y = f32(v.y) / len, z = f32(v.z) / len, w = f32(v.w) / len}
 }
 
-vec4u_angle_rad :: proc(a: Vec4u, b: Vec4u) -> f32 {
+// Range: [0, π]
+vec4u_angle_between_unsigned :: proc(a: Vec4u, b: Vec4u) -> f32 {
 	cos_angle := f32(vec4u_dot(a, b)) / (vec4u_len(a) * vec4u_len(b))
 	return math.acos(cos_angle)
 }
