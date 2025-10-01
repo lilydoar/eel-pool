@@ -20,6 +20,8 @@ Game :: struct {
 	// 
 	tile_screen_size: Vec2u, // Size of a tile on screen in pixels
 	level:            game_level,
+	entity_pool:      Entity_Pool,
+	// TODO: Use this entity struct to store pointers to "important" entities (maybe)??? 
 	entity:           struct {
 		player: struct {
 			// The player's position in pixels relative to the top-left corner of the screen
@@ -42,13 +44,6 @@ Game :: struct {
 			},
 		},
 		enemy:  struct {
-			screen_x: f32,
-			screen_y: f32,
-			screen_w: f32,
-			screen_h: f32,
-			// Is the enemy entity active?
-			active:   bool,
-			velocity: Vec2,
 			behavior: Behavior_Range_Activated_Missile,
 		},
 	},
@@ -111,11 +106,10 @@ game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger) {
 
 	game.frame_step_ms = 1000 / 60 // 16.666 ms per frame at 60 FPS
 
+	game.entity_pool = entity_pool_init()
+
 	game.entity.player.screen_w = 192
 	game.entity.player.screen_h = 192
-
-	game.entity.enemy.screen_w = 64
-	game.entity.enemy.screen_h = 64
 
 	game.entity.enemy.behavior.cfg = {
 		// TODO: Draw debug circle of this radius for tuning purposes
@@ -188,6 +182,8 @@ game_deinit :: proc(game: ^Game) {
 	log.debug("Begin deinitializing game module")
 	defer log.debug("End deinitializing game module")
 
+	entity_pool_deinit(&game.entity_pool)
+
 	delete(game.cfg.control_key)
 	delete(game.cfg.control_button)
 }
@@ -222,9 +218,14 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 		game.entity.player.screen_x = mouse_pos.x
 		game.entity.player.screen_y = mouse_pos.y
 	} else if .editor_place_enemy in game.input {
-		if !game.entity.enemy.active {game.entity.enemy.active = true}
-		game.entity.enemy.screen_x = mouse_pos.x
-		game.entity.enemy.screen_y = mouse_pos.y
+		entity_pool_new_entity(
+			&game.entity_pool,
+			Entity {
+				position = Vec3{mouse_pos.x, mouse_pos.y, 0},
+				size = Vec3{64, 64, 0},
+				variant = Entity_Enemy{behavior = {cfg = game.entity.enemy.behavior.cfg}},
+			},
+		)
 	}
 
 	// Player input -> movement
@@ -246,11 +247,7 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 			cast(f64)game.cfg.entity.player.player_move_speed_y_axis)
 	}
 
-	game_do_enemy_behavior(game)
-	when FRAME_DEBUG {
-		log.debugf("Enemy active: {}", game.entity.enemy.active)
-		if game.entity.enemy.active {log.debugf("Enemy: {}", game.entity.enemy)}
-	}
+	game_entity_do_behavior(game)
 
 	// Apply player movement
 	game.entity.player.screen_x += player_final_move_x
@@ -352,28 +349,33 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 
 	{
 		// Draw enemy()
-		if game.entity.enemy.active {
-			dst := sdl3.FRect {
-				cast(f32)game.entity.enemy.screen_x,
-				cast(f32)game.entity.enemy.screen_y,
-				cast(f32)game.entity.enemy.screen_w,
-				cast(f32)game.entity.enemy.screen_h,
-			}
+		for e in game.entity_pool.entities {
+			if !e.active {continue}
+			#partial switch v in e.variant {
+			case Entity_Enemy:
+				dst := sdl3.FRect {
+					cast(f32)e.position.x,
+					cast(f32)e.position.y,
+					cast(f32)e.size.x,
+					cast(f32)e.size.y,
+				}
 
-			// rotate the enemy to face the player
-			vec_enemy_to_player := Vec2 {
-				game.entity.player.screen_x - game.entity.enemy.screen_x,
-				game.entity.player.screen_y - game.entity.enemy.screen_y,
-			}
+				// rotate the enemy to face the player
+				vec_enemy_to_player := Vec2 {
+					game.entity.player.screen_x - e.position.x,
+					game.entity.player.screen_y - e.position.y,
+				}
 
-			rotation := rad_to_deg(vec2_angle(vec_enemy_to_player))
+				rotation := rad_to_deg(vec2_angle(vec_enemy_to_player))
 
-			switch game.entity.enemy.behavior.state {
-			case .idle:
-				game_draw_sprite(game, r, {sprite_archer_arrow, dst, rotation, false})
-			case .active:
-				// TODO: Rotate to face player
-				game_draw_sprite(game, r, {sprite_archer_arrow, dst, rotation, false})
+				switch game.entity.enemy.behavior.state {
+				case .idle:
+					game_draw_sprite(game, r, {sprite_archer_arrow, dst, rotation, false})
+				case .active:
+					// TODO: Rotate to face player
+					game_draw_sprite(game, r, {sprite_archer_arrow, dst, rotation, false})
+				}
+
 			}
 		}
 	}
@@ -407,26 +409,30 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 		// 	color_new(0, 0, 255, 255),
 		// )
 
-		if game.entity.enemy.active {
-			// Draw trigger radius circle around enemy
-			debug_draw_circle(
-				r,
-				Circle {
-					Vec2{game.entity.enemy.screen_x, game.entity.enemy.screen_y},
-					cast(f32)game.entity.enemy.behavior.cfg.trigger_radius,
-				},
-				color_new(255, 0, 0, 255),
-			)
+		for e in game.entity_pool.entities {
+			if !e.active {continue}
+			#partial switch v in e.variant {
+			case Entity_Enemy:
+				// Draw trigger radius circle around enemy
+				debug_draw_circle(
+					r,
+					Circle {
+						Vec2{e.position.x, e.position.y},
+						cast(f32)game.entity.enemy.behavior.cfg.trigger_radius,
+					},
+					color_new(255, 0, 0, 255),
+				)
 
-			// Draw line from enemy to player
-			debug_draw_line(
-				r,
-				Line2 {
-					Vec2{game.entity.enemy.screen_x, game.entity.enemy.screen_y},
-					Vec2{game.entity.player.screen_x, game.entity.player.screen_y},
-				},
-				color_new(255, 255, 0, 255),
-			)
+				// Draw line from enemy to player
+				debug_draw_line(
+					r,
+					Line2 {
+						Vec2{e.position.x, e.position.y},
+						Vec2{game.entity.player.screen_x, game.entity.player.screen_y},
+					},
+					color_new(255, 255, 0, 255),
+				)
+			}
 		}
 	}
 }
@@ -564,44 +570,62 @@ game_draw_sprite :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 	)
 }
 
-
-game_do_enemy_behavior :: proc(game: ^Game) {
-	// Enemy behavior
-
-	if !game.entity.enemy.active {return}
+game_entity_do_behavior :: proc(game: ^Game) {
 
 	curr_time := cast(f64)game.frame_count * game.frame_step_ms
 
-	switch game.entity.enemy.behavior.state {
-	case .idle:
-		if range_activated_missile_check_trigger(
-			&game.entity.enemy.behavior,
-			{game.entity.enemy.screen_x, game.entity.enemy.screen_y},
-			{game.entity.player.screen_x, game.entity.player.screen_y},
-			curr_time,
-		) {
-			when FRAME_DEBUG {log.debug("Enemy missile triggered!")}
-		}
-	case .active:
-		if range_activated_missile_is_lifetime_expired(
-			game.entity.enemy.behavior,
-			cast(f64)game.frame_count * game.frame_step_ms,
-		) {
-			when FRAME_DEBUG {log.debug("Enemy missile lifetime expired!")}
-			game.entity.enemy.active = false
-			game.entity.enemy.behavior.state = {}
-			game.entity.enemy.behavior.trigger_time = {}
-			game.entity.enemy.behavior.flying_dir = {}
-			return
-		}
+	// player: ^Entity
+	// for &e in game.entity_pool.entities {
+	// 	if !e.active {continue}
+	// 	#partial switch v in e.variant {
+	// 	case Entity_Player:
+	// 		player = &e
+	// 		break
+	// 	}
+	// }
+	// log.debugf("Player: {}", player^)
 
-		next_pos := range_activated_missile_next_position(
-			game.entity.enemy.behavior,
-			{game.entity.enemy.screen_x, game.entity.enemy.screen_y},
-			{game.entity.enemy.velocity.x, game.entity.enemy.velocity.y},
-			curr_time,
-		)
-		game.entity.enemy.screen_x, game.entity.enemy.screen_y = next_pos.x, next_pos.y
+	for &e in game.entity_pool.entities {
+		if !e.active {continue}
+
+		log.debugf("Updating entity: {}", e)
+
+		switch &v in e.variant {
+
+		case Entity_Player:
+			continue
+
+		case Entity_Enemy:
+			switch v.behavior.state {
+			case .idle:
+				log.debugf("Enemy missile idle: {}", v.behavior)
+				if range_activated_missile_check_trigger(
+					&v.behavior,
+					{e.position.x, e.position.y},
+					{game.entity.player.screen_x, game.entity.player.screen_y},
+					curr_time,
+				) {
+					when FRAME_DEBUG {log.debug("Enemy missile triggered!")}
+				}
+			case .active:
+				if range_activated_missile_is_lifetime_expired(
+					v.behavior,
+					cast(f64)game.frame_count * game.frame_step_ms,
+				) {
+					when FRAME_DEBUG {log.debug("Enemy missile lifetime expired!")}
+					entity_pool_remove_entity(&game.entity_pool, e)
+					continue
+				}
+
+				next_pos := range_activated_missile_next_position(
+					v.behavior,
+					{e.position.x, e.position.y},
+					{e.variant.(Entity_Enemy).velocity.x, e.variant.(Entity_Enemy).velocity.y},
+					curr_time,
+				)
+				e.position.x, e.position.y = next_pos.x, next_pos.y
+			}
+		}
 	}
 }
 
