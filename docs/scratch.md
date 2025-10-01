@@ -1364,9 +1364,14 @@ Use this to print out value of select vars across frames.
 # Sat Sep 27 2025 - 2
 
 TODO: Render game to an intermediate texture. Render layers to the intermediate texture. Render the intermediate texture to the screen.
+DONE
 
 # Sat Sep 27 2025
 
 - [x] Render lines and shape primitives for debug purposes
   - draw line, draw aabb, draw circle, etc
 - [ ] Render text for debug purposes
+  - text stack. Collect calls from text_stack_push() and render all at once
+
+- [ ] Proper scaling between game world, game screen, etc
+

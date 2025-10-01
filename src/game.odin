@@ -2,8 +2,10 @@ package game
 
 import "base:runtime"
 import "core:encoding/json"
+import "core:fmt"
 import "core:log"
 import os "core:os/os2"
+import "core:strings"
 
 import sdl3 "vendor:sdl3"
 
@@ -50,6 +52,9 @@ Game :: struct {
 			velocity: Vec2,
 			behavior: Behavior_Range_Activated_Missile,
 		},
+	},
+	debug:            struct {
+		debug_text_stack: Debug_Text_Stack,
 	},
 }
 
@@ -105,6 +110,12 @@ game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger) {
 	log.debug("Begin initializing game module")
 	defer log.debug("End initializing game module")
 
+	game.debug.debug_text_stack = Debug_Text_Stack {
+		cfg = Debug_Text_Stack_Config{axis = .vertical, step_size = 20},
+		stack_text = make([dynamic]string, 0, 32),
+		stack_cursor = Vec2i{0, 0},
+	}
+
 	game.ctx = ctx
 	game.ctx.logger = logger
 
@@ -118,7 +129,7 @@ game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger) {
 
 	game.entity.enemy.behavior.cfg = {
 		// TODO: Draw debug circle of this radius for tuning purposes
-		trigger_radius       = 240,
+		trigger_radius       = 200,
 		acceleration         = 11,
 		acceleration_time_ms = 1000,
 		// NOTE: The intention of the above acc and acc_t is to design missiles with different motion dynamics
@@ -128,6 +139,9 @@ game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger) {
 		// Once again, interpolation
 		lifetime_ms          = 1800,
 	}
+
+	sbuf: [1024]u8
+	sb := strings.builder_from_bytes(sbuf[:])
 
 	game.cfg.control_key = make(map[game_control]sdl3.Keycode)
 	game.cfg.control_button = make(map[game_control]sdl3.MouseButtonFlag)
@@ -201,6 +215,19 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 			cast(f64)game.frame_count * game.frame_step_ms,
 		)}
 	when FRAME_DEBUG {defer log.debug("End game update")}
+
+	dbg_txt_stack_reset(&game.debug.debug_text_stack)
+
+	// TODO: draw text relevenant to game initialization: bound keys, etc
+	dbg_txt_stack_push(&game.debug.debug_text_stack, fmt.sbprintfln(&sb, "hello world"))
+
+	when FRAME_DEBUG {
+		log.debug("Dumping game state for debug")
+		dbg_txt_stack_push(
+			&game.debug.debug_text_stack,
+			fmt.sbprintfln(&sb, "game_state: %v", game),
+		)
+	}
 
 	game.input = {}
 	for k, keycode in game.cfg.control_key {
@@ -424,6 +451,9 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 				color_new(255, 255, 0, 255),
 			)
 		}
+
+		// Draw debug text stack
+		dbg_txt_stack_draw(r, &game.debug.debug_text_stack)
 	}
 }
 
