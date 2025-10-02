@@ -1,10 +1,10 @@
 package game
 
 import "base:runtime"
+import "core:container/queue"
 import "core:encoding/json"
 import "core:log"
 import os "core:os/os2"
-
 import sdl3 "vendor:sdl3"
 
 Game :: struct {
@@ -15,6 +15,7 @@ Game :: struct {
 
 	//
 	input:            bit_set[game_control],
+	event_system:     Event_System,
 
 	// 
 	tile_screen_size: Vec2u, // Size of a tile on screen in pixels
@@ -212,6 +213,9 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 	when FRAME_DEBUG {log.debugf("Current game input: {}", game.input)}
 
 	mouse_pos := sdl_mouse_get_render_position(sdl)
+
+	event_system_process(&game.event_system)
+	event_system_process_timed(&game.event_system, cast(f32)game.frame_step_ms)
 
 	// Editor actions
 	if .editor_place_player in game.input {
