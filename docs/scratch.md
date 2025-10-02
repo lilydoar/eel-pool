@@ -1370,3 +1370,7 @@ TODO: Render game to an intermediate texture. Render layers to the intermediate 
 - [x] Render lines and shape primitives for debug purposes
   - draw line, draw aabb, draw circle, etc
 - [ ] Render text for debug purposes
+
+# Wed Oct 01 2025 - 1
+
+- [ ] Config file for keyboard controls: <https://www.bytesbeneath.com/p/your-games-input-system-is-holding>
