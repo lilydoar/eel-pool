@@ -2,12 +2,23 @@ package game
 
 import "core:log"
 
+Entity_ID :: distinct int
+
+Entity_Flag :: enum {
+	Is_Active,
+}
+
+Entity_Flags :: bit_set[Entity_Flag]
+
 Entity :: struct {
-	id:       uint,
-	active:   bool,
-	position: Vec3,
-	size:     Vec3,
-	variant:  Entity_Variant,
+	id:        Entity_ID,
+	flags:     Entity_Flags,
+	variant:   Entity_Variant,
+
+	// Components
+	position:  C_World_Position,
+	collision: C_World_Collision,
+	sprite:    C_Sprite,
 }
 
 Entity_Variant :: union {
@@ -34,6 +45,8 @@ Entity_Enemy :: struct {
 }
 
 Entity_Pool :: struct {
+	// TODO: Slotmap
+	// src/lib/slotmap/slotmap.odin
 	entities:  [dynamic]Entity,
 	free_list: [dynamic]int,
 }
@@ -48,7 +61,7 @@ entity_pool_deinit :: proc(pool: ^Entity_Pool) {
 	delete(pool.entities)
 }
 
-entity_pool_new_entity :: proc(pool: ^Entity_Pool, entity: Entity) -> ^Entity {
+entity_pool_create_entity :: proc(pool: ^Entity_Pool, entity: Entity) -> ^Entity {
 	when FRAME_DEBUG {log.debugf("Spawning entity: {}", entity)}
 
 	idx: int
@@ -62,13 +75,13 @@ entity_pool_new_entity :: proc(pool: ^Entity_Pool, entity: Entity) -> ^Entity {
 
 	log.debugf("Idx: {}, len: {}", idx, len(pool.entities))
 
-	pool.entities[idx].id = uint(idx)
-	pool.entities[idx].active = true
+	pool.entities[idx].id = Entity_ID(idx)
+	pool.entities[idx].flags += {.Is_Active}
 
 	return &pool.entities[idx]
 }
 
-entity_pool_remove_entity :: proc(pool: ^Entity_Pool, entity: Entity) {
+entity_pool_destroy_entity :: proc(pool: ^Entity_Pool, entity: Entity) {
 	log.debugf("Removing entity: {}", entity)
 
 	append(&pool.free_list, int(entity.id))

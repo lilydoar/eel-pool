@@ -218,11 +218,21 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 		game.entity.player.screen_x = mouse_pos.x
 		game.entity.player.screen_y = mouse_pos.y
 	} else if .editor_place_enemy in game.input {
-		entity_pool_new_entity(
+		entity_pool_create_entity(
 			&game.entity_pool,
 			Entity {
-				position = Vec3{mouse_pos.x, mouse_pos.y, 0},
-				size = Vec3{64, 64, 0},
+				position = C_World_Position{mouse_pos.x, mouse_pos.y, 0},
+				collision = C_World_Collision(
+					AABB2 {
+						min = Vec2{mouse_pos.x, mouse_pos.y},
+						max = Vec2{mouse_pos.x + 64, mouse_pos.y + 64},
+					},
+				),
+				sprite = C_Sprite {
+					world_size   = Vec2{64, 64},
+					// Center the sprite on the entity position
+					world_offset = Vec2{32, 32},
+				},
 				variant = Entity_Enemy{behavior = {cfg = game.entity.enemy.behavior.cfg}},
 			},
 		)
@@ -350,14 +360,14 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 	{
 		// Draw enemy()
 		for e in game.entity_pool.entities {
-			if !e.active {continue}
+			if !(.Is_Active in e.flags) {continue}
 			#partial switch v in e.variant {
 			case Entity_Enemy:
 				dst := sdl3.FRect {
 					cast(f32)e.position.x,
 					cast(f32)e.position.y,
-					cast(f32)e.size.x,
-					cast(f32)e.size.y,
+					cast(f32)e.sprite.world_size.x,
+					cast(f32)e.sprite.world_size.y,
 				}
 
 				// rotate the enemy to face the player
@@ -410,7 +420,7 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 		// )
 
 		for e in game.entity_pool.entities {
-			if !e.active {continue}
+			if !(.Is_Active in e.flags) {continue}
 			#partial switch v in e.variant {
 			case Entity_Enemy:
 				// Draw trigger radius circle around enemy
@@ -586,7 +596,7 @@ game_entity_do_behavior :: proc(game: ^Game) {
 	// log.debugf("Player: {}", player^)
 
 	for &e in game.entity_pool.entities {
-		if !e.active {continue}
+		if !(.Is_Active in e.flags) {continue}
 
 		log.debugf("Updating entity: {}", e)
 
@@ -613,7 +623,7 @@ game_entity_do_behavior :: proc(game: ^Game) {
 					cast(f64)game.frame_count * game.frame_step_ms,
 				) {
 					when FRAME_DEBUG {log.debug("Enemy missile lifetime expired!")}
-					entity_pool_remove_entity(&game.entity_pool, e)
+					entity_pool_destroy_entity(&game.entity_pool, e)
 					continue
 				}
 
