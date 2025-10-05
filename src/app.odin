@@ -129,8 +129,8 @@ app_run :: proc(app: ^App) {
 app_update :: proc(app: ^App) -> (quit: bool) {
 	context = app.ctx
 
-	when FRAME_DEBUG {log.debug("Begin app frame")}
-	when FRAME_DEBUG {defer log.debug("End app frame")}
+	when DEBUG_FRAME {log.debug("Begin app frame")}
+	when DEBUG_FRAME {defer log.debug("End app frame")}
 
 	quit = sdl_frame_begin(&app.sdl)
 	if quit {return}
@@ -140,7 +140,7 @@ app_update :: proc(app: ^App) -> (quit: bool) {
 	app.time.frame_accumulator_ms += time.duration_milliseconds(time_delta)
 	app.time.frame_updates = 0
 
-	when FRAME_DEBUG {
+	when DEBUG_FRAME {
 		log.debugf(
 			"App frame {}: dt=%fms, accumulator=%fms",
 			app.time.frame_count,

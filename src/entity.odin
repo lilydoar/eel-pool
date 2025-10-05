@@ -62,7 +62,7 @@ entity_pool_deinit :: proc(pool: ^Entity_Pool) {
 }
 
 entity_pool_create_entity :: proc(pool: ^Entity_Pool, entity: Entity) -> ^Entity {
-	when FRAME_DEBUG {log.debugf("Spawning entity: {}", entity)}
+	when DEBUG_FRAME {log.debugf("Spawning entity: {}", entity)}
 
 	idx: int
 	if len(pool.free_list) > 0 {

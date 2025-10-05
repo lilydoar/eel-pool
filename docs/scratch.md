@@ -1018,7 +1018,7 @@ Begin here tomorrow.
 [diagnostic] $ $MISE_PROJECT_ROOT/build -dev -verbose -run -run-arg:-run-for:10 -debug
 [INFO ] --- [2025-08-22 06:23:35] [225:dev()] Building a development build
 [DEBUG] --- [2025-08-22 06:23:35] [128:run_proc()] Running process: mkdir -p bin/develop
-[DEBUG] --- [2025-08-22 06:23:35] [128:run_proc()] Running process: odin build src/entry/game -out:bin/develop/game -debug -define:FRAME_DEBUG=true
+[DEBUG] --- [2025-08-22 06:23:35] [128:run_proc()] Running process: odin build src/entry/game -out:bin/develop/game -debug -define:DEBUG_FRAME=true
 [INFO ] --- [2025-08-22 06:23:36] [238:dev()] Running development build
 [DEBUG] --- [2025-08-22 06:23:36] [128:run_proc()] Running process: bin/develop/game -run-for:10
 [DEBUG] --- [2025-08-22 06:23:36] [130:run_proc()] With environment:

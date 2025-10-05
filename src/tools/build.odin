@@ -99,7 +99,7 @@ main :: proc() {
 	for str in opt.run_env {append(&cfg.dev.env, str)}
 
 	if opt.debug {
-		append(&cfg.dev.flags, "-define:DEBUG_GAME=true", "-define:FRAME_DEBUG=true")
+		append(&cfg.dev.flags, "-define:DEBUG_GAME=true", "-define:DEBUG_FRAME=true")
 	}
 
 	if opt.clean {

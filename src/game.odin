@@ -192,12 +192,12 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 	context = game.ctx
 
 	// Update logic for the game module
-	when FRAME_DEBUG {log.debugf(
+	when DEBUG_FRAME {log.debugf(
 			"Begin game update: frame_count: {}, game time: {}ms",
 			game.frame_count,
 			cast(f64)game.frame_count * game.frame_step_ms,
 		)}
-	when FRAME_DEBUG {defer log.debug("End game update")}
+	when DEBUG_FRAME {defer log.debug("End game update")}
 
 	game.input = {}
 	for k, keycode in game.cfg.control_key {
@@ -206,7 +206,7 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 	for k, v in game.cfg.control_button {
 		if sdl_mouse_button_is_down(sdl, v) {game.input = game.input + {k}}
 	}
-	when FRAME_DEBUG {log.debugf("Current game input: {}", game.input)}
+	when DEBUG_FRAME {log.debugf("Current game input: {}", game.input)}
 
 	mouse_pos := sdl_mouse_get_render_position(sdl)
 
@@ -286,7 +286,7 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 		if game.entity.player.screen_y > bounds_y {game.entity.player.screen_y = bounds_y}
 	}
 
-	// when FRAME_DEBUG {
+	// when DEBUG_FRAME {
 	// 	log.debugf("player desire move: {}, {}", player_desire_move_x, player_desire_move_y)
 	// 	log.debugf("player final move: {}, {}", player_final_move_x, player_final_move_y)
 	// 	log.debugf(
@@ -303,8 +303,8 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 	context = game.ctx
 
 	// Drawing logic for the game module
-	when FRAME_DEBUG {log.debug("Begin drawing game frame")}
-	when FRAME_DEBUG {defer log.debug("End drawing game frame")}
+	when DEBUG_FRAME {log.debug("Begin drawing game frame")}
+	when DEBUG_FRAME {defer log.debug("End drawing game frame")}
 
 	{
 		// Draw level tilemap
@@ -478,7 +478,7 @@ game_draw_tilemap_tile :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 	dst_local := cmd.dest
 	dst: Maybe(^sdl3.FRect) = &dst_local
 
-	// when FRAME_DEBUG {log.debugf(
+	// when DEBUG_FRAME {log.debugf(
 	// 		"Render tilemap tile {}: src: {}, dest: {}",
 	// 		cmd.tile_idx,
 	// 		src,
@@ -496,7 +496,7 @@ game_draw_animation :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 	}) {
 	elapsed_ms: u64 = game.frame_count
 	frame := (elapsed_ms / cast(u64)cmd.anim.delay_ms) % cast(u64)len(cmd.anim.frame)
-	// when FRAME_DEBUG {
+	// when DEBUG_FRAME {
 	// 	log.debugf("animation {} frame: {}", cmd.anim.name, frame)
 	// 	log.debugf("elapsed_ms: {}, delay_ms: {}", elapsed_ms, cmd.anim.delay_ms)
 	// 	log.debugf("total frames: {}", len(cmd.anim.frame))
@@ -517,7 +517,7 @@ game_draw_animation :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 	dst_local.y -= cmd.anim.world_offset.y
 	dst: Maybe(^sdl3.FRect) = &dst_local
 
-	// when FRAME_DEBUG {log.debugf(
+	// when DEBUG_FRAME {log.debugf(
 	// 		"Render {} animation frame {}: src: {}, dest: {}",
 	// 		cmd.anim.name,
 	// 		frame,
@@ -558,7 +558,7 @@ game_draw_sprite :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 	dst_local.y -= cmd.sprite.world_offset.y
 	dst: Maybe(^sdl3.FRect) = &dst_local
 
-	// when FRAME_DEBUG {log.debugf(
+	// when DEBUG_FRAME {log.debugf(
 	// 		"Render sprite {}: src: {}, dest: {}, rotation_rad: {}, mirror_x: {} world_offset: ({}, {})",
 	// 		cmd.sprite.texture.name,
 	// 		src,
@@ -615,14 +615,14 @@ game_entity_do_behavior :: proc(game: ^Game) {
 					{game.entity.player.screen_x, game.entity.player.screen_y},
 					curr_time,
 				) {
-					when FRAME_DEBUG {log.debug("Enemy missile triggered!")}
+					when DEBUG_FRAME {log.debug("Enemy missile triggered!")}
 				}
 			case .active:
 				if range_activated_missile_is_lifetime_expired(
 					v.behavior,
 					cast(f64)game.frame_count * game.frame_step_ms,
 				) {
-					when FRAME_DEBUG {log.debug("Enemy missile lifetime expired!")}
+					when DEBUG_FRAME {log.debug("Enemy missile lifetime expired!")}
 					entity_pool_destroy_entity(&game.entity_pool, e)
 					continue
 				}

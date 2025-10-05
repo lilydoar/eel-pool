@@ -67,7 +67,7 @@ range_activated_missile_next_position :: proc(
 	vel := vec2_add(current_velocity, acc)
 	pos := vec2_add(current_position, vel)
 
-	when FRAME_DEBUG {
+	when DEBUG_FRAME {
 		log.debugf(
 			"Missile acc: (%.2f, %.2f), vel: (%.2f, %.2f), pos: (%.2f, %.2f)",
 			acc.x,

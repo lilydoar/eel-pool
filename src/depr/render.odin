@@ -165,7 +165,7 @@ renderpass_begin :: proc(w: ^WGPU, r: ^Render, window_size: Vec2i) {
 	assert(!r.render_pass.active)
 	defer r.render_pass.active = true
 
-	when FRAME_DEBUG {log.debug("Beginning render pass...")}
+	when DEBUG_FRAME {log.debug("Beginning render pass...")}
 
 	r.render_pass.wgpu.surface = wgpu.SurfaceGetCurrentTexture(w.surface)
 	#partial switch r.render_pass.wgpu.surface.status {
@@ -202,7 +202,7 @@ renderpass_begin :: proc(w: ^WGPU, r: ^Render, window_size: Vec2i) {
 		},
 	)
 
-	when FRAME_DEBUG {wgpu.RenderPassEncoderInsertDebugMarker(
+	when DEBUG_FRAME {wgpu.RenderPassEncoderInsertDebugMarker(
 			r.render_pass.wgpu.render_encoder,
 			"begin",
 		)}
@@ -211,7 +211,7 @@ renderpass_begin :: proc(w: ^WGPU, r: ^Render, window_size: Vec2i) {
 }
 
 renderpass_end :: proc(w: ^WGPU, r: ^Render) {
-	when FRAME_DEBUG {
+	when DEBUG_FRAME {
 		log.debug("Ending render pass...")
 		wgpu.RenderPassEncoderInsertDebugMarker(r.render_pass.wgpu.render_encoder, "end")
 	}
@@ -410,7 +410,7 @@ sprite_batcher_deinit :: proc(s: ^Sprite_Batcher) {
 }
 
 sprite_batcher_draw :: proc(w: ^WGPU, r: ^Render) {
-	when FRAME_DEBUG {
+	when DEBUG_FRAME {
 		log.debug("Begin Sprite Batcher Draw...")
 		defer log.debug("End Sprite Batcher Draw.")
 	}
@@ -425,7 +425,7 @@ sprite_batcher_draw :: proc(w: ^WGPU, r: ^Render) {
 	sprite_count := len(p.sprite_batcher.batch)
 	if sprite_count == 0 {return}
 
-	when FRAME_DEBUG {
+	when DEBUG_FRAME {
 		log.debugf("Drawing {} sprites", sprite_count)
 	}
 
