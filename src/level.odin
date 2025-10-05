@@ -1,6 +1,8 @@
 package game
 
-// TODO: Store the complete level data (tiles, textures, collision, etc)
+import "data"
 
-Level :: struct {}
+Level :: struct {
+	map_data: ^data.Tiled_Map_Data,
+}
 
