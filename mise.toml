@@ -4,24 +4,10 @@
 [tasks.bootstrap]
 description = "Build the build tool"
 run = "odin build src/tools/build.odin -out:build -file"
-sources = ["build.odin"]
+sources = ["src/tools/build.odin"]
 outputs = ["build"]
 
 [tasks.build]
 description = "Build the project in dev mode"
 run = "$MISE_PROJECT_ROOT/build"
-depends = ["bootstrap"]
-
-[tasks.gamelib]
-description = "Build the game code as a dynamic library"
-run = "$MISE_PROJECT_ROOT/build -gamelib"
-sources = ["src/**/*.odin"]
-outputs = ["bin/gamelib/*"]
-depends = ["bootstrap"]
-
-[tasks.diagnostic]
-description = "Build and minimally run the project to check for errors"
-run = "$MISE_PROJECT_ROOT/build -dev -verbose -run -run-arg:-run-for:10"
-sources = ["src/**/*.odin"]
-outputs = ["bin/dev/*"]
 depends = ["bootstrap"]

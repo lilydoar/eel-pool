@@ -390,7 +390,7 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 		}
 	}
 
-	{
+	when DEBUG_GAME {
 		// Draw Debug ()
 
 		// // Draw player bounding box

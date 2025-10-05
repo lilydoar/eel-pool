@@ -2,6 +2,7 @@ package game
 
 import "core:log"
 
+DEBUG_GAME :: #config(DEBUG_GAME, false)
 FRAME_DEBUG :: #config(FRAME_DEBUG, false)
 
 Config :: struct {
