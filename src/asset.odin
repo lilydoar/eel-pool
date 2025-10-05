@@ -1,6 +1,8 @@
 package game
 
+import "core:encoding/json"
 import "core:log"
+import os "core:os/os2"
 import "vendor:sdl3"
 
 asset_sprite :: struct {
@@ -23,6 +25,44 @@ asset_tilemap :: struct {
 	name: string,
 	path: string,
 	size: Vec2u,
+}
+
+Asset_Tiled_Map :: struct {
+	width:      u32,
+	height:     u32,
+	tilewidth:  u32,
+	tileheight: u32,
+	tilesets:   []struct {
+		source:   string,
+		firstgid: u32,
+	},
+	layers:     []struct {
+		id:     u32,
+		name:   string,
+		width:  u32,
+		height: u32,
+		data:   []u32,
+	},
+}
+
+Asset_Tiled_Tileset :: struct {
+	name:        string,
+	image:       string,
+	imagewidth:  u32,
+	imageheight: u32,
+	tilecount:   u32,
+	tilewidth:   u32,
+	tileheight:  u32,
+	tiles:       []struct {
+		id:          u32,
+		image:       string,
+		imagewidth:  u32,
+		imageheight: u32,
+		animation:   []struct {
+			duration: u32,
+			tileid:   u32,
+		},
+	},
 }
 
 asset_animation_load :: proc(s: ^SDL, a: asset_animation) -> (anim: SDL_Animation) {
@@ -78,5 +118,33 @@ asset_sprite_load :: proc(s: ^SDL, sprite: asset_sprite) -> (spr: game_sprite) {
 asset_sprite_unload :: proc(sprite: game_sprite) {
 	log.debugf("Unloading sprite {}", sprite.texture.name)
 	sdl3.DestroyTexture(sprite.texture.texture)
+}
+
+asset_tiled_map_load :: proc(path: string) -> Asset_Tiled_Map {
+	log.debugf("Loading Tiled map: {}", path)
+	defer log.debugf("Tiled map loaded: {}", path)
+
+	data, err := os.read_entire_file_from_path(path, context.allocator)
+	if err != nil {
+		log.panicf("Failed to load level file {}: {}", path, err)
+	}
+
+	tiled_map: Asset_Tiled_Map
+	if err := json.unmarshal(data, &tiled_map); err != nil {
+		log.panicf("Failed to parse tiled map file {}: {}", path, err)
+	}
+
+	// TODO: Load and store all textures for the map
+
+	return tiled_map
+}
+
+asset_tiled_map_unload :: proc(m: ^Asset_Tiled_Map) {
+	// TODO: Unload textures
+}
+
+asset_tiled_map_draw :: proc(r: ^SDL_Renderer, m: Asset_Tiled_Map) {
+	// TODO: Draw out a complete map
+	// TODO: Viewport/zoom/pan/etc
 }
 

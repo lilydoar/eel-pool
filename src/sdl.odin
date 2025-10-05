@@ -97,6 +97,25 @@ SDL_Animation :: struct {
 	world_offset: Vec2,
 }
 
+SDL_Level :: struct {
+	name:      string,
+	size:      Vec2u,
+	tile_size: Vec2u,
+	tilesets:  []struct {
+		tileset:  SDL_Tileset,
+		firstgid: u32,
+	},
+	layers:    []struct {
+		name: string,
+		size: Vec2u,
+		data: []u32,
+	},
+}
+
+SDL_Tileset :: struct {
+	name: string,
+}
+
 sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 	log.info("Initializing SDL...")
 	defer log.info("SDL initialized")

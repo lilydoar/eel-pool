@@ -19,7 +19,7 @@ Game :: struct {
 
 	// 
 	tile_screen_size: Vec2u, // Size of a tile on screen in pixels
-	level:            game_level,
+	level:            Level,
 	entity_pool:      Entity_Pool,
 	// TODO: Use this entity struct to store pointers to "important" entities (maybe)??? 
 	entity:           struct {
@@ -108,11 +108,13 @@ game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger) {
 
 	game.entity_pool = entity_pool_init()
 
+	// TODO: Move to assets type
+	level := asset_tiled_map_load(asset_level_path)
+
 	game.entity.player.screen_w = 192
 	game.entity.player.screen_h = 192
 
 	game.entity.enemy.behavior.cfg = {
-		// TODO: Draw debug circle of this radius for tuning purposes
 		trigger_radius       = 240,
 		acceleration         = 11,
 		acceleration_time_ms = 1000,
@@ -138,39 +140,7 @@ game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger) {
 	game.cfg.entity.player.player_move_speed_x_axis = 4
 	game.cfg.entity.player.player_move_speed_y_axis = 4
 
-	load_level :: proc(path: string) -> game_level {
-		log.debugf("Loading level from file: {}", path)
-		defer log.debugf("Finished loading level from file: {}", path)
-
-		data, err := os.read_entire_file_from_path(path, context.allocator)
-		if err != nil {
-			log.panicf("Failed to load level file {}: {}", path, err)
-		}
-
-		level: game_level
-		if err := json.unmarshal(data, &level); err != nil {
-			log.panicf("Failed to parse level file {}: {}", path, err)
-		}
-
-		assert(
-			level.layers[0].size.x * level.layers[0].size.y == cast(u32)len(level.layers[0].tile),
-		)
-		assert(
-			level.layers[0].size.x * level.layers[0].size.y ==
-			cast(u32)len(level.layers[0].collision),
-		)
-
-		log.debugf(
-			"Loaded level: size: {}, tiles: {}, collision: {}",
-			level.layers[0].size,
-			level.layers[0].tile,
-			level.layers[0].collision,
-		)
-
-		return level
-	}
-
-	game.level = load_level("data/levels/default.json")
+	// game.level = load_level("data/levels/default.json")
 
 	game.tile_screen_size = {32, 32}
 }
@@ -307,6 +277,9 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 	when DEBUG_FRAME {defer log.debug("End drawing game frame")}
 
 	{
+		// TODO: Draw Tiled map data
+		// asset_tiled_map_draw(r, // TODO: Pass in the level data (not sure if stored in game, or somewhere else))
+
 		// Draw level tilemap
 		for x in 0 ..< len(game.level.layers[0].tile) {
 
