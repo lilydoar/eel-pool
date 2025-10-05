@@ -3,6 +3,7 @@ bin/
 docs/gen/
 
 **.blend1
-.claude/
+.claude/*
 
 data/eel-pool.tiled-session
+data/assets.db

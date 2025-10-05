@@ -83,15 +83,15 @@ main :: proc() {
 		release = {
 			entry = "entry/game/",
 			out = "release/game",
-			flags = {"-warnings-as-errors", "-disable-assert", "-o:speed"},
+			flags = {"-warnings-as-errors", "-disable-assert", "-o:speed", "-extra-linker-flags:\"-lsqlite3\""},
 		},
 		dev = {
 			entry = "entry/game/",
 			out = "develop/game",
-			flags = {"-debug"},
+			flags = {"-debug", "-extra-linker-flags:\"-lsqlite3\""},
 			env = {"RUST_BACKTRACE=full"},
 		},
-		gamelib = {lib = "lib/game/", out = "gamelib/game", flags = {"-debug"}},
+		gamelib = {lib = "lib/game/", out = "gamelib/game", flags = {"-debug", "-extra-linker-flags:\"-lsqlite3\""}},
 		docs = {out = "docs/gen/"},
 	}
 

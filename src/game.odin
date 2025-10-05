@@ -6,6 +6,7 @@ import "core:encoding/json"
 import "core:log"
 import os "core:os/os2"
 import sdl3 "vendor:sdl3"
+import "data"
 
 Game :: struct {
 	ctx:              runtime.Context,
@@ -94,7 +95,7 @@ game_sprite :: struct {
 	world_offset: Vec2,
 }
 
-game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger) {
+game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger, sdl: ^SDL, asset_manager: ^data.Asset_Manager) {
 	context = ctx
 
 	// Initialization code for the game module
@@ -108,8 +109,16 @@ game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger) {
 
 	game.entity_pool = entity_pool_init()
 
-	// TODO: Move to assets type
-	level := asset_tiled_map_load(asset_level_path)
+	// Load level-1 using asset manager
+	level_path := "data/levels/level-1.json"
+	sdl_wrapper := data.SDL{renderer = {renderer = sdl.renderer.ptr}}
+	map_data, ok := data.tiled_map_load(asset_manager, &sdl_wrapper, level_path)
+	if ok {
+		game.level.map_data = map_data
+		log.infof("Loaded level: {} ({}x{} tiles)", level_path, map_data.width, map_data.height)
+	} else {
+		log.errorf("Failed to load level: {}", level_path)
+	}
 
 	game.entity.player.screen_w = 192
 	game.entity.player.screen_h = 192
@@ -276,32 +285,70 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 	when DEBUG_FRAME {log.debug("Begin drawing game frame")}
 	when DEBUG_FRAME {defer log.debug("End drawing game frame")}
 
-	{
-		// TODO: Draw Tiled map data
-		// asset_tiled_map_draw(r, // TODO: Pass in the level data (not sure if stored in game, or somewhere else))
+	// Draw all level layers
+	if game.level.map_data != nil && len(game.level.map_data.layers) > 0 {
+		for layer, layer_idx in game.level.map_data.layers {
+			// Draw each tile in the layer
+			for y in 0..<layer.height {
+				for x in 0..<layer.width {
+					idx := y * layer.width + x
+					gid := layer.data[idx]
 
-		// Draw level tilemap
-		for x in 0 ..< len(game.level.layers[0].tile) {
+					if gid == 0 {
+						continue // Empty tile
+					}
 
-			game_draw_tilemap_tile(
-				game,
-				r,
-				{
-					r.tilemaps.terrain.color1,
-					game.level.layers[0].tile[x],
-					sdl3.FRect {
-						cast(f32)(cast(u32)x %
-							game.level.layers[0].size.x *
-							game.tile_screen_size.x),
-						cast(f32)(cast(u32)x /
-							game.level.layers[0].size.x *
-							game.tile_screen_size.y),
-						cast(f32)r.tilemaps.terrain.color1.tile_size.x,
-						cast(f32)r.tilemaps.terrain.color1.tile_size.y,
-					},
-				},
-			)
+					// Find which tileset this GID belongs to
+					tileset_idx := -1
+					local_id := gid
 
+					for ts, i in game.level.map_data.tilesets {
+						if gid >= ts.firstgid && (i == len(game.level.map_data.tilesets)-1 || gid < game.level.map_data.tilesets[i+1].firstgid) {
+							tileset_idx = i
+							local_id = gid - ts.firstgid
+							break
+						}
+					}
+
+					if tileset_idx < 0 || tileset_idx >= len(game.level.map_data.tilesets) {
+						continue
+					}
+
+					tileset := game.level.map_data.tilesets[tileset_idx]
+
+					if local_id >= u32(len(tileset.tilemap.tile)) {
+						continue
+					}
+
+					// Get tile clip rect
+					if local_id >= u32(len(tileset.tilemap.tile_rects)) {
+						continue
+					}
+
+					clip_rect := tileset.tilemap.tile_rects[local_id]
+
+					// Calculate screen position
+					dst := sdl3.FRect{
+						f32(x * game.tile_screen_size.x),
+						f32(y * game.tile_screen_size.y),
+						f32(game.tile_screen_size.x),
+						f32(game.tile_screen_size.y),
+					}
+
+					// Render tile
+					sdl3.RenderTexture(
+						r.ptr,
+						tileset.texture.texture,
+						&sdl3.FRect{
+							f32(clip_rect.x),
+							f32(clip_rect.y),
+							f32(clip_rect.w),
+							f32(clip_rect.h),
+						},
+						&dst,
+					)
+				}
+			}
 		}
 	}
 

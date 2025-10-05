@@ -4,14 +4,16 @@ import "base:runtime"
 import "core:log"
 import os "core:os/os2"
 import "core:time"
+import "data"
 
 App :: struct {
-	ctx:  runtime.Context,
-	opts: Options,
-	cfg:  Config,
-	sdl:  SDL,
-	time: App_Time,
-	game: Game,
+	ctx:           runtime.Context,
+	opts:          Options,
+	cfg:           Config,
+	sdl:           SDL,
+	time:          App_Time,
+	game:          Game,
+	asset_manager: data.Asset_Manager,
 }
 
 App_Time :: struct {
@@ -59,11 +61,14 @@ app_init :: proc(app: ^App, ctx: runtime.Context) {
 	}
 	sdl_init(&app.sdl, sdl_opts)
 
+	// Initialize asset manager
+	app.asset_manager, _ = data.asset_manager_init()
+
 	sprites_init(&app.sdl)
 
 	animations_init(&app.sdl)
 
-	game_init(&app.game, app.ctx, app.ctx.logger)
+	game_init(&app.game, app.ctx, app.ctx.logger, &app.sdl, &app.asset_manager)
 
 	// TODO: Initialize other subsystems (e.g., job system, ...)
 }
@@ -79,6 +84,8 @@ app_deinit :: proc(app: ^App) {
 	animations_deinit(&app.sdl)
 
 	sprites_deinit(&app.sdl)
+
+	data.asset_manager_deinit(&app.asset_manager)
 
 	sdl_deinit(&app.sdl)
 }
