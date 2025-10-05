@@ -1,0 +1,15 @@
+{ "columns":20,
+ "image":"..\/..\/assets\/Tiny_Swords\/Terrain\/Tilemap_color2.png",
+ "imageheight":512,
+ "imagewidth":1280,
+ "margin":0,
+ "name":"Tilemap_color2",
+ "spacing":0,
+ "tilecount":160,
+ "tiledversion":"1.11.2",
+ "tileheight":64,
+ "tilewidth":64,
+ "transparentcolor":"#ff00ff",
+ "type":"tileset",
+ "version":"1.10"
+}
