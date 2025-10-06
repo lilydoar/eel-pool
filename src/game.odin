@@ -5,8 +5,8 @@ import "core:container/queue"
 import "core:encoding/json"
 import "core:log"
 import os "core:os/os2"
-import sdl3 "vendor:sdl3"
 import "data"
+import sdl3 "vendor:sdl3"
 
 Game :: struct {
 	ctx:              runtime.Context,
@@ -18,11 +18,11 @@ Game :: struct {
 	input:            bit_set[game_control],
 	event_system:     Event_System,
 
-	// 
+	//
 	tile_screen_size: Vec2u, // Size of a tile on screen in pixels
 	level:            Level,
 	entity_pool:      Entity_Pool,
-	// TODO: Use this entity struct to store pointers to "important" entities (maybe)??? 
+	// TODO: Use this entity struct to store pointers to "important" entities (maybe)???
 	entity:           struct {
 		player: struct {
 			// The player's position in pixels relative to the top-left corner of the screen
@@ -48,6 +48,14 @@ Game :: struct {
 			behavior: Behavior_Range_Activated_Missile,
 		},
 	},
+
+	// Debug-related state
+	debug:            Game_Debug,
+}
+
+Game_Debug :: struct {
+	capture_feedback_time:     f32, // Time remaining for capture feedback indicator (0 = inactive)
+	capture_screenshot_pending: bool, // Screenshot requested, will be captured at end of frame
 }
 
 Game_Config :: struct {
@@ -70,6 +78,7 @@ game_control :: enum {
 	//
 	editor_place_player,
 	editor_place_enemy,
+	editor_capture_screen,
 }
 
 game_level :: struct {
@@ -95,7 +104,13 @@ game_sprite :: struct {
 	world_offset: Vec2,
 }
 
-game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger, sdl: ^SDL, asset_manager: ^data.Asset_Manager) {
+game_init :: proc(
+	game: ^Game,
+	ctx: runtime.Context,
+	logger: log.Logger,
+	sdl: ^SDL,
+	asset_manager: ^data.Asset_Manager,
+) {
 	context = ctx
 
 	// Initialization code for the game module
@@ -111,7 +126,9 @@ game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger, sdl: ^S
 
 	// Load level-1 using asset manager
 	level_path := "data/levels/level-1.json"
-	sdl_wrapper := data.SDL{renderer = {renderer = sdl.renderer.ptr}}
+	sdl_wrapper := data.SDL {
+		renderer = {renderer = sdl.renderer.ptr},
+	}
 	map_data, ok := data.tiled_map_load(asset_manager, &sdl_wrapper, level_path)
 	if ok {
 		game.level.map_data = map_data
@@ -145,6 +162,7 @@ game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger, sdl: ^S
 
 	game_bind_control_to_mouse_button(game, .editor_place_player, .LEFT)
 	game_bind_control_to_mouse_button(game, .editor_place_enemy, .RIGHT)
+	game_bind_control_to_key(game, .editor_capture_screen, sdl3.K_0)
 
 	game.cfg.entity.player.player_move_speed_x_axis = 4
 	game.cfg.entity.player.player_move_speed_y_axis = 4
@@ -192,7 +210,22 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 	event_system_process(&game.event_system)
 	event_system_process_timed(&game.event_system, cast(f32)game.frame_step_ms)
 
-	// Editor actions
+	// Update debug timers
+	if game.debug.capture_feedback_time > 0 {
+		game.debug.capture_feedback_time -= f32(game.frame_step_ms)
+		if game.debug.capture_feedback_time < 0 {
+			game.debug.capture_feedback_time = 0
+		}
+	}
+
+	// Editor actions (trigger on key release to avoid multiple captures)
+	if capture_key, ok := game.cfg.control_key[.editor_capture_screen]; ok {
+		if sdl_key_was_released(sdl, capture_key) {
+			// Set flag to capture screenshot at end of frame (after drawing)
+			game.debug.capture_screenshot_pending = true
+		}
+	}
+
 	if .editor_place_player in game.input {
 		game.entity.player.screen_x = mouse_pos.x
 		game.entity.player.screen_y = mouse_pos.y
@@ -289,8 +322,8 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 	if game.level.map_data != nil && len(game.level.map_data.layers) > 0 {
 		for layer, layer_idx in game.level.map_data.layers {
 			// Draw each tile in the layer
-			for y in 0..<layer.height {
-				for x in 0..<layer.width {
+			for y in 0 ..< layer.height {
+				for x in 0 ..< layer.width {
 					idx := y * layer.width + x
 					gid := layer.data[idx]
 
@@ -303,7 +336,9 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 					local_id := gid
 
 					for ts, i in game.level.map_data.tilesets {
-						if gid >= ts.firstgid && (i == len(game.level.map_data.tilesets)-1 || gid < game.level.map_data.tilesets[i+1].firstgid) {
+						if gid >= ts.firstgid &&
+						   (i == len(game.level.map_data.tilesets) - 1 ||
+								   gid < game.level.map_data.tilesets[i + 1].firstgid) {
 							tileset_idx = i
 							local_id = gid - ts.firstgid
 							break
@@ -328,7 +363,7 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 					clip_rect := tileset.tilemap.tile_rects[local_id]
 
 					// Calculate screen position
-					dst := sdl3.FRect{
+					dst := sdl3.FRect {
 						f32(x * game.tile_screen_size.x),
 						f32(y * game.tile_screen_size.y),
 						f32(game.tile_screen_size.x),
@@ -339,7 +374,7 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 					sdl3.RenderTexture(
 						r.ptr,
 						tileset.texture.texture,
-						&sdl3.FRect{
+						&sdl3.FRect {
 							f32(clip_rect.x),
 							f32(clip_rect.y),
 							f32(clip_rect.w),
@@ -477,6 +512,34 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 			sdl3.RenderDebugText(r.ptr, 10, 10, "Controls:")
 			sdl3.RenderDebugTextFormat(r.ptr, 10, 20, "Debug Text")
 		}
+	}
+
+	// Draw debug feedback indicators
+	game_draw_debug_feedback(game, r)
+}
+
+// Draw debug visual feedback (screenshot indicator, etc.)
+game_draw_debug_feedback :: proc(game: ^Game, r: ^SDL_Renderer) {
+	// Update and draw capture feedback indicator
+	if game.debug.capture_feedback_time > 0 {
+		// Calculate fade: 1.0 at start, 0.0 at end
+		fade := game.debug.capture_feedback_time / 2000.0
+
+		// Red fades to grey: interpolate from (255, 0, 0) to (128, 128, 128)
+		red := u8(128 + 127 * fade)
+		green := u8(128 * (1.0 - fade))
+		blue := u8(128 * (1.0 - fade))
+
+		// Draw 16x16 square in bottom-right corner
+		indicator_rect := sdl3.FRect{
+			f32(RenderTargetSize.x) - 20, // 4px from right edge
+			f32(RenderTargetSize.y) - 20, // 4px from bottom edge
+			16,
+			16,
+		}
+
+		sdl3.SetRenderDrawColor(r.ptr, red, green, blue, 255)
+		sdl3.RenderFillRect(r.ptr, &indicator_rect)
 	}
 }
 
@@ -631,7 +694,7 @@ game_entity_do_behavior :: proc(game: ^Game) {
 	for &e in game.entity_pool.entities {
 		if !(.Is_Active in e.flags) {continue}
 
-		log.debugf("Updating entity: {}", e)
+		when DEBUG_GAME {log.debugf("Updating entity: {}", e)}
 
 		switch &v in e.variant {
 
@@ -641,7 +704,7 @@ game_entity_do_behavior :: proc(game: ^Game) {
 		case Entity_Enemy:
 			switch v.behavior.state {
 			case .idle:
-				log.debugf("Enemy missile idle: {}", v.behavior)
+				when DEBUG_GAME {log.debugf("Enemy missile idle: {}", v.behavior)}
 				if range_activated_missile_check_trigger(
 					&v.behavior,
 					{e.position.x, e.position.y},
