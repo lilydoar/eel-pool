@@ -73,7 +73,7 @@ entity_pool_create_entity :: proc(pool: ^Entity_Pool, entity: Entity) -> ^Entity
 		append(&pool.entities, entity)
 	}
 
-	log.debugf("Idx: {}, len: {}", idx, len(pool.entities))
+	when DEBUG_GAME {log.debugf("Idx: {}, len: {}", idx, len(pool.entities))}
 
 	pool.entities[idx].id = Entity_ID(idx)
 	pool.entities[idx].flags += {.Is_Active}
@@ -82,7 +82,7 @@ entity_pool_create_entity :: proc(pool: ^Entity_Pool, entity: Entity) -> ^Entity
 }
 
 entity_pool_destroy_entity :: proc(pool: ^Entity_Pool, entity: Entity) {
-	log.debugf("Removing entity: {}", entity)
+	when DEBUG_GAME {log.debugf("Removing entity: {}", entity)}
 
 	append(&pool.free_list, int(entity.id))
 
