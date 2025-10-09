@@ -306,31 +306,31 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 	when DEBUG_FRAME {log.debug("Begin drawing game frame")}
 	when DEBUG_FRAME {defer log.debug("End drawing game frame")}
 
-	{
-		// Draw level tilemap
-		for x in 0 ..< len(game.level.layers[0].tile) {
-
-			game_draw_tilemap_tile(
-				game,
-				r,
-				{
-					r.tilemaps.terrain.color1,
-					game.level.layers[0].tile[x],
-					sdl3.FRect {
-						cast(f32)(cast(u32)x %
-							game.level.layers[0].size.x *
-							game.tile_screen_size.x),
-						cast(f32)(cast(u32)x /
-							game.level.layers[0].size.x *
-							game.tile_screen_size.y),
-						cast(f32)r.tilemaps.terrain.color1.tile_size.x,
-						cast(f32)r.tilemaps.terrain.color1.tile_size.y,
-					},
-				},
-			)
-
-		}
-	}
+	// {
+	// 	// Draw level tilemap
+	// 	for x in 0 ..< len(game.level.layers[0].tile) {
+	//
+	// 		game_draw_tilemap_tile(
+	// 			game,
+	// 			r,
+	// 			{
+	// 				r.tilemaps.terrain.color1,
+	// 				game.level.layers[0].tile[x],
+	// 				sdl3.FRect {
+	// 					cast(f32)(cast(u32)x %
+	// 						game.level.layers[0].size.x *
+	// 						game.tile_screen_size.x),
+	// 					cast(f32)(cast(u32)x /
+	// 						game.level.layers[0].size.x *
+	// 						game.tile_screen_size.y),
+	// 					cast(f32)r.tilemaps.terrain.color1.tile_size.x,
+	// 					cast(f32)r.tilemaps.terrain.color1.tile_size.y,
+	// 				},
+	// 			},
+	// 		)
+	//
+	// 	}
+	// }
 
 	// demo_draw_tilemap_atlas(game, r)
 	// demo_draw_idle_atlas(game, r)
@@ -443,6 +443,19 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 					color_new(255, 255, 0, 255),
 				)
 			}
+
+		}
+
+		{
+			scalex, scaley: f32
+			sdl3.GetRenderScale(r.ptr, &scalex, &scaley)
+			defer sdl3.SetRenderScale(r.ptr, scalex, scaley)
+
+			sdl3.SetRenderScale(r.ptr, 2.0, 2.0)
+
+			sdl3.SetRenderDrawColor(r.ptr, 255, 255, 255, 255)
+			sdl3.RenderDebugText(r.ptr, 10, 10, "Controls:")
+			sdl3.RenderDebugTextFormat(r.ptr, 10, 20, "Debug Text")
 		}
 	}
 }
