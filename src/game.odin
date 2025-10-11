@@ -22,12 +22,12 @@ Game :: struct {
 	tile_screen_size: Vec2u, // Size of a tile on screen in pixels
 	level:            Level,
 	entity_pool:      Entity_Pool,
+	camera:           Camera,
 	// TODO: Use this entity struct to store pointers to "important" entities (maybe)???
 	entity:           struct {
 		player: struct {
-			// The player's position in pixels relative to the top-left corner of the screen
-			screen_x: f32,
-			screen_y: f32,
+			world_x:  f32,
+			world_y:  f32,
 			// The player's size on the screen in pixels
 			screen_w: f32,
 			screen_h: f32,
@@ -54,7 +54,7 @@ Game :: struct {
 }
 
 Game_Debug :: struct {
-	capture_feedback_time:     f32, // Time remaining for capture feedback indicator (0 = inactive)
+	capture_feedback_time:      f32, // Time remaining for capture feedback indicator (0 = inactive)
 	capture_screenshot_pending: bool, // Screenshot requested, will be captured at end of frame
 }
 
@@ -123,6 +123,12 @@ game_init :: proc(
 	game.frame_step_ms = 1000 / 60 // 16.666 ms per frame at 60 FPS
 
 	game.entity_pool = entity_pool_init()
+
+	game.camera = Camera {
+		view_size   = Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+		follow_mode = .with_lag,
+	}
+	camera_update(&game.camera)
 
 	// Load level-1 using asset manager
 	level_path := "data/levels/level-1.json"
@@ -227,8 +233,8 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 	}
 
 	if .editor_place_player in game.input {
-		game.entity.player.screen_x = mouse_pos.x
-		game.entity.player.screen_y = mouse_pos.y
+		game.entity.player.world_x = mouse_pos.x
+		game.entity.player.world_y = mouse_pos.y
 	} else if .editor_place_enemy in game.input {
 		entity_pool_create_entity(
 			&game.entity_pool,
@@ -272,8 +278,8 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 	game_entity_do_behavior(game)
 
 	// Apply player movement
-	game.entity.player.screen_x += player_final_move_x
-	game.entity.player.screen_y += player_final_move_y
+	game.entity.player.world_x += player_final_move_x
+	game.entity.player.world_y += player_final_move_y
 
 	// Apply player state
 	if player_final_move_x == 0 && player_final_move_y == 0 {
@@ -292,10 +298,10 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 	{
 		bounds_x: f32 = cast(f32)sdl.window.size_curr.x - game.entity.player.screen_w
 		bounds_y: f32 = cast(f32)sdl.window.size_curr.y - game.entity.player.screen_h
-		if game.entity.player.screen_x < 0.0 {game.entity.player.screen_x = 0.0}
-		if game.entity.player.screen_y < 0.0 {game.entity.player.screen_y = 0.0}
-		if game.entity.player.screen_x > bounds_x {game.entity.player.screen_x = bounds_x}
-		if game.entity.player.screen_y > bounds_y {game.entity.player.screen_y = bounds_y}
+		if game.entity.player.world_x < 0.0 {game.entity.player.world_x = 0.0}
+		if game.entity.player.world_y < 0.0 {game.entity.player.world_y = 0.0}
+		if game.entity.player.world_x > bounds_x {game.entity.player.world_x = bounds_x}
+		if game.entity.player.world_y > bounds_y {game.entity.player.world_y = bounds_y}
 	}
 
 	// when DEBUG_FRAME {
@@ -307,6 +313,12 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 	// 		game.entity.player.screen_y,
 	// 	)
 	// }
+
+	camera_set_target(&game.camera, Vec2{game.entity.player.world_x, game.entity.player.world_y})
+	target_visible := camera_update(&game.camera)
+	when DEBUG_GAME {
+		if !target_visible {log.warn("Camera target (player) is outside of the camera view!")}
+	}
 
 	game.frame_count += 1
 }
@@ -362,10 +374,18 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 
 					clip_rect := tileset.tilemap.tile_rects[local_id]
 
-					// Calculate screen position
+					screen_pos := camera_world_to_screen(
+						&game.camera,
+						Vec2 {
+							cast(f32)(x * game.tile_screen_size.x),
+							cast(f32)(y * game.tile_screen_size.y),
+						},
+						Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+					)
+
 					dst := sdl3.FRect {
-						f32(x * game.tile_screen_size.x),
-						f32(y * game.tile_screen_size.y),
+						screen_pos.x,
+						screen_pos.y,
 						f32(game.tile_screen_size.x),
 						f32(game.tile_screen_size.y),
 					}
@@ -393,9 +413,15 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 
 	{
 		// Draw player()
+		screen_pos := camera_world_to_screen(
+			&game.camera,
+			Vec2{game.entity.player.world_x, game.entity.player.world_y},
+			Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+		)
+
 		dst := sdl3.FRect {
-			cast(f32)game.entity.player.screen_x,
-			cast(f32)game.entity.player.screen_y,
+			screen_pos.x,
+			screen_pos.y,
 			cast(f32)game.entity.player.screen_w,
 			cast(f32)game.entity.player.screen_h,
 		}
@@ -427,8 +453,8 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 
 				// rotate the enemy to face the player
 				vec_enemy_to_player := Vec2 {
-					game.entity.player.screen_x - e.position.x,
-					game.entity.player.screen_y - e.position.y,
+					game.entity.player.world_x - e.position.x,
+					game.entity.player.world_y - e.position.y,
 				}
 
 				rotation := rad_to_deg(vec2_angle(vec_enemy_to_player))
@@ -493,7 +519,7 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 					r,
 					Line2 {
 						Vec2{e.position.x, e.position.y},
-						Vec2{game.entity.player.screen_x, game.entity.player.screen_y},
+						Vec2{game.entity.player.world_x, game.entity.player.world_y},
 					},
 					color_new(255, 255, 0, 255),
 				)
@@ -531,7 +557,7 @@ game_draw_debug_feedback :: proc(game: ^Game, r: ^SDL_Renderer) {
 		blue := u8(128 * (1.0 - fade))
 
 		// Draw 16x16 square in bottom-right corner
-		indicator_rect := sdl3.FRect{
+		indicator_rect := sdl3.FRect {
 			f32(RenderTargetSize.x) - 20, // 4px from right edge
 			f32(RenderTargetSize.y) - 20, // 4px from bottom edge
 			16,
@@ -708,7 +734,7 @@ game_entity_do_behavior :: proc(game: ^Game) {
 				if range_activated_missile_check_trigger(
 					&v.behavior,
 					{e.position.x, e.position.y},
-					{game.entity.player.screen_x, game.entity.player.screen_y},
+					{game.entity.player.world_x, game.entity.player.world_y},
 					curr_time,
 				) {
 					when DEBUG_FRAME {log.debug("Enemy missile triggered!")}
