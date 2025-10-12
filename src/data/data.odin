@@ -6,6 +6,7 @@ import "core:log"
 import "core:mem"
 import os "core:os/os2"
 import "core:path/filepath"
+import "core:slice"
 import "core:strings"
 import sdl3 "vendor:sdl3"
 import sdl3img "vendor:sdl3/image"
@@ -109,18 +110,18 @@ Asset_Manager :: struct {
 
 // Runtime tileset with loaded SDL textures
 Loaded_Tileset :: struct {
-	db_id:          i32,
-	firstgid:       u32, // First GID in Tiled map
-	texture:        SDL_Texture, // For single image tilesets
-	tilemap:        SDL_Tilemap,
-	tile_width:     i32,
-	tile_height:    i32,
-	columns:        i32,
-	tile_count:     i32,
+	db_id:         i32,
+	firstgid:      u32, // First GID in Tiled map
+	texture:       SDL_Texture, // For single image tilesets
+	tilemap:       SDL_Tilemap,
+	tile_width:    i32,
+	tile_height:   i32,
+	columns:       i32,
+	tile_count:    i32,
 	// For image collection tilesets
-	is_collection:  bool,
-	tile_textures:  []SDL_Texture, // Individual textures per tile
-	tile_sizes:     [][2]i32, // Individual sizes per tile (width, height)
+	is_collection: bool,
+	tile_textures: []SDL_Texture, // Individual textures per tile
+	tile_sizes:    [][2]i32, // Individual sizes per tile (width, height)
 }
 
 // Loaded Tiled map data
@@ -312,6 +313,12 @@ tiled_map_load :: proc(
 			}
 		}
 
+		// Sort objects by Y position for correct draw order (top to bottom)
+		// Objects with smaller Y values (top of screen) drawn first, larger Y (bottom) drawn last
+		slice.sort_by(map_data.layers[i].objects, proc(a, b: Tiled_Object) -> bool {
+			return a.position.y < b.position.y
+		})
+
 		if len(map_data.layers[i].data) > 0 {
 			map_data.layers[i].type = .tile_layer
 		} else {
@@ -410,7 +417,9 @@ tiled_tileset_load :: proc(
 			tile_image_path := filepath.join({tileset_dir, tile_info.image})
 
 			// Load texture using SDL_image
-			surface := sdl3img.Load(strings.clone_to_cstring(tile_image_path, context.temp_allocator))
+			surface := sdl3img.Load(
+				strings.clone_to_cstring(tile_image_path, context.temp_allocator),
+			)
 			if surface == nil {
 				log.errorf("Failed to load tile image: {}", tile_image_path)
 				continue
@@ -429,7 +438,10 @@ tiled_tileset_load :: proc(
 				texture = sdl_texture,
 			}
 
-			loaded.tile_sizes[tile_info.id] = {i32(tile_info.imagewidth), i32(tile_info.imageheight)}
+			loaded.tile_sizes[tile_info.id] = {
+				i32(tile_info.imagewidth),
+				i32(tile_info.imageheight),
+			}
 		}
 
 		// Set common dimensions (use the tileset's dimensions as defaults)
@@ -510,17 +522,17 @@ tiled_tileset_load :: proc(
 		}
 
 		loaded = Loaded_Tileset {
-			db_id          = -1, // Not in DB yet
-			firstgid       = firstgid,
-			texture        = texture,
-			tilemap        = tilemap,
-			tile_width     = i32(raw_tileset.tilewidth),
-			tile_height    = i32(raw_tileset.tileheight),
-			columns        = i32(raw_tileset.columns),
-			tile_count     = i32(raw_tileset.tilecount),
-			is_collection  = false,
-			tile_textures  = nil,
-			tile_sizes     = nil,
+			db_id         = -1, // Not in DB yet
+			firstgid      = firstgid,
+			texture       = texture,
+			tilemap       = tilemap,
+			tile_width    = i32(raw_tileset.tilewidth),
+			tile_height   = i32(raw_tileset.tileheight),
+			columns       = i32(raw_tileset.columns),
+			tile_count    = i32(raw_tileset.tilecount),
+			is_collection = false,
+			tile_textures = nil,
+			tile_sizes    = nil,
 		}
 	}
 

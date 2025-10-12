@@ -136,11 +136,6 @@ game_init :: proc(
 
 	game.entity_pool = entity_pool_init()
 
-	game.camera = Camera {
-		view_size   = Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
-		follow_mode = .with_lag,
-	}
-	camera_update(&game.camera)
 
 	game.timers.enemy_spawn_interval = 2000 // Spawn an enemy every 2 seconds
 	game.timers.enemy_spawn_timer = game.timers.enemy_spawn_interval
@@ -162,12 +157,14 @@ game_init :: proc(
 
 	// TODO: Bound to the middle platform of the level
 	game.level.playable_area = AABB2 {
-		min = Vec2{0, 0},
-		max = Vec2 {
-			cast(f32)(game.level.map_data.width * game.level.map_data.tile_width),
-			cast(f32)(game.level.map_data.height * game.level.map_data.tile_height),
-		},
+		min = Vec2{300, 680},
+		max = Vec2{1780, 1360},
 	}
+
+	game.entity.player.world_x =
+		(game.level.playable_area.min.x + game.level.playable_area.max.x) * 0.5
+	game.entity.player.world_y =
+		(game.level.playable_area.min.y + game.level.playable_area.max.y) * 0.5
 
 	game.entity.player.screen_w = 192
 	game.entity.player.screen_h = 192
@@ -218,6 +215,13 @@ game_init :: proc(
 			when DEBUG_GAME {log.debugf("Entity destroyed! New score: {}", game.score)}
 		}
 	})
+
+	game.camera = Camera {
+		position    = Vec2{game.entity.player.world_x, game.entity.player.world_y},
+		view_size   = Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+		follow_mode = .with_lag,
+	}
+	camera_update(&game.camera)
 }
 
 game_deinit :: proc(game: ^Game) {
@@ -360,15 +364,19 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 		game.entity.player.facing = .right
 	}
 
-	// Apply player screen bounds
-	// {
-	// 	bounds_x: f32 = cast(f32)sdl.window.size_curr.x - game.entity.player.screen_w
-	// 	bounds_y: f32 = cast(f32)sdl.window.size_curr.y - game.entity.player.screen_h
-	// 	if game.entity.player.world_x < 0.0 {game.entity.player.world_x = 0.0}
-	// 	if game.entity.player.world_y < 0.0 {game.entity.player.world_y = 0.0}
-	// 	if game.entity.player.world_x > bounds_x {game.entity.player.world_x = bounds_x}
-	// 	if game.entity.player.world_y > bounds_y {game.entity.player.world_y = bounds_y}
-	// }
+	// Apply player bounds
+	{
+		game.entity.player.world_x = clamp(
+			game.entity.player.world_x,
+			game.level.playable_area.min.x,
+			game.level.playable_area.max.x,
+		)
+		game.entity.player.world_y = clamp(
+			game.entity.player.world_y,
+			game.level.playable_area.min.y,
+			game.level.playable_area.max.y,
+		)
+	}
 
 	// when DEBUG_FRAME {
 	// 	log.debugf("player desire move: {}, {}", player_desire_move_x, player_desire_move_y)
@@ -842,6 +850,38 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 
 		}
 
+		{
+			scalex, scaley: f32
+			sdl3.GetRenderScale(r.ptr, &scalex, &scaley)
+			defer sdl3.SetRenderScale(r.ptr, scalex, scaley)
+
+			sdl3.SetRenderScale(r.ptr, 1.5, 1.5)
+			sdl3.SetRenderDrawColor(r.ptr, 255, 255, 255, 255)
+
+			sdl3.RenderDebugTextFormat(
+				r.ptr,
+				10,
+				20,
+				"World Pos: (%f, %f)",
+				game.entity.player.world_x,
+				game.entity.player.world_y,
+			)
+
+			screen_pos := camera_world_to_screen(
+				&game.camera,
+				Vec2{game.entity.player.world_x, game.entity.player.world_y},
+				Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+			)
+
+			sdl3.RenderDebugTextFormat(
+				r.ptr,
+				10,
+				30,
+				"Screen Pos: (%f, %f)",
+				screen_pos.x,
+				screen_pos.y,
+			)
+		}
 
 		// Draw debug feedback indicators
 		game_draw_debug_feedback(game, r)
@@ -1102,26 +1142,31 @@ game_update_timers :: proc(game: ^Game) {
 			lerp(game.level.playable_area.min.y, game.level.playable_area.max.y, rand.float32()),
 		}
 
-		entity_pool_create_entity(
-			&game.entity_pool,
-			Entity {
-				position = C_World_Position{enemy_pos.x, enemy_pos.y, 0},
-				collision = C_World_Collision(
-					AABB2 {
-						min = Vec2{enemy_pos.x, enemy_pos.y},
-						max = Vec2{enemy_pos.x + 64, enemy_pos.y + 64},
-					},
-				),
-				sprite = C_Sprite {
-					world_size   = Vec2{64, 64},
-					// Center the sprite on the entity position
-					world_offset = Vec2{32, 32},
-				},
-				variant = Entity_Enemy{behavior = {cfg = game.entity.enemy.behavior.cfg}},
-			},
+		dst_to_player := vec2_dst(
+			enemy_pos,
+			Vec2{game.entity.player.world_x, game.entity.player.world_y},
 		)
 
+		if dst_to_player >= game.entity.enemy.behavior.cfg.trigger_radius * 1.1 {
+			entity_pool_create_entity(
+				&game.entity_pool,
+				Entity {
+					position = C_World_Position{enemy_pos.x, enemy_pos.y, 0},
+					collision = C_World_Collision(
+						AABB2 {
+							min = Vec2{enemy_pos.x, enemy_pos.y},
+							max = Vec2{enemy_pos.x + 64, enemy_pos.y + 64},
+						},
+					),
+					sprite = C_Sprite {
+						world_size   = Vec2{64, 64},
+						// Center the sprite on the entity position
+						world_offset = Vec2{32, 32},
+					},
+					variant = Entity_Enemy{behavior = {cfg = game.entity.enemy.behavior.cfg}},
+				},
+			)
+		}
 	}
-
 }
 
