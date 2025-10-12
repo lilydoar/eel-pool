@@ -8,6 +8,19 @@ RAD_TO_DEG: f32 : 180.0 / math.PI
 deg_to_rad :: proc(deg: f32) -> f32 {return deg * DEG_TO_RAD}
 rad_to_deg :: proc(rad: f32) -> f32 {return rad * RAD_TO_DEG}
 
+lerp :: proc(a: f32, b: f32, t: f32) -> f32 {
+	return a + (b - a) * t
+}
+
+clamp :: proc(v: f32, min: f32, max: f32) -> f32 {
+	if v < min {
+		return min
+	} else if v > max {
+		return max
+	}
+	return v
+}
+
 Line2 :: struct {
 	a: Vec2,
 	b: Vec2,

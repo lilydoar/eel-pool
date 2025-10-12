@@ -4,7 +4,9 @@ import "base:runtime"
 import "core:container/queue"
 import "core:encoding/json"
 import "core:log"
+import "core:math/rand"
 import os "core:os/os2"
+import "data"
 import sdl3 "vendor:sdl3"
 
 Game :: struct {
@@ -17,16 +19,25 @@ Game :: struct {
 	input:            bit_set[game_control],
 	event_system:     Event_System,
 
-	// 
+	//
+	state:            enum {
+		Playing,
+		Win,
+		Lose,
+	},
 	tile_screen_size: Vec2u, // Size of a tile on screen in pixels
-	level:            game_level,
+	level:            Level,
 	entity_pool:      Entity_Pool,
-	// TODO: Use this entity struct to store pointers to "important" entities (maybe)??? 
+	camera:           Camera,
+	timers:           struct {
+		enemy_spawn_interval: f32,
+		enemy_spawn_timer:    f32,
+	},
+	score:            u32,
 	entity:           struct {
 		player: struct {
-			// The player's position in pixels relative to the top-left corner of the screen
-			screen_x: f32,
-			screen_y: f32,
+			world_x:  f32,
+			world_y:  f32,
 			// The player's size on the screen in pixels
 			screen_w: f32,
 			screen_h: f32,
@@ -47,6 +58,14 @@ Game :: struct {
 			behavior: Behavior_Range_Activated_Missile,
 		},
 	},
+
+	// Debug-related state
+	debug:            Game_Debug,
+}
+
+Game_Debug :: struct {
+	capture_feedback_time:      f32, // Time remaining for capture feedback indicator (0 = inactive)
+	capture_screenshot_pending: bool, // Screenshot requested, will be captured at end of frame
 }
 
 Game_Config :: struct {
@@ -69,6 +88,7 @@ game_control :: enum {
 	//
 	editor_place_player,
 	editor_place_enemy,
+	editor_capture_screen,
 }
 
 game_level :: struct {
@@ -94,7 +114,13 @@ game_sprite :: struct {
 	world_offset: Vec2,
 }
 
-game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger) {
+game_init :: proc(
+	game: ^Game,
+	ctx: runtime.Context,
+	logger: log.Logger,
+	sdl: ^SDL,
+	asset_manager: ^data.Asset_Manager,
+) {
 	context = ctx
 
 	// Initialization code for the game module
@@ -108,11 +134,41 @@ game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger) {
 
 	game.entity_pool = entity_pool_init()
 
+	game.camera = Camera {
+		view_size   = Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+		follow_mode = .with_lag,
+	}
+	camera_update(&game.camera)
+
+	game.timers.enemy_spawn_interval = 2000 // Spawn an enemy every 2 seconds
+	game.timers.enemy_spawn_timer = game.timers.enemy_spawn_interval
+
+	// Load level-1 using asset manager
+	level_path := "data/levels/level-1.json"
+	sdl_wrapper := data.SDL {
+		renderer = {renderer = sdl.renderer.ptr},
+	}
+	map_data, ok := data.tiled_map_load(asset_manager, &sdl_wrapper, level_path)
+	if ok {
+		game.level.map_data = map_data
+		log.infof("Loaded level: {} ({}x{} tiles)", level_path, map_data.width, map_data.height)
+	} else {
+		log.errorf("Failed to load level: {}", level_path)
+	}
+
+	// TODO: Bound to the middle platform of the level
+	game.level.playable_area = AABB2 {
+		min = Vec2{0, 0},
+		max = Vec2 {
+			cast(f32)(game.level.map_data.width * game.level.map_data.tile_width),
+			cast(f32)(game.level.map_data.height * game.level.map_data.tile_height),
+		},
+	}
+
 	game.entity.player.screen_w = 192
 	game.entity.player.screen_h = 192
 
 	game.entity.enemy.behavior.cfg = {
-		// TODO: Draw debug circle of this radius for tuning purposes
 		trigger_radius       = 240,
 		acceleration         = 11,
 		acceleration_time_ms = 1000,
@@ -134,45 +190,28 @@ game_init :: proc(game: ^Game, ctx: runtime.Context, logger: log.Logger) {
 
 	game_bind_control_to_mouse_button(game, .editor_place_player, .LEFT)
 	game_bind_control_to_mouse_button(game, .editor_place_enemy, .RIGHT)
+	game_bind_control_to_key(game, .editor_capture_screen, sdl3.K_0)
 
 	game.cfg.entity.player.player_move_speed_x_axis = 4
 	game.cfg.entity.player.player_move_speed_y_axis = 4
 
-	load_level :: proc(path: string) -> game_level {
-		log.debugf("Loading level from file: {}", path)
-		defer log.debugf("Finished loading level from file: {}", path)
-
-		data, err := os.read_entire_file_from_path(path, context.allocator)
-		if err != nil {
-			log.panicf("Failed to load level file {}: {}", path, err)
-		}
-
-		level: game_level
-		if err := json.unmarshal(data, &level); err != nil {
-			log.panicf("Failed to parse level file {}: {}", path, err)
-		}
-
-		assert(
-			level.layers[0].size.x * level.layers[0].size.y == cast(u32)len(level.layers[0].tile),
-		)
-		assert(
-			level.layers[0].size.x * level.layers[0].size.y ==
-			cast(u32)len(level.layers[0].collision),
-		)
-
-		log.debugf(
-			"Loaded level: size: {}, tiles: {}, collision: {}",
-			level.layers[0].size,
-			level.layers[0].tile,
-			level.layers[0].collision,
-		)
-
-		return level
-	}
-
-	game.level = load_level("data/levels/default.json")
-
 	game.tile_screen_size = {32, 32}
+
+	game.state = .Playing
+
+	event_subscribe_type(&game.event_system, .EntityDestroyed, proc(ctx: rawptr, e: Event) {
+		game: ^Game = cast(^Game)ctx
+
+		when DEBUG_GAME {log.debugf("Event received: EntityDestroyed, payload: {}", e.payload)}
+
+		if e.payload == nil {return}
+
+		#partial switch v in e.payload {
+		case EventPayloadEntityDestroyed:
+			game.score += 1
+			when DEBUG_GAME {log.debugf("Entity destroyed! New score: {}", game.score)}
+		}
+	})
 }
 
 game_deinit :: proc(game: ^Game) {
@@ -210,13 +249,44 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 
 	mouse_pos := sdl_mouse_get_render_position(sdl)
 
-	event_system_process(&game.event_system)
-	event_system_process_timed(&game.event_system, cast(f32)game.frame_step_ms)
+	event_system_process(game, &game.event_system)
+	event_system_process_timed(game, &game.event_system, cast(f32)game.frame_step_ms)
 
-	// Editor actions
+	switch game.state {
+	case .Playing:
+		if game.score >= 10 {
+			game.state = .Win
+		}
+
+		time_limit_ms: f64 = 60_000 // 60 seconds
+		if cast(f64)game.frame_count * game.frame_step_ms >= time_limit_ms {
+			game.state = .Lose
+		}
+	case .Win:
+		return
+	case .Lose:
+		return
+	}
+
+	// Update debug timers
+	if game.debug.capture_feedback_time > 0 {
+		game.debug.capture_feedback_time -= f32(game.frame_step_ms)
+		if game.debug.capture_feedback_time < 0 {
+			game.debug.capture_feedback_time = 0
+		}
+	}
+
+	// Editor actions (trigger on key release to avoid multiple captures)
+	if capture_key, ok := game.cfg.control_key[.editor_capture_screen]; ok {
+		if sdl_key_was_released(sdl, capture_key) {
+			// Set flag to capture screenshot at end of frame (after drawing)
+			game.debug.capture_screenshot_pending = true
+		}
+	}
+
 	if .editor_place_player in game.input {
-		game.entity.player.screen_x = mouse_pos.x
-		game.entity.player.screen_y = mouse_pos.y
+		game.entity.player.world_x = mouse_pos.x
+		game.entity.player.world_y = mouse_pos.y
 	} else if .editor_place_enemy in game.input {
 		entity_pool_create_entity(
 			&game.entity_pool,
@@ -237,6 +307,8 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 			},
 		)
 	}
+
+	game_update_timers(game)
 
 	// Player input -> movement
 	player_desire_move_x: f32
@@ -260,8 +332,8 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 	game_entity_do_behavior(game)
 
 	// Apply player movement
-	game.entity.player.screen_x += player_final_move_x
-	game.entity.player.screen_y += player_final_move_y
+	game.entity.player.world_x += player_final_move_x
+	game.entity.player.world_y += player_final_move_y
 
 	// Apply player state
 	if player_final_move_x == 0 && player_final_move_y == 0 {
@@ -277,14 +349,14 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 	}
 
 	// Apply player screen bounds
-	{
-		bounds_x: f32 = cast(f32)sdl.window.size_curr.x - game.entity.player.screen_w
-		bounds_y: f32 = cast(f32)sdl.window.size_curr.y - game.entity.player.screen_h
-		if game.entity.player.screen_x < 0.0 {game.entity.player.screen_x = 0.0}
-		if game.entity.player.screen_y < 0.0 {game.entity.player.screen_y = 0.0}
-		if game.entity.player.screen_x > bounds_x {game.entity.player.screen_x = bounds_x}
-		if game.entity.player.screen_y > bounds_y {game.entity.player.screen_y = bounds_y}
-	}
+	// {
+	// 	bounds_x: f32 = cast(f32)sdl.window.size_curr.x - game.entity.player.screen_w
+	// 	bounds_y: f32 = cast(f32)sdl.window.size_curr.y - game.entity.player.screen_h
+	// 	if game.entity.player.world_x < 0.0 {game.entity.player.world_x = 0.0}
+	// 	if game.entity.player.world_y < 0.0 {game.entity.player.world_y = 0.0}
+	// 	if game.entity.player.world_x > bounds_x {game.entity.player.world_x = bounds_x}
+	// 	if game.entity.player.world_y > bounds_y {game.entity.player.world_y = bounds_y}
+	// }
 
 	// when DEBUG_FRAME {
 	// 	log.debugf("player desire move: {}, {}", player_desire_move_x, player_desire_move_y)
@@ -296,6 +368,12 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 	// 	)
 	// }
 
+	camera_set_target(&game.camera, Vec2{game.entity.player.world_x, game.entity.player.world_y})
+	target_visible := camera_update(&game.camera)
+	when DEBUG_GAME {
+		if !target_visible {log.warn("Camera target (player) is outside of the camera view!")}
+	}
+
 	game.frame_count += 1
 }
 
@@ -306,31 +384,82 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 	when DEBUG_FRAME {log.debug("Begin drawing game frame")}
 	when DEBUG_FRAME {defer log.debug("End drawing game frame")}
 
-	// {
-	// 	// Draw level tilemap
-	// 	for x in 0 ..< len(game.level.layers[0].tile) {
-	//
-	// 		game_draw_tilemap_tile(
-	// 			game,
-	// 			r,
-	// 			{
-	// 				r.tilemaps.terrain.color1,
-	// 				game.level.layers[0].tile[x],
-	// 				sdl3.FRect {
-	// 					cast(f32)(cast(u32)x %
-	// 						game.level.layers[0].size.x *
-	// 						game.tile_screen_size.x),
-	// 					cast(f32)(cast(u32)x /
-	// 						game.level.layers[0].size.x *
-	// 						game.tile_screen_size.y),
-	// 					cast(f32)r.tilemaps.terrain.color1.tile_size.x,
-	// 					cast(f32)r.tilemaps.terrain.color1.tile_size.y,
-	// 				},
-	// 			},
-	// 		)
-	//
-	// 	}
-	// }
+	// Draw all level layers
+	if game.level.map_data != nil && len(game.level.map_data.layers) > 0 {
+		for layer, layer_idx in game.level.map_data.layers {
+			// Draw each tile in the layer
+			for y in 0 ..< layer.height {
+				for x in 0 ..< layer.width {
+					idx := y * layer.width + x
+					gid := layer.data[idx]
+
+					if gid == 0 {
+						continue // Empty tile
+					}
+
+					// Find which tileset this GID belongs to
+					tileset_idx := -1
+					local_id := gid
+
+					for ts, i in game.level.map_data.tilesets {
+						if gid >= ts.firstgid &&
+						   (i == len(game.level.map_data.tilesets) - 1 ||
+								   gid < game.level.map_data.tilesets[i + 1].firstgid) {
+							tileset_idx = i
+							local_id = gid - ts.firstgid
+							break
+						}
+					}
+
+					if tileset_idx < 0 || tileset_idx >= len(game.level.map_data.tilesets) {
+						continue
+					}
+
+					tileset := game.level.map_data.tilesets[tileset_idx]
+
+					if local_id >= u32(len(tileset.tilemap.tile)) {
+						continue
+					}
+
+					// Get tile clip rect
+					if local_id >= u32(len(tileset.tilemap.tile_rects)) {
+						continue
+					}
+
+					clip_rect := tileset.tilemap.tile_rects[local_id]
+
+					screen_pos := camera_world_to_screen(
+						&game.camera,
+						Vec2 {
+							cast(f32)(x * game.tile_screen_size.x),
+							cast(f32)(y * game.tile_screen_size.y),
+						},
+						Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+					)
+
+					dst := sdl3.FRect {
+						screen_pos.x,
+						screen_pos.y,
+						f32(game.tile_screen_size.x),
+						f32(game.tile_screen_size.y),
+					}
+
+					// Render tile
+					sdl3.RenderTexture(
+						r.ptr,
+						tileset.texture.texture,
+						&sdl3.FRect {
+							f32(clip_rect.x),
+							f32(clip_rect.y),
+							f32(clip_rect.w),
+							f32(clip_rect.h),
+						},
+						&dst,
+					)
+				}
+			}
+		}
+	}
 
 	// demo_draw_tilemap_atlas(game, r)
 	// demo_draw_idle_atlas(game, r)
@@ -338,54 +467,77 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 
 	{
 		// Draw player()
-		dst := sdl3.FRect {
-			cast(f32)game.entity.player.screen_x,
-			cast(f32)game.entity.player.screen_y,
-			cast(f32)game.entity.player.screen_w,
-			cast(f32)game.entity.player.screen_h,
-		}
+		if game.state == .Playing {
+			screen_pos := camera_world_to_screen(
+				&game.camera,
+				Vec2{game.entity.player.world_x, game.entity.player.world_y},
+				Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+			)
 
-		mirror_x := false if game.entity.player.facing == .right else true
+			dst := sdl3.FRect {
+				screen_pos.x,
+				screen_pos.y,
+				cast(f32)game.entity.player.screen_w,
+				cast(f32)game.entity.player.screen_h,
+			}
 
-		switch game.entity.player.action {
-		case .idle:
-			game_draw_animation(game, r, {animation_player_idle, dst, 0, mirror_x})
-		case .running:
-			game_draw_animation(game, r, {animation_player_run, dst, 0, mirror_x})
-		case .guard:
-		case .attack:
+			mirror_x := false if game.entity.player.facing == .right else true
+
+			switch game.entity.player.action {
+			case .idle:
+				game_draw_animation(game, r, {animation_player_idle, dst, 0, mirror_x})
+			case .running:
+				game_draw_animation(game, r, {animation_player_run, dst, 0, mirror_x})
+			case .guard:
+			case .attack:
+			}
 		}
 	}
 
 	{
 		// Draw enemy()
-		for e in game.entity_pool.entities {
-			if !(.Is_Active in e.flags) {continue}
-			#partial switch v in e.variant {
-			case Entity_Enemy:
-				dst := sdl3.FRect {
-					cast(f32)e.position.x,
-					cast(f32)e.position.y,
-					cast(f32)e.sprite.world_size.x,
-					cast(f32)e.sprite.world_size.y,
+		if game.state == .Playing {
+			for e in game.entity_pool.entities {
+				if !(.Is_Active in e.flags) {continue}
+
+				#partial switch v in e.variant {
+				case Entity_Enemy:
+					screen_pos := camera_world_to_screen(
+						&game.camera,
+						Vec2{e.position.x, e.position.y},
+						Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+					)
+
+					dst := sdl3.FRect {
+						screen_pos.x,
+						screen_pos.y,
+						cast(f32)e.sprite.world_size.x,
+						cast(f32)e.sprite.world_size.y,
+					}
+
+					// rotate the enemy to face the player
+					player_screen_pos := camera_world_to_screen(
+						&game.camera,
+						Vec2{game.entity.player.world_x, game.entity.player.world_y},
+						Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+					)
+
+					vec_enemy_to_player := Vec2 {
+						player_screen_pos.x - screen_pos.x,
+						player_screen_pos.y - screen_pos.y,
+					}
+
+					rotation := rad_to_deg(vec2_angle(vec_enemy_to_player))
+
+					switch game.entity.enemy.behavior.state {
+					case .idle:
+						game_draw_sprite(game, r, {sprite_archer_arrow, dst, rotation, false})
+					case .active:
+						// TODO: Rotate to face player
+						game_draw_sprite(game, r, {sprite_archer_arrow, dst, rotation, false})
+					}
+
 				}
-
-				// rotate the enemy to face the player
-				vec_enemy_to_player := Vec2 {
-					game.entity.player.screen_x - e.position.x,
-					game.entity.player.screen_y - e.position.y,
-				}
-
-				rotation := rad_to_deg(vec2_angle(vec_enemy_to_player))
-
-				switch game.entity.enemy.behavior.state {
-				case .idle:
-					game_draw_sprite(game, r, {sprite_archer_arrow, dst, rotation, false})
-				case .active:
-					// TODO: Rotate to face player
-					game_draw_sprite(game, r, {sprite_archer_arrow, dst, rotation, false})
-				}
-
 			}
 		}
 	}
@@ -423,40 +575,81 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 			if !(.Is_Active in e.flags) {continue}
 			#partial switch v in e.variant {
 			case Entity_Enemy:
+				e_screen_pos := camera_world_to_screen(
+					&game.camera,
+					Vec2{e.position.x, e.position.y},
+					Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+				)
+
 				// Draw trigger radius circle around enemy
 				debug_draw_circle(
 					r,
-					Circle {
-						Vec2{e.position.x, e.position.y},
-						cast(f32)game.entity.enemy.behavior.cfg.trigger_radius,
-					},
+					Circle{e_screen_pos, cast(f32)game.entity.enemy.behavior.cfg.trigger_radius},
 					color_new(255, 0, 0, 255),
 				)
 
 				// Draw line from enemy to player
+				player_screen_pos := camera_world_to_screen(
+					&game.camera,
+					Vec2{game.entity.player.world_x, game.entity.player.world_y},
+					Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+				)
+
 				debug_draw_line(
 					r,
-					Line2 {
-						Vec2{e.position.x, e.position.y},
-						Vec2{game.entity.player.screen_x, game.entity.player.screen_y},
-					},
+					Line2{e_screen_pos, player_screen_pos},
 					color_new(255, 255, 0, 255),
 				)
 			}
 
 		}
 
-		{
-			scalex, scaley: f32
-			sdl3.GetRenderScale(r.ptr, &scalex, &scaley)
-			defer sdl3.SetRenderScale(r.ptr, scalex, scaley)
 
-			sdl3.SetRenderScale(r.ptr, 2.0, 2.0)
+		// Draw debug feedback indicators
+		game_draw_debug_feedback(game, r)
+	}
 
-			sdl3.SetRenderDrawColor(r.ptr, 255, 255, 255, 255)
-			sdl3.RenderDebugText(r.ptr, 10, 10, "Controls:")
-			sdl3.RenderDebugTextFormat(r.ptr, 10, 20, "Debug Text")
+	{
+		scalex, scaley: f32
+		sdl3.GetRenderScale(r.ptr, &scalex, &scaley)
+		defer sdl3.SetRenderScale(r.ptr, scalex, scaley)
+
+		sdl3.SetRenderScale(r.ptr, 1.5, 1.5)
+		sdl3.SetRenderDrawColor(r.ptr, 255, 255, 255, 255)
+
+		switch game.state {
+		case .Playing:
+			sdl3.RenderDebugTextFormat(r.ptr, 10, 10, "Score: %d", game.score)
+		case .Win:
+			sdl3.RenderDebugTextFormat(r.ptr, 10, 40, "You Win!")
+		case .Lose:
+			sdl3.RenderDebugTextFormat(r.ptr, 10, 40, "Time's up. You Lose!")
 		}
+	}
+}
+
+// Draw debug visual feedback (screenshot indicator, etc.)
+game_draw_debug_feedback :: proc(game: ^Game, r: ^SDL_Renderer) {
+	// Update and draw capture feedback indicator
+	if game.debug.capture_feedback_time > 0 {
+		// Calculate fade: 1.0 at start, 0.0 at end
+		fade := game.debug.capture_feedback_time / 2000.0
+
+		// Red fades to grey: interpolate from (255, 0, 0) to (128, 128, 128)
+		red := u8(128 + 127 * fade)
+		green := u8(128 * (1.0 - fade))
+		blue := u8(128 * (1.0 - fade))
+
+		// Draw 16x16 square in bottom-right corner
+		indicator_rect := sdl3.FRect {
+			f32(RenderTargetSize.x) - 20, // 4px from right edge
+			f32(RenderTargetSize.y) - 20, // 4px from bottom edge
+			16,
+			16,
+		}
+
+		sdl3.SetRenderDrawColor(r.ptr, red, green, blue, 255)
+		sdl3.RenderFillRect(r.ptr, &indicator_rect)
 	}
 }
 
@@ -549,7 +742,6 @@ game_draw_animation :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 	)
 }
 
-
 game_draw_sprite :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 		sprite:       game_sprite,
 		dest:         sdl3.FRect,
@@ -597,21 +789,10 @@ game_entity_do_behavior :: proc(game: ^Game) {
 
 	curr_time := cast(f64)game.frame_count * game.frame_step_ms
 
-	// player: ^Entity
-	// for &e in game.entity_pool.entities {
-	// 	if !e.active {continue}
-	// 	#partial switch v in e.variant {
-	// 	case Entity_Player:
-	// 		player = &e
-	// 		break
-	// 	}
-	// }
-	// log.debugf("Player: {}", player^)
-
 	for &e in game.entity_pool.entities {
 		if !(.Is_Active in e.flags) {continue}
 
-		log.debugf("Updating entity: {}", e)
+		when DEBUG_GAME {log.debugf("Updating entity: {}", e)}
 
 		switch &v in e.variant {
 
@@ -621,11 +802,11 @@ game_entity_do_behavior :: proc(game: ^Game) {
 		case Entity_Enemy:
 			switch v.behavior.state {
 			case .idle:
-				log.debugf("Enemy missile idle: {}", v.behavior)
+				when DEBUG_GAME {log.debugf("Enemy missile idle: {}", v.behavior)}
 				if range_activated_missile_check_trigger(
 					&v.behavior,
 					{e.position.x, e.position.y},
-					{game.entity.player.screen_x, game.entity.player.screen_y},
+					{game.entity.player.world_x, game.entity.player.world_y},
 					curr_time,
 				) {
 					when DEBUG_FRAME {log.debug("Enemy missile triggered!")}
@@ -637,6 +818,11 @@ game_entity_do_behavior :: proc(game: ^Game) {
 				) {
 					when DEBUG_FRAME {log.debug("Enemy missile lifetime expired!")}
 					entity_pool_destroy_entity(&game.entity_pool, e)
+					event_publish(
+						&game.event_system,
+						.EntityDestroyed,
+						EventPayloadEntityDestroyed{e.id},
+					)
 					continue
 				}
 
@@ -650,5 +836,40 @@ game_entity_do_behavior :: proc(game: ^Game) {
 			}
 		}
 	}
+}
+
+game_update_timers :: proc(game: ^Game) {
+	game.timers.enemy_spawn_timer -= f32(game.frame_step_ms)
+
+	if game.timers.enemy_spawn_timer <= 0 {
+		game.timers.enemy_spawn_timer += game.timers.enemy_spawn_interval
+
+		// Spawn an enemy at a random position
+		enemy_pos := Vec2 {
+			lerp(game.level.playable_area.min.x, game.level.playable_area.max.x, rand.float32()),
+			lerp(game.level.playable_area.min.y, game.level.playable_area.max.y, rand.float32()),
+		}
+
+		entity_pool_create_entity(
+			&game.entity_pool,
+			Entity {
+				position = C_World_Position{enemy_pos.x, enemy_pos.y, 0},
+				collision = C_World_Collision(
+					AABB2 {
+						min = Vec2{enemy_pos.x, enemy_pos.y},
+						max = Vec2{enemy_pos.x + 64, enemy_pos.y + 64},
+					},
+				),
+				sprite = C_Sprite {
+					world_size   = Vec2{64, 64},
+					// Center the sprite on the entity position
+					world_offset = Vec2{32, 32},
+				},
+				variant = Entity_Enemy{behavior = {cfg = game.entity.enemy.behavior.cfg}},
+			},
+		)
+
+	}
+
 }
 

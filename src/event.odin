@@ -1,11 +1,13 @@
 package game
 
 import "core:container/queue"
+import "core:log"
 
 EventType :: enum {
 	Invalid,
 	TextUpdate,
 	PositionChange,
+	EntityDestroyed,
 }
 
 EventPayloadTextUpdate :: struct {
@@ -17,9 +19,14 @@ EventPayloadPositionChange :: struct {
 	pos: [2]f32,
 }
 
+EventPayloadEntityDestroyed :: struct {
+	entity_id: Entity_ID,
+}
+
 EventPayload :: union {
 	EventPayloadTextUpdate,
 	EventPayloadPositionChange,
+	EventPayloadEntityDestroyed,
 }
 
 Event :: struct {
@@ -32,7 +39,7 @@ TimedEvent :: struct {
 	timer:       f32,
 }
 
-EventCallbackProc :: proc(event: Event)
+EventCallbackProc :: proc(ctx: rawptr, event: Event)
 
 Event_System :: struct {
 	// Event callback type
@@ -43,6 +50,7 @@ Event_System :: struct {
 
 event_publish :: proc(e: ^Event_System, type: EventType, payload: EventPayload) {
 	queue.enqueue(&e.event_queue, Event{type = type, payload = payload})
+	when DEBUG_GAME {log.debugf("Event published: %d", type)}
 }
 
 event_publish_timed :: proc(
@@ -62,19 +70,19 @@ event_subscribe_type :: proc(e: ^Event_System, type: EventType, callback: EventC
 	append(&e.event_listeners[type], callback)
 }
 
-event_system_process :: proc(e: ^Event_System) {
+event_system_process :: proc(ctx: rawptr, e: ^Event_System) {
 	for queue.len(e.event_queue) > 0 {
 		event := queue.dequeue(&e.event_queue)
 
 		if listeners, ok := e.event_listeners[event.type]; ok {
 			for callback in listeners {
-				callback(event)
+				callback(ctx, event)
 			}
 		}
 	}
 }
 
-event_system_process_timed :: proc(e: ^Event_System, delta_time: f32) {
+event_system_process_timed :: proc(ctx: rawptr, e: ^Event_System, delta_time: f32) {
 	// Reverse iteration so we can use unordered_remove
 	for i := len(e.timed_event_queue) - 1; i >= 0; i -= 1 {
 		event := &e.timed_event_queue[i]
@@ -84,7 +92,7 @@ event_system_process_timed :: proc(e: ^Event_System, delta_time: f32) {
 		if event.timer <= 0 {
 			if listeners, ok := e.event_listeners[event.type]; ok {
 				for callback in listeners {
-					callback(event)
+					callback(ctx, event)
 				}
 			}
 

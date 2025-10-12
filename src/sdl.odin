@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:log"
 import "core:strings"
 import "core:time"
@@ -39,6 +40,10 @@ SDL_Keyboard :: struct {
 	// Symbolic keys. Unaware of the keyboard layout.
 	keycodes_prev:  map[sdl3.Keycode]bool,
 	keycodes_curr:  map[sdl3.Keycode]bool,
+
+	// Key modifiers (shift, ctrl, alt, etc.)
+	mods_prev: sdl3.Keymod,
+	mods_curr: sdl3.Keymod,
 }
 
 SDL_Mouse :: struct {
@@ -95,6 +100,25 @@ SDL_Animation :: struct {
 
 	// world_offset is the vector from the top left of the frame surface to the world_position of the "thing" the animation represents
 	world_offset: Vec2,
+}
+
+SDL_Level :: struct {
+	name:      string,
+	size:      Vec2u,
+	tile_size: Vec2u,
+	tilesets:  []struct {
+		tileset:  SDL_Tileset,
+		firstgid: u32,
+	},
+	layers:    []struct {
+		name: string,
+		size: Vec2u,
+		data: []u32,
+	},
+}
+
+SDL_Tileset :: struct {
+	name: string,
 }
 
 sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
@@ -268,7 +292,7 @@ sdl_deinit :: proc(s: ^SDL) {
 	sdl3.Quit()
 }
 
-sdl_frame_begin :: proc(s: ^SDL) -> (quit: bool) {
+sdl_frame_begin :: proc(s: ^SDL, delta_ms: f32 = 0) -> (quit: bool) {
 	// Track state across time steps.
 	s.window.size_prev = s.window.size_curr
 	s.keyboard.scancodes_prev = s.keyboard.scancodes_curr
@@ -277,6 +301,8 @@ sdl_frame_begin :: proc(s: ^SDL) -> (quit: bool) {
 	for keycode, pressed in s.keyboard.keycodes_curr {
 		s.keyboard.keycodes_prev[keycode] = pressed
 	}
+
+	s.keyboard.mods_prev = s.keyboard.mods_curr
 
 	s.mouse.pos_prev = s.mouse.pos_curr
 	s.mouse.buttons_prev = s.mouse.buttons_curr
@@ -318,7 +344,12 @@ sdl_handle_event :: proc(s: ^SDL, e: sdl3.Event) -> (quit: bool) {
 	case .KEY_DOWN, .KEY_UP:
 		pressed := e.type == .KEY_DOWN
 		s.keyboard.scancodes_curr[e.key.scancode] = pressed
-		s.keyboard.keycodes_curr[e.key.key] = pressed
+		if pressed {
+			s.keyboard.keycodes_curr[e.key.key] = true
+		} else {
+			delete_key(&s.keyboard.keycodes_curr, e.key.key)
+		}
+		s.keyboard.mods_curr = e.key.mod
 	case .MOUSE_MOTION:
 		s.mouse.pos_curr = {e.motion.x, e.motion.y}
 	case .MOUSE_BUTTON_DOWN, .MOUSE_BUTTON_UP:
@@ -350,6 +381,41 @@ sdl_frame_end :: proc(s: ^SDL) {
 	sdl3.SetRenderTarget(s.renderer.ptr, nil)
 	sdl3.RenderTexture(s.renderer.ptr, s.renderer.textures.render_target.texture, nil, nil)
 	sdl3.RenderPresent(s.renderer.ptr)
+}
+
+// Capture screenshot from render target and save to file
+sdl_capture_screenshot :: proc(s: ^SDL) {
+	// Generate filename with timestamp and frame count
+	now := time.now()
+	date_str := fmt.tprintf("%04d%02d%02d", time.year(now), time.month(now), time.day(now))
+	hour, min, sec := time.clock(now)
+	time_str := fmt.tprintf("%02d%02d%02d", hour, min, sec)
+
+	// Use tick for random ID
+	random_id := fmt.tprintf("%08X", u32(time.tick_now()._nsec) & 0xFFFFFFFF)
+
+	filename := fmt.tprintf("dev/screen_capture/%s-%s-%s.bmp", date_str, time_str, random_id)
+	filename_cstr := strings.clone_to_cstring(filename, context.temp_allocator)
+
+	// Ensure render target is still active
+	sdl3.SetRenderTarget(s.renderer.ptr, s.renderer.textures.render_target.texture)
+
+	// Read pixels from the current render target - returns a new surface
+	surface := sdl3.RenderReadPixels(s.renderer.ptr, nil)
+	if surface == nil {
+		log.errorf("Failed to read pixels from render target: {}", sdl3.GetError())
+		return
+	}
+	defer sdl3.DestroySurface(surface)
+
+	// Save the surface as BMP
+	save_result := sdl3.SaveBMP(surface, filename_cstr)
+
+	if save_result {
+		log.infof("Screenshot saved: {}", filename)
+	} else {
+		log.errorf("Failed to save screenshot: {} - {}", filename, sdl3.GetError())
+	}
 }
 
 // Helpers
@@ -456,6 +522,48 @@ sdl_mouse_get_render_position :: proc(s: ^SDL) -> (pos: Vec2) {
 	m_pos := sdl_mouse_get_position(s)
 	sdl3.RenderCoordinatesFromWindow(s.renderer.ptr, m_pos.x, m_pos.y, &pos.x, &pos.y)
 	return
+}
+
+// Keyboard utilities
+
+// Check if key is currently down (held)
+sdl_key_is_down :: proc(s: ^SDL, key: sdl3.Keycode) -> bool {
+	return key in s.keyboard.keycodes_curr
+}
+
+// Check if key is currently up (not pressed)
+sdl_key_is_up :: proc(s: ^SDL, key: sdl3.Keycode) -> bool {
+	return key not_in s.keyboard.keycodes_curr
+}
+
+// Check if key was just pressed this frame (transition from up to down)
+sdl_key_was_pressed :: proc(s: ^SDL, key: sdl3.Keycode) -> bool {
+	return key in s.keyboard.keycodes_curr && key not_in s.keyboard.keycodes_prev
+}
+
+// Check if key was just released this frame (transition from down to up)
+sdl_key_was_released :: proc(s: ^SDL, key: sdl3.Keycode) -> bool {
+	return key not_in s.keyboard.keycodes_curr && key in s.keyboard.keycodes_prev
+}
+
+// Check if specific modifier is active
+sdl_mod_is_active :: proc(s: ^SDL, mod: sdl3.KeymodFlag) -> bool {
+	return mod in s.keyboard.mods_curr
+}
+
+// Check if any of the specified modifiers are active
+sdl_mods_any_active :: proc(s: ^SDL, mods: sdl3.Keymod) -> bool {
+	return (s.keyboard.mods_curr & mods) != {}
+}
+
+// Check if all of the specified modifiers are active
+sdl_mods_all_active :: proc(s: ^SDL, mods: sdl3.Keymod) -> bool {
+	return (s.keyboard.mods_curr & mods) == mods
+}
+
+// Check if no modifiers are active
+sdl_mods_none_active :: proc(s: ^SDL) -> bool {
+	return s.keyboard.mods_curr == {}
 }
 
 // Renderer utilities
