@@ -28,6 +28,7 @@ Game :: struct {
 		enemy_spawn_interval: f32,
 		enemy_spawn_timer:    f32,
 	},
+	score:            u32,
 	entity:           struct {
 		player: struct {
 			world_x:  f32,
@@ -189,9 +190,21 @@ game_init :: proc(
 	game.cfg.entity.player.player_move_speed_x_axis = 4
 	game.cfg.entity.player.player_move_speed_y_axis = 4
 
-	// game.level = load_level("data/levels/default.json")
-
 	game.tile_screen_size = {32, 32}
+
+	event_subscribe_type(&game.event_system, .EntityDestroyed, proc(ctx: rawptr, e: Event) {
+		game: ^Game = cast(^Game)ctx
+
+		when DEBUG_GAME {log.debugf("Event received: EntityDestroyed, payload: {}", e.payload)}
+
+		if e.payload == nil {return}
+
+		#partial switch v in e.payload {
+		case EventPayloadEntityDestroyed:
+			game.score += 1
+			when DEBUG_GAME {log.debugf("Entity destroyed! New score: {}", game.score)}
+		}
+	})
 }
 
 game_deinit :: proc(game: ^Game) {
@@ -229,8 +242,8 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 
 	mouse_pos := sdl_mouse_get_render_position(sdl)
 
-	event_system_process(&game.event_system)
-	event_system_process_timed(&game.event_system, cast(f32)game.frame_step_ms)
+	event_system_process(game, &game.event_system)
+	event_system_process_timed(game, &game.event_system, cast(f32)game.frame_step_ms)
 
 	// Update debug timers
 	if game.debug.capture_feedback_time > 0 {
@@ -569,11 +582,12 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 			sdl3.GetRenderScale(r.ptr, &scalex, &scaley)
 			defer sdl3.SetRenderScale(r.ptr, scalex, scaley)
 
-			sdl3.SetRenderScale(r.ptr, 2.0, 2.0)
+			sdl3.SetRenderScale(r.ptr, 1.5, 1.5)
 
 			sdl3.SetRenderDrawColor(r.ptr, 255, 255, 255, 255)
-			sdl3.RenderDebugText(r.ptr, 10, 10, "Controls:")
-			sdl3.RenderDebugTextFormat(r.ptr, 10, 20, "Debug Text")
+			sdl3.RenderDebugTextFormat(r.ptr, 10, 10, "Score: %d", game.score)
+
+			log.debugf("Score: {}", game.score)
 		}
 
 		// Draw debug feedback indicators
@@ -695,7 +709,6 @@ game_draw_animation :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 	)
 }
 
-
 game_draw_sprite :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 		sprite:       game_sprite,
 		dest:         sdl3.FRect,
@@ -743,17 +756,6 @@ game_entity_do_behavior :: proc(game: ^Game) {
 
 	curr_time := cast(f64)game.frame_count * game.frame_step_ms
 
-	// player: ^Entity
-	// for &e in game.entity_pool.entities {
-	// 	if !e.active {continue}
-	// 	#partial switch v in e.variant {
-	// 	case Entity_Player:
-	// 		player = &e
-	// 		break
-	// 	}
-	// }
-	// log.debugf("Player: {}", player^)
-
 	for &e in game.entity_pool.entities {
 		if !(.Is_Active in e.flags) {continue}
 
@@ -783,6 +785,11 @@ game_entity_do_behavior :: proc(game: ^Game) {
 				) {
 					when DEBUG_FRAME {log.debug("Enemy missile lifetime expired!")}
 					entity_pool_destroy_entity(&game.entity_pool, e)
+					event_publish(
+						&game.event_system,
+						.EntityDestroyed,
+						EventPayloadEntityDestroyed{e.id},
+					)
 					continue
 				}
 
