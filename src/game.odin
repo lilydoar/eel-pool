@@ -4,6 +4,7 @@ import "base:runtime"
 import "core:container/queue"
 import "core:encoding/json"
 import "core:log"
+import "core:math/rand"
 import os "core:os/os2"
 import "data"
 import sdl3 "vendor:sdl3"
@@ -23,7 +24,10 @@ Game :: struct {
 	level:            Level,
 	entity_pool:      Entity_Pool,
 	camera:           Camera,
-	// TODO: Use this entity struct to store pointers to "important" entities (maybe)???
+	timers:           struct {
+		enemy_spawn_interval: f32,
+		enemy_spawn_timer:    f32,
+	},
 	entity:           struct {
 		player: struct {
 			world_x:  f32,
@@ -130,6 +134,9 @@ game_init :: proc(
 	}
 	camera_update(&game.camera)
 
+	game.timers.enemy_spawn_interval = 2000 // Spawn an enemy every 2 seconds
+	game.timers.enemy_spawn_timer = game.timers.enemy_spawn_interval
+
 	// Load level-1 using asset manager
 	level_path := "data/levels/level-1.json"
 	sdl_wrapper := data.SDL {
@@ -141,6 +148,15 @@ game_init :: proc(
 		log.infof("Loaded level: {} ({}x{} tiles)", level_path, map_data.width, map_data.height)
 	} else {
 		log.errorf("Failed to load level: {}", level_path)
+	}
+
+	// TODO: Bound to the middle platform of the level
+	game.level.playable_area = AABB2 {
+		min = Vec2{0, 0},
+		max = Vec2 {
+			cast(f32)(game.level.map_data.width * game.level.map_data.tile_width),
+			cast(f32)(game.level.map_data.height * game.level.map_data.tile_height),
+		},
 	}
 
 	game.entity.player.screen_w = 192
@@ -256,6 +272,8 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 		)
 	}
 
+	game_update_timers(game)
+
 	// Player input -> movement
 	player_desire_move_x: f32
 	player_desire_move_y: f32
@@ -295,14 +313,14 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 	}
 
 	// Apply player screen bounds
-	{
-		bounds_x: f32 = cast(f32)sdl.window.size_curr.x - game.entity.player.screen_w
-		bounds_y: f32 = cast(f32)sdl.window.size_curr.y - game.entity.player.screen_h
-		if game.entity.player.world_x < 0.0 {game.entity.player.world_x = 0.0}
-		if game.entity.player.world_y < 0.0 {game.entity.player.world_y = 0.0}
-		if game.entity.player.world_x > bounds_x {game.entity.player.world_x = bounds_x}
-		if game.entity.player.world_y > bounds_y {game.entity.player.world_y = bounds_y}
-	}
+	// {
+	// 	bounds_x: f32 = cast(f32)sdl.window.size_curr.x - game.entity.player.screen_w
+	// 	bounds_y: f32 = cast(f32)sdl.window.size_curr.y - game.entity.player.screen_h
+	// 	if game.entity.player.world_x < 0.0 {game.entity.player.world_x = 0.0}
+	// 	if game.entity.player.world_y < 0.0 {game.entity.player.world_y = 0.0}
+	// 	if game.entity.player.world_x > bounds_x {game.entity.player.world_x = bounds_x}
+	// 	if game.entity.player.world_y > bounds_y {game.entity.player.world_y = bounds_y}
+	// }
 
 	// when DEBUG_FRAME {
 	// 	log.debugf("player desire move: {}, {}", player_desire_move_x, player_desire_move_y)
@@ -759,5 +777,40 @@ game_entity_do_behavior :: proc(game: ^Game) {
 			}
 		}
 	}
+}
+
+game_update_timers :: proc(game: ^Game) {
+	game.timers.enemy_spawn_timer -= f32(game.frame_step_ms)
+
+	if game.timers.enemy_spawn_timer <= 0 {
+		game.timers.enemy_spawn_timer += game.timers.enemy_spawn_interval
+
+		// Spawn an enemy at a random position
+		enemy_pos := Vec2 {
+			lerp(game.level.playable_area.min.x, game.level.playable_area.max.x, rand.float32()),
+			lerp(game.level.playable_area.min.y, game.level.playable_area.max.y, rand.float32()),
+		}
+
+		entity_pool_create_entity(
+			&game.entity_pool,
+			Entity {
+				position = C_World_Position{enemy_pos.x, enemy_pos.y, 0},
+				collision = C_World_Collision(
+					AABB2 {
+						min = Vec2{enemy_pos.x, enemy_pos.y},
+						max = Vec2{enemy_pos.x + 64, enemy_pos.y + 64},
+					},
+				),
+				sprite = C_Sprite {
+					world_size   = Vec2{64, 64},
+					// Center the sprite on the entity position
+					world_offset = Vec2{32, 32},
+				},
+				variant = Entity_Enemy{behavior = {cfg = game.entity.enemy.behavior.cfg}},
+			},
+		)
+
+	}
+
 }
 
