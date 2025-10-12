@@ -20,6 +20,11 @@ Game :: struct {
 	event_system:     Event_System,
 
 	//
+	state:            enum {
+		Playing,
+		Win,
+		Lose,
+	},
 	tile_screen_size: Vec2u, // Size of a tile on screen in pixels
 	level:            Level,
 	entity_pool:      Entity_Pool,
@@ -192,6 +197,8 @@ game_init :: proc(
 
 	game.tile_screen_size = {32, 32}
 
+	game.state = .Playing
+
 	event_subscribe_type(&game.event_system, .EntityDestroyed, proc(ctx: rawptr, e: Event) {
 		game: ^Game = cast(^Game)ctx
 
@@ -244,6 +251,22 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 
 	event_system_process(game, &game.event_system)
 	event_system_process_timed(game, &game.event_system, cast(f32)game.frame_step_ms)
+
+	switch game.state {
+	case .Playing:
+		if game.score >= 10 {
+			game.state = .Win
+		}
+
+		time_limit_ms: f64 = 60_000 // 60 seconds
+		if cast(f64)game.frame_count * game.frame_step_ms >= time_limit_ms {
+			game.state = .Lose
+		}
+	case .Win:
+		return
+	case .Lose:
+		return
+	}
 
 	// Update debug timers
 	if game.debug.capture_feedback_time > 0 {
@@ -444,73 +467,77 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 
 	{
 		// Draw player()
-		screen_pos := camera_world_to_screen(
-			&game.camera,
-			Vec2{game.entity.player.world_x, game.entity.player.world_y},
-			Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
-		)
+		if game.state == .Playing {
+			screen_pos := camera_world_to_screen(
+				&game.camera,
+				Vec2{game.entity.player.world_x, game.entity.player.world_y},
+				Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+			)
 
-		dst := sdl3.FRect {
-			screen_pos.x,
-			screen_pos.y,
-			cast(f32)game.entity.player.screen_w,
-			cast(f32)game.entity.player.screen_h,
-		}
+			dst := sdl3.FRect {
+				screen_pos.x,
+				screen_pos.y,
+				cast(f32)game.entity.player.screen_w,
+				cast(f32)game.entity.player.screen_h,
+			}
 
-		mirror_x := false if game.entity.player.facing == .right else true
+			mirror_x := false if game.entity.player.facing == .right else true
 
-		switch game.entity.player.action {
-		case .idle:
-			game_draw_animation(game, r, {animation_player_idle, dst, 0, mirror_x})
-		case .running:
-			game_draw_animation(game, r, {animation_player_run, dst, 0, mirror_x})
-		case .guard:
-		case .attack:
+			switch game.entity.player.action {
+			case .idle:
+				game_draw_animation(game, r, {animation_player_idle, dst, 0, mirror_x})
+			case .running:
+				game_draw_animation(game, r, {animation_player_run, dst, 0, mirror_x})
+			case .guard:
+			case .attack:
+			}
 		}
 	}
 
 	{
 		// Draw enemy()
-		for e in game.entity_pool.entities {
-			if !(.Is_Active in e.flags) {continue}
+		if game.state == .Playing {
+			for e in game.entity_pool.entities {
+				if !(.Is_Active in e.flags) {continue}
 
-			#partial switch v in e.variant {
-			case Entity_Enemy:
-				screen_pos := camera_world_to_screen(
-					&game.camera,
-					Vec2{e.position.x, e.position.y},
-					Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
-				)
+				#partial switch v in e.variant {
+				case Entity_Enemy:
+					screen_pos := camera_world_to_screen(
+						&game.camera,
+						Vec2{e.position.x, e.position.y},
+						Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+					)
 
-				dst := sdl3.FRect {
-					screen_pos.x,
-					screen_pos.y,
-					cast(f32)e.sprite.world_size.x,
-					cast(f32)e.sprite.world_size.y,
+					dst := sdl3.FRect {
+						screen_pos.x,
+						screen_pos.y,
+						cast(f32)e.sprite.world_size.x,
+						cast(f32)e.sprite.world_size.y,
+					}
+
+					// rotate the enemy to face the player
+					player_screen_pos := camera_world_to_screen(
+						&game.camera,
+						Vec2{game.entity.player.world_x, game.entity.player.world_y},
+						Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+					)
+
+					vec_enemy_to_player := Vec2 {
+						player_screen_pos.x - screen_pos.x,
+						player_screen_pos.y - screen_pos.y,
+					}
+
+					rotation := rad_to_deg(vec2_angle(vec_enemy_to_player))
+
+					switch game.entity.enemy.behavior.state {
+					case .idle:
+						game_draw_sprite(game, r, {sprite_archer_arrow, dst, rotation, false})
+					case .active:
+						// TODO: Rotate to face player
+						game_draw_sprite(game, r, {sprite_archer_arrow, dst, rotation, false})
+					}
+
 				}
-
-				// rotate the enemy to face the player
-				player_screen_pos := camera_world_to_screen(
-					&game.camera,
-					Vec2{game.entity.player.world_x, game.entity.player.world_y},
-					Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
-				)
-
-				vec_enemy_to_player := Vec2 {
-					player_screen_pos.x - screen_pos.x,
-					player_screen_pos.y - screen_pos.y,
-				}
-
-				rotation := rad_to_deg(vec2_angle(vec_enemy_to_player))
-
-				switch game.entity.enemy.behavior.state {
-				case .idle:
-					game_draw_sprite(game, r, {sprite_archer_arrow, dst, rotation, false})
-				case .active:
-					// TODO: Rotate to face player
-					game_draw_sprite(game, r, {sprite_archer_arrow, dst, rotation, false})
-				}
-
 			}
 		}
 	}
@@ -577,21 +604,27 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 
 		}
 
-		{
-			scalex, scaley: f32
-			sdl3.GetRenderScale(r.ptr, &scalex, &scaley)
-			defer sdl3.SetRenderScale(r.ptr, scalex, scaley)
-
-			sdl3.SetRenderScale(r.ptr, 1.5, 1.5)
-
-			sdl3.SetRenderDrawColor(r.ptr, 255, 255, 255, 255)
-			sdl3.RenderDebugTextFormat(r.ptr, 10, 10, "Score: %d", game.score)
-
-			log.debugf("Score: {}", game.score)
-		}
 
 		// Draw debug feedback indicators
 		game_draw_debug_feedback(game, r)
+	}
+
+	{
+		scalex, scaley: f32
+		sdl3.GetRenderScale(r.ptr, &scalex, &scaley)
+		defer sdl3.SetRenderScale(r.ptr, scalex, scaley)
+
+		sdl3.SetRenderScale(r.ptr, 1.5, 1.5)
+		sdl3.SetRenderDrawColor(r.ptr, 255, 255, 255, 255)
+
+		switch game.state {
+		case .Playing:
+			sdl3.RenderDebugTextFormat(r.ptr, 10, 10, "Score: %d", game.score)
+		case .Win:
+			sdl3.RenderDebugTextFormat(r.ptr, 10, 40, "You Win!")
+		case .Lose:
+			sdl3.RenderDebugTextFormat(r.ptr, 10, 40, "Time's up. You Lose!")
+		}
 	}
 }
 
