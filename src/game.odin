@@ -86,6 +86,8 @@ game_control :: enum {
 	player_move_right,
 
 	//
+	editor_zoom_in,
+	editor_zoom_out,
 	editor_place_player,
 	editor_place_enemy,
 	editor_capture_screen,
@@ -193,6 +195,8 @@ game_init :: proc(
 	game_bind_control_to_mouse_button(game, .editor_place_player, .LEFT)
 	game_bind_control_to_mouse_button(game, .editor_place_enemy, .RIGHT)
 	game_bind_control_to_key(game, .editor_capture_screen, sdl3.K_0)
+	game_bind_control_to_key(game, .editor_zoom_in, sdl3.K_EQUALS)
+	game_bind_control_to_key(game, .editor_zoom_out, sdl3.K_MINUS)
 
 	game.cfg.entity.player.player_move_speed_x_axis = 4
 	game.cfg.entity.player.player_move_speed_y_axis = 4
@@ -284,6 +288,12 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 			// Set flag to capture screenshot at end of frame (after drawing)
 			game.debug.capture_screenshot_pending = true
 		}
+	}
+
+	if .editor_zoom_in in game.input {
+		camera_zoom_by_factor(&game.camera, 1.1)
+	} else if .editor_zoom_out in game.input {
+		camera_zoom_by_factor(&game.camera, 1 / 1.1)
 	}
 
 	if .editor_place_player in game.input {
@@ -440,6 +450,15 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 							Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 						)
 
+						tile_screen_size := camera_world_size_to_screen(
+							&game.camera,
+							Vec2 {
+								f32(game.level.map_data.tile_width),
+								f32(game.level.map_data.tile_height),
+							},
+							Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+						)
+
 						if tileset.is_collection {
 							// Image collection tileset - use individual tile texture
 							if local_id >= u32(len(tileset.tile_textures)) {
@@ -451,8 +470,8 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 							dst := sdl3.FRect {
 								screen_pos.x,
 								screen_pos.y,
-								f32(game.level.map_data.tile_width),
-								f32(game.level.map_data.tile_height),
+								tile_screen_size.x,
+								tile_screen_size.y,
 							}
 
 							// Render entire tile texture
@@ -473,8 +492,8 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 							dst := sdl3.FRect {
 								screen_pos.x,
 								screen_pos.y,
-								f32(game.level.map_data.tile_width),
-								f32(game.level.map_data.tile_height),
+								tile_screen_size.x,
+								tile_screen_size.y,
 							}
 
 							// Render tile from spritesheet
@@ -510,7 +529,7 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 					for ts, i in game.level.map_data.tilesets {
 						if obj.gid >= ts.firstgid &&
 						   (i == len(game.level.map_data.tilesets) - 1 ||
-								obj.gid < game.level.map_data.tilesets[i + 1].firstgid) {
+								   obj.gid < game.level.map_data.tilesets[i + 1].firstgid) {
 							tileset_idx = i
 							local_id = obj.gid - ts.firstgid
 							break
@@ -535,11 +554,27 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 						Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 					)
 
+					obj_screen_size := camera_world_size_to_screen(
+						&game.camera,
+						Vec2{obj.width, obj.height},
+						Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+					)
+
 					dst := sdl3.FRect {
 						screen_pos.x,
 						screen_pos.y,
-						obj.width,
-						obj.height,
+						obj_screen_size.x,
+						obj_screen_size.y,
+					}
+
+					when DEBUG_GAME {
+						log.debugf(
+							"Drawing object {} ({}) at ({}, {})",
+							obj.id,
+							obj.gid,
+							dst.x,
+							dst.y,
+						)
 					}
 
 					// Render object tile
@@ -589,11 +624,17 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 				Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 			)
 
+			player_screen_size := camera_world_size_to_screen(
+				&game.camera,
+				Vec2{game.entity.player.screen_w, game.entity.player.screen_h},
+				Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+			)
+
 			dst := sdl3.FRect {
 				screen_pos.x,
 				screen_pos.y,
-				cast(f32)game.entity.player.screen_w,
-				cast(f32)game.entity.player.screen_h,
+				player_screen_size.x,
+				player_screen_size.y,
 			}
 
 			mirror_x := false if game.entity.player.facing == .right else true
@@ -623,11 +664,17 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 						Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 					)
 
+					enemy_screen_size := camera_world_size_to_screen(
+						&game.camera,
+						e.sprite.world_size,
+						Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+					)
+
 					dst := sdl3.FRect {
 						screen_pos.x,
 						screen_pos.y,
-						cast(f32)e.sprite.world_size.x,
-						cast(f32)e.sprite.world_size.y,
+						enemy_screen_size.x,
+						enemy_screen_size.y,
 					}
 
 					// rotate the enemy to face the player
@@ -696,10 +743,14 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 					Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 				)
 
+				// Convert trigger radius from world to screen space
+				trigger_radius_screen :=
+					camera_world_size_to_screen(&game.camera, Vec2{cast(f32)game.entity.enemy.behavior.cfg.trigger_radius, 0}, Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y}).x
+
 				// Draw trigger radius circle around enemy
 				debug_draw_circle(
 					r,
-					Circle{e_screen_pos, cast(f32)game.entity.enemy.behavior.cfg.trigger_radius},
+					Circle{e_screen_pos, trigger_radius_screen},
 					color_new(255, 0, 0, 255),
 				)
 
@@ -833,9 +884,16 @@ game_draw_animation :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 		cast(f32)clip.h,
 	}
 
+	// Convert world offset to screen space
+	screen_offset := camera_world_size_to_screen(
+		&game.camera,
+		cmd.anim.world_offset,
+		Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+	)
+
 	dst_local := cmd.dest
-	dst_local.x -= cmd.anim.world_offset.x
-	dst_local.y -= cmd.anim.world_offset.y
+	dst_local.x -= screen_offset.x
+	dst_local.y -= screen_offset.y
 	dst: Maybe(^sdl3.FRect) = &dst_local
 
 	// when DEBUG_FRAME {log.debugf(
@@ -873,9 +931,16 @@ game_draw_sprite :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 		cast(f32)clip.h,
 	}
 
+	// Convert world offset to screen space
+	screen_offset := camera_world_size_to_screen(
+		&game.camera,
+		cmd.sprite.world_offset,
+		Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+	)
+
 	dst_local := cmd.dest
-	dst_local.x -= cmd.sprite.world_offset.x
-	dst_local.y -= cmd.sprite.world_offset.y
+	dst_local.x -= screen_offset.x
+	dst_local.y -= screen_offset.y
 	dst: Maybe(^sdl3.FRect) = &dst_local
 
 	// when DEBUG_FRAME {log.debugf(
