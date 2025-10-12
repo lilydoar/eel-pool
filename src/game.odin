@@ -460,19 +460,32 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 		// Draw enemy()
 		for e in game.entity_pool.entities {
 			if !(.Is_Active in e.flags) {continue}
+
 			#partial switch v in e.variant {
 			case Entity_Enemy:
+				screen_pos := camera_world_to_screen(
+					&game.camera,
+					Vec2{e.position.x, e.position.y},
+					Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+				)
+
 				dst := sdl3.FRect {
-					cast(f32)e.position.x,
-					cast(f32)e.position.y,
+					screen_pos.x,
+					screen_pos.y,
 					cast(f32)e.sprite.world_size.x,
 					cast(f32)e.sprite.world_size.y,
 				}
 
 				// rotate the enemy to face the player
+				player_screen_pos := camera_world_to_screen(
+					&game.camera,
+					Vec2{game.entity.player.world_x, game.entity.player.world_y},
+					Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+				)
+
 				vec_enemy_to_player := Vec2 {
-					game.entity.player.world_x - e.position.x,
-					game.entity.player.world_y - e.position.y,
+					player_screen_pos.x - screen_pos.x,
+					player_screen_pos.y - screen_pos.y,
 				}
 
 				rotation := rad_to_deg(vec2_angle(vec_enemy_to_player))
@@ -522,23 +535,29 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 			if !(.Is_Active in e.flags) {continue}
 			#partial switch v in e.variant {
 			case Entity_Enemy:
+				e_screen_pos := camera_world_to_screen(
+					&game.camera,
+					Vec2{e.position.x, e.position.y},
+					Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+				)
+
 				// Draw trigger radius circle around enemy
 				debug_draw_circle(
 					r,
-					Circle {
-						Vec2{e.position.x, e.position.y},
-						cast(f32)game.entity.enemy.behavior.cfg.trigger_radius,
-					},
+					Circle{e_screen_pos, cast(f32)game.entity.enemy.behavior.cfg.trigger_radius},
 					color_new(255, 0, 0, 255),
 				)
 
 				// Draw line from enemy to player
+				player_screen_pos := camera_world_to_screen(
+					&game.camera,
+					Vec2{game.entity.player.world_x, game.entity.player.world_y},
+					Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+				)
+
 				debug_draw_line(
 					r,
-					Line2 {
-						Vec2{e.position.x, e.position.y},
-						Vec2{game.entity.player.world_x, game.entity.player.world_y},
-					},
+					Line2{e_screen_pos, player_screen_pos},
 					color_new(255, 255, 0, 255),
 				)
 			}
@@ -556,10 +575,10 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 			sdl3.RenderDebugText(r.ptr, 10, 10, "Controls:")
 			sdl3.RenderDebugTextFormat(r.ptr, 10, 20, "Debug Text")
 		}
-	}
 
-	// Draw debug feedback indicators
-	game_draw_debug_feedback(game, r)
+		// Draw debug feedback indicators
+		game_draw_debug_feedback(game, r)
+	}
 }
 
 // Draw debug visual feedback (screenshot indicator, etc.)
