@@ -421,16 +421,20 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 							continue // Empty tile
 						}
 
-						// Find which tileset this GID belongs to
+						// Parse GID to extract tile ID and rendering parameters
+						gid_info := data.tiled_gid_parse(gid)
+
+						// Find which tileset this GID belongs to (use cleaned tile_id)
 						tileset_idx := -1
-						local_id := gid
+						local_id := gid_info.tile_id
 
 						for ts, i in game.level.map_data.tilesets {
-							if gid >= ts.firstgid &&
+							if gid_info.tile_id >= ts.firstgid &&
 							   (i == len(game.level.map_data.tilesets) - 1 ||
-									   gid < game.level.map_data.tilesets[i + 1].firstgid) {
+									   gid_info.tile_id <
+										   game.level.map_data.tilesets[i + 1].firstgid) {
 								tileset_idx = i
-								local_id = gid - ts.firstgid
+								local_id = gid_info.tile_id - ts.firstgid
 								break
 							}
 						}
@@ -474,8 +478,20 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 								tile_screen_size.y,
 							}
 
-							// Render entire tile texture
-							sdl3.RenderTexture(r.ptr, tile_tex.texture, nil, &dst)
+							// Render entire tile texture with flip/rotation from GID
+							if gid_info.use_rotated {
+								sdl3.RenderTextureRotated(
+									r.ptr,
+									tile_tex.texture,
+									nil,
+									&dst,
+									gid_info.rotation,
+									sdl3.FPoint{},
+									gid_info.flip_mode,
+								)
+							} else {
+								sdl3.RenderTexture(r.ptr, tile_tex.texture, nil, &dst)
+							}
 						} else {
 							// Single image tileset - use clip rects
 							if local_id >= u32(len(tileset.tilemap.tile)) {
@@ -496,18 +512,27 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 								tile_screen_size.y,
 							}
 
-							// Render tile from spritesheet
-							sdl3.RenderTexture(
-								r.ptr,
-								tileset.texture.texture,
-								&sdl3.FRect {
-									f32(clip_rect.x),
-									f32(clip_rect.y),
-									f32(clip_rect.w),
-									f32(clip_rect.h),
-								},
-								&dst,
-							)
+							src := sdl3.FRect {
+								f32(clip_rect.x),
+								f32(clip_rect.y),
+								f32(clip_rect.w),
+								f32(clip_rect.h),
+							}
+
+							// Render tile from spritesheet with flip/rotation from GID
+							if gid_info.use_rotated {
+								sdl3.RenderTextureRotated(
+									r.ptr,
+									tileset.texture.texture,
+									&src,
+									&dst,
+									gid_info.rotation,
+									sdl3.FPoint{},
+									gid_info.flip_mode,
+								)
+							} else {
+								sdl3.RenderTexture(r.ptr, tileset.texture.texture, &src, &dst)
+							}
 						}
 					}
 				}
@@ -519,30 +544,46 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 				// Draw objects
 				for obj in layer.objects {
 					if obj.gid == 0 {
+						log.debugf("Skipping object {} without GID", obj.id)
 						continue // Skip objects without a tile
 					}
 
-					// Find which tileset this GID belongs to
+					// Parse GID to extract tile ID and rendering parameters
+					gid_info := data.tiled_gid_parse(obj.gid)
+
+					// Find which tileset this GID belongs to (use cleaned tile_id)
 					tileset_idx := -1
-					local_id := obj.gid
+					local_id := gid_info.tile_id
 
 					for ts, i in game.level.map_data.tilesets {
-						if obj.gid >= ts.firstgid &&
+						if gid_info.tile_id >= ts.firstgid &&
 						   (i == len(game.level.map_data.tilesets) - 1 ||
-								   obj.gid < game.level.map_data.tilesets[i + 1].firstgid) {
+								   gid_info.tile_id <
+									   game.level.map_data.tilesets[i + 1].firstgid) {
 							tileset_idx = i
-							local_id = obj.gid - ts.firstgid
+							local_id = gid_info.tile_id - ts.firstgid
 							break
 						}
 					}
 
 					if tileset_idx < 0 || tileset_idx >= len(game.level.map_data.tilesets) {
+						log.debugf(
+							"Skipping object {} with invalid tileset index {}",
+							obj.id,
+							tileset_idx,
+						)
 						continue
 					}
 
 					tileset := game.level.map_data.tilesets[tileset_idx]
 
 					if local_id >= u32(tileset.tile_count) {
+						log.debugf(
+							"Skipping object {} with invalid local tile ID {} (is_collection: {})",
+							obj.id,
+							local_id,
+							tileset.is_collection,
+						)
 						continue
 					}
 
@@ -577,34 +618,65 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 						)
 					}
 
-					// Render object tile
+					// Render object tile with flip/rotation from GID
 					if tileset.is_collection {
 						// Image collection - use individual tile texture
 						if local_id >= u32(len(tileset.tile_textures)) {
+							log.debugf(
+								"Skipping image collection object {} with invalid local tile ID {}",
+								obj.id,
+								local_id,
+							)
 							continue
 						}
 
 						tile_tex := tileset.tile_textures[local_id]
-						sdl3.RenderTexture(r.ptr, tile_tex.texture, nil, &dst)
+						if gid_info.use_rotated {
+							sdl3.RenderTextureRotated(
+								r.ptr,
+								tile_tex.texture,
+								nil,
+								&dst,
+								gid_info.rotation,
+								sdl3.FPoint{},
+								gid_info.flip_mode,
+							)
+						} else {
+							sdl3.RenderTexture(r.ptr, tile_tex.texture, nil, &dst)
+						}
 					} else {
 						// Single image tileset - use clip rect
 						if local_id >= u32(len(tileset.tilemap.tile_rects)) {
+							log.debugf(
+								"Skipping single image object {} with invalid local tile ID {}",
+								obj.id,
+								local_id,
+							)
 							continue
 						}
 
 						clip_rect := tileset.tilemap.tile_rects[local_id]
 
-						sdl3.RenderTexture(
-							r.ptr,
-							tileset.texture.texture,
-							&sdl3.FRect {
-								f32(clip_rect.x),
-								f32(clip_rect.y),
-								f32(clip_rect.w),
-								f32(clip_rect.h),
-							},
-							&dst,
-						)
+						src := sdl3.FRect {
+							f32(clip_rect.x),
+							f32(clip_rect.y),
+							f32(clip_rect.w),
+							f32(clip_rect.h),
+						}
+
+						if gid_info.use_rotated {
+							sdl3.RenderTextureRotated(
+								r.ptr,
+								tileset.texture.texture,
+								&src,
+								&dst,
+								gid_info.rotation,
+								sdl3.FPoint{},
+								gid_info.flip_mode,
+							)
+						} else {
+							sdl3.RenderTexture(r.ptr, tileset.texture.texture, &src, &dst)
+						}
 					}
 				}
 			}

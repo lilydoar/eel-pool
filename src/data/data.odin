@@ -10,6 +10,68 @@ import "core:strings"
 import sdl3 "vendor:sdl3"
 import sdl3img "vendor:sdl3/image"
 
+// Tiled GID flip flags (top 4 bits of 32-bit GID)
+// See: https://doc.mapeditor.org/en/stable/reference/global-tile-ids/
+TILED_GID_FLIP_HORIZONTAL :: 0x80000000
+TILED_GID_FLIP_VERTICAL :: 0x40000000
+TILED_GID_FLIP_DIAGONAL :: 0x20000000 // Diagonal flip for orthogonal/isometric, 60° rotation for hexagonal
+TILED_GID_FLIP_ROTATION :: 0x10000000 // 120° rotation for hexagonal maps
+TILED_GID_MASK :: 0x0FFFFFFF // Mask to extract tile ID (clears all flip flags)
+
+// Parsed GID information ready for rendering
+Tiled_GID_Info :: struct {
+	tile_id:     u32, // The actual tile ID with flip flags removed
+	flip_mode:   sdl3.FlipMode, // SDL3 flip mode for rendering
+	rotation:    f64, // Rotation in degrees (for diagonal flip)
+	use_rotated: bool, // Whether to use RenderTextureRotated
+}
+
+// Extract tile ID and convert Tiled flip flags to SDL3 rendering parameters
+tiled_gid_parse :: proc(gid: u32) -> Tiled_GID_Info {
+	info := Tiled_GID_Info {
+		tile_id = gid & TILED_GID_MASK,
+	}
+
+	flip_h := (gid & TILED_GID_FLIP_HORIZONTAL) != 0
+	flip_v := (gid & TILED_GID_FLIP_VERTICAL) != 0
+	flip_d := (gid & TILED_GID_FLIP_DIAGONAL) != 0
+
+	// Convert Tiled flip flags to SDL3 rendering parameters
+	// Tiled's diagonal flip is equivalent to rotating 90° CCW then flipping horizontally
+	// For simplicity, we handle the common cases with SDL3's FlipMode
+	if flip_d {
+		// Diagonal flip: rotate and flip
+		info.rotation = 90.0
+		info.use_rotated = true
+		if flip_h && flip_v {
+			info.flip_mode = .NONE
+		} else if flip_h {
+			info.flip_mode = .VERTICAL
+		} else if flip_v {
+			info.flip_mode = .HORIZONTAL
+		} else {
+			info.flip_mode = .HORIZONTAL
+		}
+	} else {
+		// No diagonal flip: just use horizontal/vertical flips
+		info.rotation = 0.0
+		info.use_rotated = flip_h || flip_v
+		if flip_h && flip_v {
+			// Both flips = 180° rotation
+			info.rotation = 180.0
+			info.flip_mode = .NONE
+		} else if flip_h {
+			info.flip_mode = .HORIZONTAL
+		} else if flip_v {
+			info.flip_mode = .VERTICAL
+		} else {
+			info.flip_mode = .NONE
+		}
+	}
+
+	return info
+}
+
 Data :: struct {
 	// Data contains any "global" data values that are used in the application
 }
