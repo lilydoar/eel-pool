@@ -16,17 +16,17 @@ Data :: struct {
 
 // Forward declarations for game types
 SDL_Texture :: struct {
-	name: string,
+	name:    string,
 	surface: ^sdl3.Surface,
 	texture: ^sdl3.Texture,
 }
 
 SDL_Tilemap :: struct {
-	name: string,
-	dimension: [2]i32,
-	tile_size: [2]i32,
-	texture: ^sdl3.Texture,
-	tile: []^sdl3.Surface,
+	name:       string,
+	dimension:  [2]i32,
+	tile_size:  [2]i32,
+	texture:    ^sdl3.Texture,
+	tile:       []^sdl3.Surface,
 	tile_rects: []sdl3.Rect, // Clip rects for each tile
 }
 
@@ -36,10 +36,10 @@ SDL_Renderer :: struct {
 
 // Asset manager - bridges asset database with game runtime
 Asset_Manager :: struct {
-	db: Asset_DB,
+	db:         Asset_DB,
 
 	// Loaded tilesets (indexed by tileset source path for Tiled GID mapping)
-	tilesets: map[string]Loaded_Tileset,
+	tilesets:   map[string]Loaded_Tileset,
 
 	// Tiled map cache
 	tiled_maps: map[string]^Tiled_Map_Data,
@@ -47,36 +47,51 @@ Asset_Manager :: struct {
 
 // Runtime tileset with loaded SDL textures
 Loaded_Tileset :: struct {
-	db_id: i32,
-	firstgid: u32, // First GID in Tiled map
-	texture: SDL_Texture,
-	tilemap: SDL_Tilemap,
-	tile_width: i32,
-	tile_height: i32,
-	columns: i32,
-	tile_count: i32,
+	db_id:          i32,
+	firstgid:       u32, // First GID in Tiled map
+	texture:        SDL_Texture, // For single image tilesets
+	tilemap:        SDL_Tilemap,
+	tile_width:     i32,
+	tile_height:    i32,
+	columns:        i32,
+	tile_count:     i32,
+	// For image collection tilesets
+	is_collection:  bool,
+	tile_textures:  []SDL_Texture, // Individual textures per tile
+	tile_sizes:     [][2]i32, // Individual sizes per tile (width, height)
 }
 
 // Loaded Tiled map data
 Tiled_Map_Data :: struct {
-	width: u32,
-	height: u32,
-	tile_width: u32,
+	width:       u32,
+	height:      u32,
+	tile_width:  u32,
 	tile_height: u32,
-	layers: []Tiled_Layer,
-	tilesets: []Loaded_Tileset,
+	layers:      []Tiled_Layer,
+	tilesets:    []Loaded_Tileset,
 }
 
 Tiled_Layer :: struct {
-	id: u32,
-	name: string,
-	width: u32,
-	height: u32,
-	data: []u32, // Tile GIDs
-	type: enum {
+	id:      u32,
+	name:    string,
+	width:   u32,
+	height:  u32,
+	data:    []u32, // Tile GIDs
+	objects: []Tiled_Object,
+	type:    enum {
 		tile_layer,
 		object_layer,
 	},
+}
+
+Tiled_Object :: struct {
+	id:       u32,
+	gid:      u32,
+	name:     string,
+	height:   f32,
+	width:    f32,
+	rotation: f32,
+	position: [2]f32,
 }
 
 // Initialize asset manager and database
@@ -127,7 +142,14 @@ SDL :: struct {
 }
 
 // Load a Tiled map from JSON file
-tiled_map_load :: proc(manager: ^Asset_Manager, sdl: ^SDL, map_path: string) -> (^Tiled_Map_Data, bool) {
+tiled_map_load :: proc(
+	manager: ^Asset_Manager,
+	sdl: ^SDL,
+	map_path: string,
+) -> (
+	^Tiled_Map_Data,
+	bool,
+) {
 	// Check cache
 	if cached, exists := manager.tiled_maps[map_path]; exists {
 		return cached, true
@@ -144,21 +166,31 @@ tiled_map_load :: proc(manager: ^Asset_Manager, sdl: ^SDL, map_path: string) -> 
 	defer delete(data)
 
 	raw_map: struct {
-		width: u32,
-		height: u32,
-		tilewidth: u32,
+		width:      u32,
+		height:     u32,
+		tilewidth:  u32,
 		tileheight: u32,
-		tilesets: []struct {
-			source: string,
+		tilesets:   []struct {
+			source:   string,
 			firstgid: u32,
 		},
-		layers: []struct {
-			id: u32,
-			name: string,
-			width: u32,
-			height: u32,
-			data: []u32,
-			type: string,
+		layers:     []struct {
+			id:      u32,
+			name:    string,
+			width:   u32,
+			height:  u32,
+			data:    []u32,
+			objects: []struct {
+				id:       u32,
+				gid:      u32,
+				name:     string,
+				height:   f32,
+				width:    f32,
+				rotation: f32,
+				x:        f32,
+				y:        f32,
+			},
+			type:    string,
 		},
 	}
 
@@ -195,29 +227,62 @@ tiled_map_load :: proc(manager: ^Asset_Manager, sdl: ^SDL, map_path: string) -> 
 	// Load layers
 	map_data.layers = make([]Tiled_Layer, len(raw_map.layers))
 	for layer, i in raw_map.layers {
-		map_data.layers[i] = Tiled_Layer{
-			id = layer.id,
-			name = strings.clone(layer.name),
-			width = layer.width,
-			height = layer.height,
-			data = make([]u32, len(layer.data)),
-			type = .tile_layer if layer.type == "tilelayer" else .object_layer,
+		map_data.layers[i] = Tiled_Layer {
+			id      = layer.id,
+			name    = strings.clone(layer.name),
+			width   = layer.width,
+			height  = layer.height,
+			data    = make([]u32, len(layer.data)),
+			objects = make([]Tiled_Object, len(layer.objects)),
 		}
+
 		copy(map_data.layers[i].data, layer.data)
+
+		for obj, j in layer.objects {
+			map_data.layers[i].objects[j] = Tiled_Object {
+				id       = obj.id,
+				gid      = obj.gid,
+				name     = strings.clone(obj.name),
+				height   = obj.height,
+				width    = obj.width,
+				rotation = obj.rotation,
+				position = [2]f32{obj.x, obj.y},
+			}
+		}
+
+		if len(map_data.layers[i].data) > 0 {
+			map_data.layers[i].type = .tile_layer
+		} else {
+			map_data.layers[i].type = .object_layer
+		}
+
 	}
 
 	// Cache the map
 	manager.tiled_maps[map_path] = map_data
 
-	log.infof("Loaded Tiled map: {} ({}x{} tiles, {} tilesets, {} layers)",
-		map_path, map_data.width, map_data.height,
-		len(map_data.tilesets), len(map_data.layers))
+	log.infof(
+		"Loaded Tiled map: {} ({}x{} tiles, {} tilesets, {} layers)",
+		map_path,
+		map_data.width,
+		map_data.height,
+		len(map_data.tilesets),
+		len(map_data.layers),
+	)
 
 	return map_data, true
 }
 
 // Load a Tiled tileset from external JSON file
-tiled_tileset_load :: proc(manager: ^Asset_Manager, sdl: ^SDL, tileset_path: string, firstgid: u32) -> (Loaded_Tileset, bool) {
+tiled_tileset_load :: proc(
+	manager: ^Asset_Manager,
+	sdl: ^SDL,
+	tileset_path: string,
+	firstgid: u32,
+) -> (
+	Loaded_Tileset,
+	bool,
+) {
 	// Check cache
 	if cached, exists := manager.tilesets[tileset_path]; exists {
 		return cached, true
@@ -234,16 +299,22 @@ tiled_tileset_load :: proc(manager: ^Asset_Manager, sdl: ^SDL, tileset_path: str
 	defer delete(data)
 
 	raw_tileset: struct {
-		name: string,
-		image: string,
-		imagewidth: u32,
+		name:        string,
+		image:       string,
+		imagewidth:  u32,
 		imageheight: u32,
-		tilecount: u32,
-		tilewidth: u32,
-		tileheight: u32,
-		columns: u32,
-		spacing: u32,
-		margin: u32,
+		tilecount:   u32,
+		tilewidth:   u32,
+		tileheight:  u32,
+		columns:     u32,
+		spacing:     u32,
+		margin:      u32,
+		tiles:       []struct {
+			id:          u32,
+			image:       string,
+			imagewidth:  u32,
+			imageheight: u32,
+		},
 	}
 
 	if err := json.unmarshal(data, &raw_tileset); err != nil {
@@ -251,85 +322,159 @@ tiled_tileset_load :: proc(manager: ^Asset_Manager, sdl: ^SDL, tileset_path: str
 		return {}, false
 	}
 
-	// Resolve image path relative to tileset file
 	tileset_dir := filepath.dir(tileset_path)
-	image_path := filepath.join({tileset_dir, raw_tileset.image})
 
-	// Load texture using SDL_image
-	surface := sdl3img.Load(strings.clone_to_cstring(image_path, context.temp_allocator))
-	if surface == nil {
-		log.errorf("Failed to load image: {}", image_path)
-		return {}, false
-	}
+	// Check if this is an image collection tileset
+	is_collection := raw_tileset.image == "" || raw_tileset.columns == 0
 
-	sdl_texture := sdl3.CreateTextureFromSurface(sdl.renderer.renderer, surface)
-	if sdl_texture == nil {
-		log.errorf("Failed to create texture from surface: {}", image_path)
-		sdl3.DestroySurface(surface)
-		return {}, false
-	}
+	loaded: Loaded_Tileset
 
-	texture := SDL_Texture{
-		name = raw_tileset.name,
-		surface = surface,
-		texture = sdl_texture,
-	}
+	if is_collection {
+		// Image collection tileset - each tile has its own image
+		log.debugf("Loading image collection tileset with {} tiles", len(raw_tileset.tiles))
 
-	// Create tilemap (for tile indexing)
-	columns := i32(raw_tileset.columns)
-	rows := i32(raw_tileset.tilecount) / columns
-	if i32(raw_tileset.tilecount) % columns != 0 {
-		rows += 1
-	}
+		loaded.is_collection = true
+		loaded.tile_count = i32(raw_tileset.tilecount)
+		loaded.tile_textures = make([]SDL_Texture, raw_tileset.tilecount)
+		loaded.tile_sizes = make([][2]i32, raw_tileset.tilecount)
 
-	tilemap := SDL_Tilemap{
-		name = raw_tileset.name,
-		dimension = {columns, rows},
-		tile_size = {i32(raw_tileset.tilewidth), i32(raw_tileset.tileheight)},
-		texture = texture.texture,
-		tile = make([]^sdl3.Surface, raw_tileset.tilecount),
-		tile_rects = make([]sdl3.Rect, raw_tileset.tilecount),
-	}
-
-	// Pre-slice tiles
-	for y in 0..<rows {
-		for x in 0..<columns {
-			idx := y * columns + x
-			if idx >= i32(raw_tileset.tilecount) {
-				break
+		// Load each tile's image
+		for tile_info in raw_tileset.tiles {
+			if tile_info.id >= raw_tileset.tilecount {
+				log.warnf("Tile id {} out of range (max {})", tile_info.id, raw_tileset.tilecount)
+				continue
 			}
 
-			tilemap.tile_rects[idx] = sdl3.Rect{
-				tilemap.tile_size.x * x,
-				tilemap.tile_size.y * y,
-				tilemap.tile_size.x,
-				tilemap.tile_size.y,
+			tile_image_path := filepath.join({tileset_dir, tile_info.image})
+
+			// Load texture using SDL_image
+			surface := sdl3img.Load(strings.clone_to_cstring(tile_image_path, context.temp_allocator))
+			if surface == nil {
+				log.errorf("Failed to load tile image: {}", tile_image_path)
+				continue
 			}
 
-			rect: Maybe(^sdl3.Rect) = &tilemap.tile_rects[idx]
-			tile := sdl3.DuplicateSurface(texture.surface)
-			sdl3.SetSurfaceClipRect(tile, rect)
-			tilemap.tile[idx] = tile
+			sdl_texture := sdl3.CreateTextureFromSurface(sdl.renderer.renderer, surface)
+			if sdl_texture == nil {
+				log.errorf("Failed to create texture from surface: {}", tile_image_path)
+				sdl3.DestroySurface(surface)
+				continue
+			}
+
+			loaded.tile_textures[tile_info.id] = SDL_Texture {
+				name    = raw_tileset.name,
+				surface = surface,
+				texture = sdl_texture,
+			}
+
+			loaded.tile_sizes[tile_info.id] = {i32(tile_info.imagewidth), i32(tile_info.imageheight)}
+		}
+
+		// Set common dimensions (use the tileset's dimensions as defaults)
+		loaded.tile_width = i32(raw_tileset.tilewidth)
+		loaded.tile_height = i32(raw_tileset.tileheight)
+		loaded.columns = 0 // No columns for collections
+
+		// Create empty tilemap structure
+		loaded.tilemap = SDL_Tilemap {
+			name       = raw_tileset.name,
+			dimension  = {0, 0},
+			tile_size  = {loaded.tile_width, loaded.tile_height},
+			texture    = nil,
+			tile       = nil,
+			tile_rects = nil,
+		}
+
+	} else {
+		// Single image tileset - traditional spritesheet
+		image_path := filepath.join({tileset_dir, raw_tileset.image})
+
+		// Load texture using SDL_image
+		surface := sdl3img.Load(strings.clone_to_cstring(image_path, context.temp_allocator))
+		if surface == nil {
+			log.errorf("Failed to load image: {}", image_path)
+			return {}, false
+		}
+
+		sdl_texture := sdl3.CreateTextureFromSurface(sdl.renderer.renderer, surface)
+		if sdl_texture == nil {
+			log.errorf("Failed to create texture from surface: {}", image_path)
+			sdl3.DestroySurface(surface)
+			return {}, false
+		}
+
+		texture := SDL_Texture {
+			name    = raw_tileset.name,
+			surface = surface,
+			texture = sdl_texture,
+		}
+
+		// Create tilemap (for tile indexing)
+		columns := i32(raw_tileset.columns)
+		rows := i32(raw_tileset.tilecount) / columns
+		if i32(raw_tileset.tilecount) % columns != 0 {
+			rows += 1
+		}
+
+		tilemap := SDL_Tilemap {
+			name       = raw_tileset.name,
+			dimension  = {columns, rows},
+			tile_size  = {i32(raw_tileset.tilewidth), i32(raw_tileset.tileheight)},
+			texture    = texture.texture,
+			tile       = make([]^sdl3.Surface, raw_tileset.tilecount),
+			tile_rects = make([]sdl3.Rect, raw_tileset.tilecount),
+		}
+
+		// Pre-slice tiles
+		for y in 0 ..< rows {
+			for x in 0 ..< columns {
+				idx := y * columns + x
+				if idx >= i32(raw_tileset.tilecount) {
+					break
+				}
+
+				tilemap.tile_rects[idx] = sdl3.Rect {
+					tilemap.tile_size.x * x,
+					tilemap.tile_size.y * y,
+					tilemap.tile_size.x,
+					tilemap.tile_size.y,
+				}
+
+				rect: Maybe(^sdl3.Rect) = &tilemap.tile_rects[idx]
+				tile := sdl3.DuplicateSurface(texture.surface)
+				sdl3.SetSurfaceClipRect(tile, rect)
+				tilemap.tile[idx] = tile
+			}
+		}
+
+		loaded = Loaded_Tileset {
+			db_id          = -1, // Not in DB yet
+			firstgid       = firstgid,
+			texture        = texture,
+			tilemap        = tilemap,
+			tile_width     = i32(raw_tileset.tilewidth),
+			tile_height    = i32(raw_tileset.tileheight),
+			columns        = i32(raw_tileset.columns),
+			tile_count     = i32(raw_tileset.tilecount),
+			is_collection  = false,
+			tile_textures  = nil,
+			tile_sizes     = nil,
 		}
 	}
 
-	loaded := Loaded_Tileset{
-		db_id = -1, // Not in DB yet
-		firstgid = firstgid,
-		texture = texture,
-		tilemap = tilemap,
-		tile_width = i32(raw_tileset.tilewidth),
-		tile_height = i32(raw_tileset.tileheight),
-		columns = i32(raw_tileset.columns),
-		tile_count = i32(raw_tileset.tilecount),
-	}
+	loaded.db_id = -1
+	loaded.firstgid = firstgid
 
 	// Cache tileset
 	manager.tilesets[tileset_path] = loaded
 
-	log.debugf("Loaded tileset: {} ({} tiles, {}x{} each)",
-		raw_tileset.name, raw_tileset.tilecount,
-		raw_tileset.tilewidth, raw_tileset.tileheight)
+	log.debugf(
+		"Loaded tileset: {} ({} tiles, {}x{} each)",
+		raw_tileset.name,
+		raw_tileset.tilecount,
+		raw_tileset.tilewidth,
+		raw_tileset.tileheight,
+	)
 
 	return loaded, true
 }
@@ -345,7 +490,12 @@ tiled_map_unload :: proc(map_data: ^Tiled_Map_Data) {
 }
 
 // Draw a Tiled map layer
-tiled_map_draw_layer :: proc(map_data: ^Tiled_Map_Data, layer_index: int, renderer: ^SDL_Renderer, tile_screen_size: [2]u32) {
+tiled_map_draw_layer :: proc(
+	map_data: ^Tiled_Map_Data,
+	layer_index: int,
+	renderer: ^SDL_Renderer,
+	tile_screen_size: [2]u32,
+) {
 	if layer_index < 0 || layer_index >= len(map_data.layers) {
 		return
 	}
@@ -355,8 +505,8 @@ tiled_map_draw_layer :: proc(map_data: ^Tiled_Map_Data, layer_index: int, render
 		return
 	}
 
-	for y in 0..<layer.height {
-		for x in 0..<layer.width {
+	for y in 0 ..< layer.height {
+		for x in 0 ..< layer.width {
 			idx := y * layer.width + x
 			gid := layer.data[idx]
 
@@ -369,7 +519,8 @@ tiled_map_draw_layer :: proc(map_data: ^Tiled_Map_Data, layer_index: int, render
 			local_id := gid
 
 			for ts, i in map_data.tilesets {
-				if gid >= ts.firstgid && (i == len(map_data.tilesets)-1 || gid < map_data.tilesets[i+1].firstgid) {
+				if gid >= ts.firstgid &&
+				   (i == len(map_data.tilesets) - 1 || gid < map_data.tilesets[i + 1].firstgid) {
 					tileset_idx = i
 					local_id = gid - ts.firstgid
 					break
@@ -394,7 +545,7 @@ tiled_map_draw_layer :: proc(map_data: ^Tiled_Map_Data, layer_index: int, render
 			clip_rect := tileset.tilemap.tile_rects[local_id]
 
 			// Calculate screen position
-			dst := sdl3.FRect{
+			dst := sdl3.FRect {
 				f32(x * tile_screen_size.x),
 				f32(y * tile_screen_size.y),
 				f32(tile_screen_size.x),
@@ -405,7 +556,7 @@ tiled_map_draw_layer :: proc(map_data: ^Tiled_Map_Data, layer_index: int, render
 			sdl3.RenderTexture(
 				renderer.renderer,
 				tileset.texture.texture,
-				&sdl3.FRect{
+				&sdl3.FRect {
 					f32(clip_rect.x),
 					f32(clip_rect.y),
 					f32(clip_rect.w),
@@ -416,5 +567,4 @@ tiled_map_draw_layer :: proc(map_data: ^Tiled_Map_Data, layer_index: int, render
 		}
 	}
 }
-
 

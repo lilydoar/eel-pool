@@ -156,6 +156,8 @@ game_init :: proc(
 		log.errorf("Failed to load level: {}", level_path)
 	}
 
+	// log.debugf("%v", game.level.map_data)
+
 	// TODO: Bound to the middle platform of the level
 	game.level.playable_area = AABB2 {
 		min = Vec2{0, 0},
@@ -387,26 +389,130 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 	// Draw all level layers
 	if game.level.map_data != nil && len(game.level.map_data.layers) > 0 {
 		for layer, layer_idx in game.level.map_data.layers {
-			// Draw each tile in the layer
-			for y in 0 ..< layer.height {
-				for x in 0 ..< layer.width {
-					idx := y * layer.width + x
-					gid := layer.data[idx]
+			switch layer.type {
+			case .tile_layer:
+				when DEBUG_GAME {
+					log.debugf(
+						"Drawing layer {} ({}x{}, {} tiles)",
+						layer.name,
+						layer.width,
+						layer.height,
+						len(layer.data),
+					)
+				}
 
-					if gid == 0 {
-						continue // Empty tile
+				// Draw each tile in the layer
+				for y in 0 ..< layer.height {
+					for x in 0 ..< layer.width {
+						idx := y * layer.width + x
+						gid := layer.data[idx]
+
+						if gid == 0 {
+							continue // Empty tile
+						}
+
+						// Find which tileset this GID belongs to
+						tileset_idx := -1
+						local_id := gid
+
+						for ts, i in game.level.map_data.tilesets {
+							if gid >= ts.firstgid &&
+							   (i == len(game.level.map_data.tilesets) - 1 ||
+									   gid < game.level.map_data.tilesets[i + 1].firstgid) {
+								tileset_idx = i
+								local_id = gid - ts.firstgid
+								break
+							}
+						}
+
+						if tileset_idx < 0 || tileset_idx >= len(game.level.map_data.tilesets) {
+							continue
+						}
+
+						tileset := game.level.map_data.tilesets[tileset_idx]
+
+						screen_pos := camera_world_to_screen(
+							&game.camera,
+							Vec2 {
+								cast(f32)(x * game.level.map_data.tile_width),
+								cast(f32)(y * game.level.map_data.tile_height),
+							},
+							Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+						)
+
+						if tileset.is_collection {
+							// Image collection tileset - use individual tile texture
+							if local_id >= u32(len(tileset.tile_textures)) {
+								continue
+							}
+
+							tile_tex := tileset.tile_textures[local_id]
+
+							dst := sdl3.FRect {
+								screen_pos.x,
+								screen_pos.y,
+								f32(game.level.map_data.tile_width),
+								f32(game.level.map_data.tile_height),
+							}
+
+							// Render entire tile texture
+							sdl3.RenderTexture(r.ptr, tile_tex.texture, nil, &dst)
+						} else {
+							// Single image tileset - use clip rects
+							if local_id >= u32(len(tileset.tilemap.tile)) {
+								continue
+							}
+
+							// Get tile clip rect
+							if local_id >= u32(len(tileset.tilemap.tile_rects)) {
+								continue
+							}
+
+							clip_rect := tileset.tilemap.tile_rects[local_id]
+
+							dst := sdl3.FRect {
+								screen_pos.x,
+								screen_pos.y,
+								f32(game.level.map_data.tile_width),
+								f32(game.level.map_data.tile_height),
+							}
+
+							// Render tile from spritesheet
+							sdl3.RenderTexture(
+								r.ptr,
+								tileset.texture.texture,
+								&sdl3.FRect {
+									f32(clip_rect.x),
+									f32(clip_rect.y),
+									f32(clip_rect.w),
+									f32(clip_rect.h),
+								},
+								&dst,
+							)
+						}
+					}
+				}
+			case .object_layer:
+				when DEBUG_GAME {
+					log.debugf("Drawing object layer {} ({})", layer.name, len(layer.objects))
+				}
+
+				// Draw objects
+				for obj in layer.objects {
+					if obj.gid == 0 {
+						continue // Skip objects without a tile
 					}
 
 					// Find which tileset this GID belongs to
 					tileset_idx := -1
-					local_id := gid
+					local_id := obj.gid
 
 					for ts, i in game.level.map_data.tilesets {
-						if gid >= ts.firstgid &&
+						if obj.gid >= ts.firstgid &&
 						   (i == len(game.level.map_data.tilesets) - 1 ||
-								   gid < game.level.map_data.tilesets[i + 1].firstgid) {
+								obj.gid < game.level.map_data.tilesets[i + 1].firstgid) {
 							tileset_idx = i
-							local_id = gid - ts.firstgid
+							local_id = obj.gid - ts.firstgid
 							break
 						}
 					}
@@ -417,45 +523,54 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 
 					tileset := game.level.map_data.tilesets[tileset_idx]
 
-					if local_id >= u32(len(tileset.tilemap.tile)) {
+					if local_id >= u32(tileset.tile_count) {
 						continue
 					}
 
-					// Get tile clip rect
-					if local_id >= u32(len(tileset.tilemap.tile_rects)) {
-						continue
-					}
-
-					clip_rect := tileset.tilemap.tile_rects[local_id]
-
+					// Objects use world coordinates directly
+					// Tiled positions objects at their bottom-left corner
 					screen_pos := camera_world_to_screen(
 						&game.camera,
-						Vec2 {
-							cast(f32)(x * game.tile_screen_size.x),
-							cast(f32)(y * game.tile_screen_size.y),
-						},
+						Vec2{obj.position.x, obj.position.y - obj.height},
 						Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 					)
 
 					dst := sdl3.FRect {
 						screen_pos.x,
 						screen_pos.y,
-						f32(game.tile_screen_size.x),
-						f32(game.tile_screen_size.y),
+						obj.width,
+						obj.height,
 					}
 
-					// Render tile
-					sdl3.RenderTexture(
-						r.ptr,
-						tileset.texture.texture,
-						&sdl3.FRect {
-							f32(clip_rect.x),
-							f32(clip_rect.y),
-							f32(clip_rect.w),
-							f32(clip_rect.h),
-						},
-						&dst,
-					)
+					// Render object tile
+					if tileset.is_collection {
+						// Image collection - use individual tile texture
+						if local_id >= u32(len(tileset.tile_textures)) {
+							continue
+						}
+
+						tile_tex := tileset.tile_textures[local_id]
+						sdl3.RenderTexture(r.ptr, tile_tex.texture, nil, &dst)
+					} else {
+						// Single image tileset - use clip rect
+						if local_id >= u32(len(tileset.tilemap.tile_rects)) {
+							continue
+						}
+
+						clip_rect := tileset.tilemap.tile_rects[local_id]
+
+						sdl3.RenderTexture(
+							r.ptr,
+							tileset.texture.texture,
+							&sdl3.FRect {
+								f32(clip_rect.x),
+								f32(clip_rect.y),
+								f32(clip_rect.w),
+								f32(clip_rect.h),
+							},
+							&dst,
+						)
+					}
 				}
 			}
 		}
