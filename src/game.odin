@@ -10,36 +10,37 @@ import "data"
 import sdl3 "vendor:sdl3"
 
 Game :: struct {
-	ctx:              runtime.Context,
-	cfg:              Game_Config,
-	frame_count:      u64,
-	frame_step_ms:    f64, // ms per game frame (fixed step)
+	ctx:                   runtime.Context,
+	cfg:                   Game_Config,
+	frame_count:           u64,
+	frame_step_ms:         f64, // ms per game frame (fixed step)
 
 	//
-	input:            bit_set[game_control],
-	event_system:     Event_System,
+	input:                 bit_set[game_control],
+	event_system:          Event_System,
 
 	//
-	state:            enum {
+	state:                 enum {
 		Playing,
 		Win,
 		Lose,
 	},
 
 	//
-	tile_screen_size: Vec2u, // Size of a tile on screen in pixels
-	level:            Level,
-	entity_pool:      Entity_Pool,
-	camera:           Camera,
-	timers:           struct {
+	tile_screen_size:      Vec2u, // Size of a tile on screen in pixels
+	level:                 Level,
+	entity_pool:           Entity_Pool,
+	camera:                Camera,
+	camera_viewport_scale: f32,
+	timers:                struct {
 		win_lose_reset_time:  f32,
 		win_lose_reset_timer: f32,
 		//
 		enemy_spawn_interval: f32,
 		enemy_spawn_timer:    f32,
 	},
-	score:            u32,
-	entity:           struct {
+	score:                 u32,
+	entity:                struct {
 		player: struct {
 			world_x:  f32,
 			world_y:  f32,
@@ -65,7 +66,7 @@ Game :: struct {
 	},
 
 	// Debug-related state
-	debug:            Game_Debug,
+	debug:                 Game_Debug,
 }
 
 Game_Debug :: struct {
@@ -224,13 +225,17 @@ game_init :: proc(
 		}
 	})
 
+	game.camera_viewport_scale = 3.2
 	game.camera = Camera {
-		position    = Vec2{game.entity.player.world_x, game.entity.player.world_y},
-		view_size   = Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
-		follow_mode = .with_lag,
+		position        = Vec2{game.entity.player.world_x, game.entity.player.world_y},
+		view_size       = Vec2 {
+			cast(f32)(RenderTargetSize.x) * game.camera_viewport_scale,
+			cast(f32)(RenderTargetSize.y) * game.camera_viewport_scale,
+		},
+		target_position = Vec2{game.entity.player.world_x, game.entity.player.world_y},
+		follow_mode     = .with_leash,
 	}
 	camera_update(&game.camera)
-
 }
 
 game_reset :: proc(game: ^Game, sdl: ^SDL, asset: ^data.Asset_Manager) {

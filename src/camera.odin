@@ -15,6 +15,7 @@ Camera :: struct {
 	follow_mode:     enum {
 		simple,
 		with_lag,
+		with_leash,
 	},
 }
 
@@ -30,6 +31,15 @@ camera_update :: proc(camera: ^Camera) -> bool {
 			camera.position,
 			vec2_scale(vec2_sub(camera.target_position, camera.position), lazy_follow_rate),
 		)
+
+	case .with_leash:
+		leash_dst := Vec2{300.0, 200.0}
+
+		pos_to_target: Vec2 = vec2_sub(camera.target_position, camera.position)
+		if pos_to_target.x > leash_dst.x {camera.position.x += pos_to_target.x - leash_dst.x}
+		if pos_to_target.x < -leash_dst.x {camera.position.x += pos_to_target.x + leash_dst.x}
+		if pos_to_target.y > leash_dst.y {camera.position.y += pos_to_target.y - leash_dst.y}
+		if pos_to_target.y < -leash_dst.y {camera.position.y += pos_to_target.y + leash_dst.y}
 	}
 
 	camera.view_top_left = vec2_sub(camera.position, vec2_scale(camera.view_size, 0.5))
