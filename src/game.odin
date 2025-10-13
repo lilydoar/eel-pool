@@ -145,7 +145,6 @@ game_init :: proc(
 
 	game.entity_pool = entity_pool_init()
 
-
 	game.timers.enemy_spawn_interval = 2000 // Spawn an enemy every 2 seconds
 	game.timers.enemy_spawn_timer = game.timers.enemy_spawn_interval
 
@@ -237,6 +236,8 @@ game_init :: proc(
 		},
 		target_position = Vec2{game.entity.player.world_x, game.entity.player.world_y},
 		follow_mode     = .with_leash,
+		lag_follow_rate = 0.1,
+		leash_distance  = Vec2{300, 200},
 	}
 	camera_update(&game.camera)
 }
@@ -799,10 +800,18 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 
 					switch game.entity.enemy.behavior.state {
 					case .idle:
-						game_draw_sprite(game, r, {game.assets.sprite_archer_arrow, dst, rotation, false})
+						game_draw_sprite(
+							game,
+							r,
+							{game.assets.sprite_archer_arrow, dst, rotation, false},
+						)
 					case .active:
 						// TODO: Rotate to face player
-						game_draw_sprite(game, r, {game.assets.sprite_archer_arrow, dst, rotation, false})
+						game_draw_sprite(
+							game,
+							r,
+							{game.assets.sprite_archer_arrow, dst, rotation, false},
+						)
 					}
 
 				}

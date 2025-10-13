@@ -17,6 +17,10 @@ Camera :: struct {
 		with_lag,
 		with_leash,
 	},
+
+	//
+	lag_follow_rate: f32,
+	leash_distance:  Vec2,
 }
 
 // Return true if the target is visible
@@ -26,20 +30,21 @@ camera_update :: proc(camera: ^Camera) -> bool {
 		camera.position = camera.target_position
 
 	case .with_lag:
-		lazy_follow_rate: f32 = 0.1
 		camera.position = vec2_add(
 			camera.position,
-			vec2_scale(vec2_sub(camera.target_position, camera.position), lazy_follow_rate),
+			vec2_scale(vec2_sub(camera.target_position, camera.position), camera.lag_follow_rate),
 		)
 
 	case .with_leash:
-		leash_dst := Vec2{300.0, 200.0}
-
 		pos_to_target: Vec2 = vec2_sub(camera.target_position, camera.position)
-		if pos_to_target.x > leash_dst.x {camera.position.x += pos_to_target.x - leash_dst.x}
-		if pos_to_target.x < -leash_dst.x {camera.position.x += pos_to_target.x + leash_dst.x}
-		if pos_to_target.y > leash_dst.y {camera.position.y += pos_to_target.y - leash_dst.y}
-		if pos_to_target.y < -leash_dst.y {camera.position.y += pos_to_target.y + leash_dst.y}
+		if pos_to_target.x >
+		   camera.leash_distance.x {camera.position.x += pos_to_target.x - camera.leash_distance.x}
+		if pos_to_target.x <
+		   -camera.leash_distance.x {camera.position.x += pos_to_target.x + camera.leash_distance.x}
+		if pos_to_target.y >
+		   camera.leash_distance.y {camera.position.y += pos_to_target.y - camera.leash_distance.y}
+		if pos_to_target.y <
+		   -camera.leash_distance.y {camera.position.y += pos_to_target.y + camera.leash_distance.y}
 	}
 
 	camera.view_top_left = vec2_sub(camera.position, vec2_scale(camera.view_size, 0.5))
@@ -89,18 +94,7 @@ camera_zoom_by_factor :: proc(camera: ^Camera, factor: f32) {
 	camera.view_size = vec2_scale(camera.view_size, factor)
 	// Recalculate view_top_left to keep camera centered on position
 	camera.view_top_left = vec2_sub(camera.position, vec2_scale(camera.view_size, 0.5))
-}
 
-// Set camera zoom to specific view size
-camera_set_view_size :: proc(camera: ^Camera, view_size: Vec2) {
-	camera.view_size = view_size
-	// Recalculate view_top_left to keep camera centered on position
-	camera.view_top_left = vec2_sub(camera.position, vec2_scale(camera.view_size, 0.5))
-}
-
-// Get zoom level relative to reference size (1.0 = normal, >1.0 = zoomed in, <1.0 = zoomed out)
-camera_get_zoom_level :: proc(camera: ^Camera, reference_size: Vec2) -> f32 {
-	// Average zoom across both axes
-	return (reference_size.x / camera.view_size.x + reference_size.y / camera.view_size.y) * 0.5
+	camera.leash_distance = vec2_scale(camera.leash_distance, factor)
 }
 
