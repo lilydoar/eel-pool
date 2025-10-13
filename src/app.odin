@@ -206,7 +206,7 @@ app_update :: proc(app: ^App) -> (quit: bool) {
 		)
 	}
 
-	for should_update(app) {game_update(&app.sdl, &app.game)}
+	for should_update(app) {game_update(&app.sdl, &app.game, &app.asset_manager)}
 	game_draw(&app.game, &app.sdl.renderer)
 
 	return

@@ -25,11 +25,16 @@ Game :: struct {
 		Win,
 		Lose,
 	},
+
+	//
 	tile_screen_size: Vec2u, // Size of a tile on screen in pixels
 	level:            Level,
 	entity_pool:      Entity_Pool,
 	camera:           Camera,
 	timers:           struct {
+		win_lose_reset_time:  f32,
+		win_lose_reset_timer: f32,
+		//
 		enemy_spawn_interval: f32,
 		enemy_spawn_timer:    f32,
 	},
@@ -140,6 +145,8 @@ game_init :: proc(
 	game.timers.enemy_spawn_interval = 2000 // Spawn an enemy every 2 seconds
 	game.timers.enemy_spawn_timer = game.timers.enemy_spawn_interval
 
+	game.timers.win_lose_reset_time = 10000 // 10 seconds 
+
 	// Load level-1 using asset manager
 	level_path := "data/levels/level-1.json"
 	sdl_wrapper := data.SDL {
@@ -168,6 +175,7 @@ game_init :: proc(
 
 	game.entity.player.screen_w = 192
 	game.entity.player.screen_h = 192
+
 
 	game.entity.enemy.behavior.cfg = {
 		trigger_radius       = 240,
@@ -222,6 +230,12 @@ game_init :: proc(
 		follow_mode = .with_lag,
 	}
 	camera_update(&game.camera)
+
+}
+
+game_reset :: proc(game: ^Game, sdl: ^SDL, asset: ^data.Asset_Manager) {
+	game^ = Game{}
+	game_init(game, context, context.logger, sdl, asset)
 }
 
 game_deinit :: proc(game: ^Game) {
@@ -237,7 +251,7 @@ game_deinit :: proc(game: ^Game) {
 	delete(game.cfg.control_button)
 }
 
-game_update :: proc(sdl: ^SDL, game: ^Game) {
+game_update :: proc(sdl: ^SDL, game: ^Game, asset_manager: ^data.Asset_Manager) {
 	context = game.ctx
 
 	// Update logic for the game module
@@ -259,6 +273,8 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 
 	mouse_pos := sdl_mouse_get_render_position(sdl)
 
+	game_update_timers(game, sdl, asset_manager)
+
 	event_system_process(game, &game.event_system)
 	event_system_process_timed(game, &game.event_system, cast(f32)game.frame_step_ms)
 
@@ -266,11 +282,13 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 	case .Playing:
 		if game.score >= 10 {
 			game.state = .Win
+			game.timers.win_lose_reset_timer = game.timers.win_lose_reset_time
 		}
 
 		time_limit_ms: f64 = 60_000 // 60 seconds
 		if cast(f64)game.frame_count * game.frame_step_ms >= time_limit_ms {
 			game.state = .Lose
+			game.timers.win_lose_reset_timer = game.timers.win_lose_reset_time
 		}
 	case .Win:
 		return
@@ -324,7 +342,6 @@ game_update :: proc(sdl: ^SDL, game: ^Game) {
 		)
 	}
 
-	game_update_timers(game)
 
 	// Player input -> movement
 	player_desire_move_x: f32
@@ -1130,8 +1147,15 @@ game_entity_do_behavior :: proc(game: ^Game) {
 	}
 }
 
-game_update_timers :: proc(game: ^Game) {
+game_update_timers :: proc(game: ^Game, sdl: ^SDL, asset: ^data.Asset_Manager) {
 	game.timers.enemy_spawn_timer -= f32(game.frame_step_ms)
+
+	#partial switch game.state {
+	case .Win:
+		game.timers.win_lose_reset_timer -= f32(game.frame_step_ms)
+	case .Lose:
+		game.timers.win_lose_reset_timer -= f32(game.frame_step_ms)
+	}
 
 	if game.timers.enemy_spawn_timer <= 0 {
 		game.timers.enemy_spawn_timer += game.timers.enemy_spawn_interval
@@ -1167,6 +1191,13 @@ game_update_timers :: proc(game: ^Game) {
 				},
 			)
 		}
+	}
+
+	#partial switch game.state {
+	case .Win:
+		if game.timers.win_lose_reset_timer <= 0 {game_reset(game, sdl, asset)}
+	case .Lose:
+		if game.timers.win_lose_reset_timer <= 0 {game_reset(game, sdl, asset)}
 	}
 }
 
