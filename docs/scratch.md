@@ -1380,3 +1380,24 @@ TODO: Render game to an intermediate texture. Render layers to the intermediate 
 - [ ] Terminology Change: Anywhere we use 0.16667 for delta time, change to 60Hz. Use Hz in all places we track frequency.
 - [ ] Units change: Make the default time units seconds.
 - [ ] Gamepad support
+- [ ] Move drawing code currently in game: `game_draw_tilemap_tile`, `game_draw_animation`, `game_draw_sprite` to calls out to a drawing module
+  - Interface will be through submitting commands
+  - Easy support for selecting drawing information (texture, layer, etc)
+  - Extract all coupling between the game module and visual assets into strictly handle based interactions
+    - draw module connects handles and assets during the processing/execution of a draw call
+
+- [ ] Separate game struct variables into buckets that can be kept, or reloaded, across reloads:
+  - Config (any value that would be set in an editor)
+    - Can be reloaded separately from code changes
+    - Essentially, reload constants from the DB
+  - Gameplay state (player position, current level, enemy positions, etc)
+    - Should not be reset when hot reloading code
+  - Frame state
+    - Will not be effected by hot reloads since it should be reset at the beginning of each frame
+
+- [ ] Separate game struct variables by what would be serialized when saving vs what would be dropped
+
+- [ ] gameplay state serialization
+- [ ] Animated tiles. Coastlines
+
+- [ ] TODO: https://github.com/johnBuffer/Interpolated
