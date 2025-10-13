@@ -65,6 +65,7 @@ app_init :: proc(app: ^App, ctx: runtime.Context) {
 		window_title = "eel-pool",
 		window_size  = {1280, 720},
 		window_flags = {.RESIZABLE},
+		clear_color  = {71, 171, 169, 255},
 	}
 	sdl_init(&app.sdl, sdl_opts)
 

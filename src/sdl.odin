@@ -21,6 +21,7 @@ SDL_Options :: struct {
 	window_title: string,
 	window_size:  Vec2i,
 	window_flags: sdl3.WindowFlags,
+	clear_color:  sdl3.Color,
 }
 
 SDL_Window :: struct {
@@ -42,8 +43,8 @@ SDL_Keyboard :: struct {
 	keycodes_curr:  map[sdl3.Keycode]bool,
 
 	// Key modifiers (shift, ctrl, alt, etc.)
-	mods_prev: sdl3.Keymod,
-	mods_curr: sdl3.Keymod,
+	mods_prev:      sdl3.Keymod,
+	mods_curr:      sdl3.Keymod,
 }
 
 SDL_Mouse :: struct {
@@ -153,7 +154,9 @@ sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 	s.keyboard.keycodes_curr = make(map[sdl3.Keycode]bool)
 
 	s.renderer.ptr = must(sdl3.CreateRenderer(s.window.ptr, nil), "create renderer")
-	s.renderer.clear_color = sdl3.Color{0, 0, 0, 255}
+
+	// s.renderer.clear_color = sdl3.Color{0, 0, 0, 255}
+	s.renderer.clear_color = opts.clear_color
 
 	must(
 		sdl3.SetRenderLogicalPresentation(
