@@ -1369,8 +1369,14 @@ TODO: Render game to an intermediate texture. Render layers to the intermediate 
 
 - [x] Render lines and shape primitives for debug purposes
   - draw line, draw aabb, draw circle, etc
-- [ ] Render text for debug purposes
+- [x] Render text for debug purposes
 
 # Wed Oct 01 2025 - 1
 
 - [ ] Config file for keyboard controls: <https://www.bytesbeneath.com/p/your-games-input-system-is-holding>
+
+# Sun Oct 12 2025
+
+- [ ] Terminology Change: Anywhere we use 0.16667 for delta time, change to 60Hz. Use Hz in all places we track frequency.
+- [ ] Units change: Make the default time units seconds.
+- [ ] Gamepad support
