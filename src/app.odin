@@ -16,6 +16,7 @@ App :: struct {
 	time:            App_Time,
 	game:            Game,
 	asset_manager:   data.Asset_Manager,
+	assets:          Game_Assets,
 	capture_frames:  [dynamic]u64, // Frame numbers to capture
 	capture_on_exit: bool, // Capture on application exit
 }
@@ -72,11 +73,9 @@ app_init :: proc(app: ^App, ctx: runtime.Context) {
 	// Initialize asset manager
 	app.asset_manager, _ = data.asset_manager_init()
 
-	sprites_init(&app.sdl)
+	game_assets_init(&app.assets, &app.sdl)
 
-	animations_init(&app.sdl)
-
-	game_init(&app.game, app.ctx, app.ctx.logger, &app.sdl, &app.asset_manager)
+	game_init(&app.game, app.ctx, app.ctx.logger, &app.sdl, &app.asset_manager, &app.assets)
 
 	// TODO: Initialize other subsystems (e.g., job system, ...)
 }
@@ -89,9 +88,7 @@ app_deinit :: proc(app: ^App) {
 
 	game_deinit(&app.game)
 
-	animations_deinit(&app.sdl)
-
-	sprites_deinit(&app.sdl)
+	game_assets_deinit(&app.assets, &app.sdl)
 
 	data.asset_manager_deinit(&app.asset_manager)
 

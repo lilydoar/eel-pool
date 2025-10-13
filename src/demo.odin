@@ -3,9 +3,9 @@ package game
 import sdl3 "vendor:sdl3"
 
 demo_draw_idle_atlas :: proc(game: ^Game, r: ^SDL_Renderer) {
-	for frame in 0 ..< len(animation_player_idle.frame) {
+	for frame in 0 ..< len(game.assets.animation_player_idle.frame) {
 		clip: sdl3.Rect
-		sdl3.GetSurfaceClipRect(animation_player_idle.frame[frame], &clip)
+		sdl3.GetSurfaceClipRect(game.assets.animation_player_idle.frame[frame], &clip)
 
 		src: Maybe(^sdl3.FRect) = &sdl3.FRect {
 			cast(f32)clip.x,
@@ -20,27 +20,27 @@ demo_draw_idle_atlas :: proc(game: ^Game, r: ^SDL_Renderer) {
 			cast(f32)clip.h,
 		}
 
-		sdl3.RenderTexture(r.ptr, animation_player_idle.texture.texture, src, dst)
+		sdl3.RenderTexture(r.ptr, game.assets.animation_player_idle.texture.texture, src, dst)
 	}
 }
 
 demo_draw_player_animations :: proc(game: ^Game, r: ^SDL_Renderer) {
-	game_draw_animation(game, r, {animation_player_idle, sdl3.FRect{0, 192, 192, 192}, 0, false})
-	game_draw_animation(game, r, {animation_player_run, sdl3.FRect{192, 192, 192, 192}, 0, false})
+	game_draw_animation(game, r, {game.assets.animation_player_idle, sdl3.FRect{0, 192, 192, 192}, 0, false})
+	game_draw_animation(game, r, {game.assets.animation_player_run, sdl3.FRect{192, 192, 192, 192}, 0, false})
 	game_draw_animation(
 		game,
 		r,
-		{animation_player_guard, sdl3.FRect{192 * 2, 192, 192, 192}, 0, false},
+		{game.assets.animation_player_guard, sdl3.FRect{192 * 2, 192, 192, 192}, 0, false},
 	)
 	game_draw_animation(
 		game,
 		r,
-		{animation_player_attack1, sdl3.FRect{192 * 3, 192, 192, 192}, 0, false},
+		{game.assets.animation_player_attack1, sdl3.FRect{192 * 3, 192, 192, 192}, 0, false},
 	)
 	game_draw_animation(
 		game,
 		r,
-		{animation_player_attack2, sdl3.FRect{192 * 4, 192, 192, 192}, 0, false},
+		{game.assets.animation_player_attack2, sdl3.FRect{192 * 4, 192, 192, 192}, 0, false},
 	)
 }
 

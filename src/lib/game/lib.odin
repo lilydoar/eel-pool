@@ -9,13 +9,14 @@ import data "../../data"
 game_state :: proc() -> rawptr {return nil}
 
 @(export)
-game_init :: proc(game_ptr: rawptr, ctx: rawptr, logger: rawptr, sdl: rawptr, asset: rawptr) {
+game_init :: proc(game_ptr: rawptr, ctx: rawptr, logger: rawptr, sdl: rawptr, asset: rawptr, assets: rawptr) {
 	game_typed := cast(^game.Game)game_ptr
 	ctx_typed := cast(^runtime.Context)ctx
 	logger_typed := cast(^log.Logger)logger
 	sdl_typed := cast(^game.SDL)sdl
 	asset_typed := cast(^data.Asset_Manager)asset
-	game.game_init(game_typed, ctx_typed^, logger_typed^, sdl_typed, asset_typed)
+	assets_typed := cast(^game.Game_Assets)assets
+	game.game_init(game_typed, ctx_typed^, logger_typed^, sdl_typed, asset_typed, assets_typed)
 }
 
 @(export)

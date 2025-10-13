@@ -12,6 +12,7 @@ import sdl3 "vendor:sdl3"
 Game :: struct {
 	ctx:                   runtime.Context,
 	cfg:                   Game_Config,
+	assets:                ^Game_Assets,
 	frame_count:           u64,
 	frame_step_ms:         f64, // ms per game frame (fixed step)
 
@@ -128,6 +129,7 @@ game_init :: proc(
 	logger: log.Logger,
 	sdl: ^SDL,
 	asset_manager: ^data.Asset_Manager,
+	assets: ^Game_Assets,
 ) {
 	context = ctx
 
@@ -137,6 +139,7 @@ game_init :: proc(
 
 	game.ctx = ctx
 	game.ctx.logger = logger
+	game.assets = assets
 
 	game.frame_step_ms = 1000 / 60 // 16.666 ms per frame at 60 FPS
 
@@ -238,9 +241,10 @@ game_init :: proc(
 	camera_update(&game.camera)
 }
 
-game_reset :: proc(game: ^Game, sdl: ^SDL, asset: ^data.Asset_Manager) {
+game_reset :: proc(game: ^Game, sdl: ^SDL, asset: ^data.Asset_Manager, assets: ^Game_Assets) {
+	assets_backup := game.assets
 	game^ = Game{}
-	game_init(game, context, context.logger, sdl, asset)
+	game_init(game, context, context.logger, sdl, asset, assets_backup)
 }
 
 game_deinit :: proc(game: ^Game) {
@@ -743,9 +747,9 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 
 			switch game.entity.player.action {
 			case .idle:
-				game_draw_animation(game, r, {animation_player_idle, dst, 0, mirror_x})
+				game_draw_animation(game, r, {game.assets.animation_player_idle, dst, 0, mirror_x})
 			case .running:
-				game_draw_animation(game, r, {animation_player_run, dst, 0, mirror_x})
+				game_draw_animation(game, r, {game.assets.animation_player_run, dst, 0, mirror_x})
 			case .guard:
 			case .attack:
 			}
@@ -795,10 +799,10 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 
 					switch game.entity.enemy.behavior.state {
 					case .idle:
-						game_draw_sprite(game, r, {sprite_archer_arrow, dst, rotation, false})
+						game_draw_sprite(game, r, {game.assets.sprite_archer_arrow, dst, rotation, false})
 					case .active:
 						// TODO: Rotate to face player
-						game_draw_sprite(game, r, {sprite_archer_arrow, dst, rotation, false})
+						game_draw_sprite(game, r, {game.assets.sprite_archer_arrow, dst, rotation, false})
 					}
 
 				}
@@ -1200,9 +1204,9 @@ game_update_timers :: proc(game: ^Game, sdl: ^SDL, asset: ^data.Asset_Manager) {
 
 	#partial switch game.state {
 	case .Win:
-		if game.timers.win_lose_reset_timer <= 0 {game_reset(game, sdl, asset)}
+		if game.timers.win_lose_reset_timer <= 0 {game_reset(game, sdl, asset, game.assets)}
 	case .Lose:
-		if game.timers.win_lose_reset_timer <= 0 {game_reset(game, sdl, asset)}
+		if game.timers.win_lose_reset_timer <= 0 {game_reset(game, sdl, asset, game.assets)}
 	}
 }
 

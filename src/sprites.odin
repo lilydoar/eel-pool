@@ -6,9 +6,7 @@ import os "core:os/os2"
 
 data_sprites_path := "data/assets/sprites.json"
 
-sprite_archer_arrow: game_sprite
-
-sprites_init :: proc(s: ^SDL) {
+sprites_init_into :: proc(assets: ^Game_Assets, s: ^SDL) {
 	log.debug("Loading sprites...")
 	defer log.debug("Sprites loaded")
 
@@ -25,10 +23,10 @@ sprites_init :: proc(s: ^SDL) {
 	sprite_data := make(map[string]asset_sprite)
 	for anim in sprite_data_list {sprite_data[anim.name] = anim}
 
-	sprite_archer_arrow = asset_sprite_load(s, sprite_data["archer_arrow"])
+	assets.sprite_archer_arrow = asset_sprite_load(s, sprite_data["archer_arrow"])
 }
 
-sprites_deinit :: proc(s: ^SDL) {
-	asset_sprite_unload(sprite_archer_arrow)
+sprites_deinit_from :: proc(assets: ^Game_Assets, s: ^SDL) {
+	asset_sprite_unload(assets.sprite_archer_arrow)
 }
 
