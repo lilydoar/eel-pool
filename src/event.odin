@@ -5,8 +5,6 @@ import "core:log"
 
 EventType :: enum {
 	Invalid,
-	TextUpdate,
-	PositionChange,
 	EntityDestroyed,
 }
 
@@ -34,35 +32,39 @@ Event :: struct {
 	payload: EventPayload,
 }
 
-TimedEvent :: struct {
+EventTimed :: struct {
 	using event: Event,
 	timer:       f32,
 }
 
+// Event callback type
 EventCallbackProc :: proc(ctx: rawptr, event: Event)
 
 Event_System :: struct {
-	// Event callback type
 	event_listeners:   map[EventType][dynamic]EventCallbackProc,
 	event_queue:       queue.Queue(Event),
-	timed_event_queue: [dynamic]TimedEvent,
+	event_queue_timed: [dynamic]EventTimed,
 }
 
-event_publish :: proc(e: ^Event_System, type: EventType, payload: EventPayload) {
+event_system_publish :: proc(e: ^Event_System, type: EventType, payload: EventPayload) {
 	queue.enqueue(&e.event_queue, Event{type = type, payload = payload})
 	when DEBUG_GAME {log.debugf("Event published: %d", type)}
 }
 
-event_publish_timed :: proc(
+event_system_publish_timed :: proc(
 	e: ^Event_System,
 	type: EventType,
 	payload: EventPayload,
 	seconds: f32,
 ) {
-	append(&e.timed_event_queue, TimedEvent{type = type, payload = payload, timer = seconds})
+	append(&e.event_queue_timed, EventTimed{type = type, payload = payload, timer = seconds})
 }
 
-event_subscribe_type :: proc(e: ^Event_System, type: EventType, callback: EventCallbackProc) {
+event_system_subscribe_to_type :: proc(
+	e: ^Event_System,
+	type: EventType,
+	callback: EventCallbackProc,
+) {
 	if type not_in e.event_listeners {
 		e.event_listeners[type] = make([dynamic]EventCallbackProc)
 	}
@@ -70,6 +72,10 @@ event_subscribe_type :: proc(e: ^Event_System, type: EventType, callback: EventC
 	append(&e.event_listeners[type], callback)
 }
 
+// TODO
+// I need some way to decouple events and when in a frame they are processed/consumed/the callback is run
+// I think I want to process events and queue up callbacks to run during the next frame.
+// This way they can be sorted into categories and can be run at different points during the game update.
 event_system_process :: proc(ctx: rawptr, e: ^Event_System) {
 	for queue.len(e.event_queue) > 0 {
 		event := queue.dequeue(&e.event_queue)
@@ -84,8 +90,8 @@ event_system_process :: proc(ctx: rawptr, e: ^Event_System) {
 
 event_system_process_timed :: proc(ctx: rawptr, e: ^Event_System, delta_time: f32) {
 	// Reverse iteration so we can use unordered_remove
-	for i := len(e.timed_event_queue) - 1; i >= 0; i -= 1 {
-		event := &e.timed_event_queue[i]
+	for i := len(e.event_queue_timed) - 1; i >= 0; i -= 1 {
+		event := &e.event_queue_timed[i]
 
 		event.timer -= delta_time
 
@@ -96,7 +102,7 @@ event_system_process_timed :: proc(ctx: rawptr, e: ^Event_System, delta_time: f3
 				}
 			}
 
-			unordered_remove(&e.timed_event_queue, i)
+			unordered_remove(&e.event_queue_timed, i)
 		}
 	}
 }
