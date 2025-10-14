@@ -14,7 +14,7 @@ Game :: struct {
 	cfg:                   Game_Config,
 	assets:                ^Game_Assets,
 	frame_count:           u64,
-	frame_step_ms:         f64, // ms per game frame (fixed step)
+	update_hz:             f64, // Game update frequency in Hz (e.g., 60 Hz)
 
 	//
 	input:                 bit_set[game_control],
@@ -141,14 +141,14 @@ game_init :: proc(
 	game.ctx.logger = logger
 	game.assets = assets
 
-	game.frame_step_ms = 1000 / 60 // 16.666 ms per frame at 60 FPS
+	game.update_hz = 60 // 60 Hz update frequency
 
 	game.entity_pool = entity_pool_init()
 
-	game.timers.enemy_spawn_interval = 2000 // Spawn an enemy every 2 seconds
+	game.timers.enemy_spawn_interval = 2 // Spawn an enemy every 2 seconds
 	game.timers.enemy_spawn_timer = game.timers.enemy_spawn_interval
 
-	game.timers.win_lose_reset_time = 10000 // 10 seconds 
+	game.timers.win_lose_reset_time = 10 // 10 seconds 
 
 	// Load level-1 using asset manager
 	level_path := "data/levels/level-1.json"
@@ -181,15 +181,15 @@ game_init :: proc(
 
 
 	game.entity.enemy.behavior.cfg = {
-		trigger_radius       = 240,
-		acceleration         = 11,
-		acceleration_time_ms = 1000,
+		trigger_radius             = 240,
+		acceleration_px_per_frame2 = 11,
+		acceleration_time_sec      = 1,
 		// NOTE: The intention of the above acc and acc_t is to design missiles with different motion dynamics
 		// What might be more effective as a design tool is "drawing" velocity curves
 		// Example: Start slow, speed up for most of the length of the shot, slow down at the end
 		// Design experience of drawing line along which the missile will travel, be able to tweak how the missile proceeds along the line 
 		// Once again, interpolation
-		lifetime_ms          = 1800,
+		lifetime_sec          = 1.8,
 	}
 
 	game.cfg.control_key = make(map[game_control]sdl3.Keycode)
@@ -261,14 +261,18 @@ game_deinit :: proc(game: ^Game) {
 	delete(game.cfg.control_button)
 }
 
+game_frame_step_sec :: proc(game: ^Game) -> f64 {
+	return 1.0 / game.update_hz
+}
+
 game_update :: proc(sdl: ^SDL, game: ^Game, asset_manager: ^data.Asset_Manager) {
 	context = game.ctx
 
 	// Update logic for the game module
 	when DEBUG_FRAME {log.debugf(
-			"Begin game update: frame_count: {}, game time: {}ms",
+			"Begin game update: frame_count: {}, game time: {}sec",
 			game.frame_count,
-			cast(f64)game.frame_count * game.frame_step_ms,
+			cast(f64)game.frame_count * game_frame_step_sec(game),
 		)}
 	when DEBUG_FRAME {defer log.debug("End game update")}
 
@@ -286,17 +290,18 @@ game_update :: proc(sdl: ^SDL, game: ^Game, asset_manager: ^data.Asset_Manager) 
 	game_update_timers(game, sdl, asset_manager)
 
 	event_system_process(game, &game.event_system)
-	event_system_process_timed(game, &game.event_system, cast(f32)game.frame_step_ms)
+	event_system_process_timed(game, &game.event_system, cast(f32)game_frame_step_sec(game))
 
 	switch game.state {
 	case .Playing:
-		if game.score >= 10 {
+		if game.score >= 1000 {
 			game.state = .Win
 			game.timers.win_lose_reset_timer = game.timers.win_lose_reset_time
 		}
 
-		time_limit_ms: f64 = 60_000 // 60 seconds
-		if cast(f64)game.frame_count * game.frame_step_ms >= time_limit_ms {
+		time_limit_sec: f64 = 60_000 // 60_000 seconds
+		game_time_sec := cast(f64)game.frame_count * game_frame_step_sec(game)
+		if game_time_sec >= time_limit_sec {
 			game.state = .Lose
 			game.timers.win_lose_reset_timer = game.timers.win_lose_reset_time
 		}
@@ -308,7 +313,7 @@ game_update :: proc(sdl: ^SDL, game: ^Game, asset_manager: ^data.Asset_Manager) 
 
 	// Update debug timers
 	if game.debug.capture_feedback_time > 0 {
-		game.debug.capture_feedback_time -= f32(game.frame_step_ms)
+		game.debug.capture_feedback_time -= f32(game_frame_step_sec(game))
 		if game.debug.capture_feedback_time < 0 {
 			game.debug.capture_feedback_time = 0
 		}
@@ -1017,7 +1022,7 @@ game_draw_animation :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 	frame := (elapsed_ms / cast(u64)cmd.anim.delay_ms) % cast(u64)len(cmd.anim.frame)
 	// when DEBUG_FRAME {
 	// 	log.debugf("animation {} frame: {}", cmd.anim.name, frame)
-	// 	log.debugf("elapsed_ms: {}, delay_ms: {}", elapsed_ms, cmd.anim.delay_ms)
+	// 	log.debugf("elapsed_sec: {}, delay_ms: {}", elapsed_sec, cmd.anim.delay_ms)
 	// 	log.debugf("total frames: {}", len(cmd.anim.frame))
 	// }
 
@@ -1114,7 +1119,7 @@ game_draw_sprite :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 
 game_entity_do_behavior :: proc(game: ^Game) {
 
-	curr_time := cast(f64)game.frame_count * game.frame_step_ms
+	curr_time := cast(f64)game.frame_count * game_frame_step_sec(game)
 
 	for &e in game.entity_pool.entities {
 		if !(.Is_Active in e.flags) {continue}
@@ -1141,7 +1146,7 @@ game_entity_do_behavior :: proc(game: ^Game) {
 			case .active:
 				if range_activated_missile_is_lifetime_expired(
 					v.behavior,
-					cast(f64)game.frame_count * game.frame_step_ms,
+					curr_time,
 				) {
 					when DEBUG_FRAME {log.debug("Enemy missile lifetime expired!")}
 					entity_pool_destroy_entity(&game.entity_pool, e)
@@ -1166,13 +1171,14 @@ game_entity_do_behavior :: proc(game: ^Game) {
 }
 
 game_update_timers :: proc(game: ^Game, sdl: ^SDL, asset: ^data.Asset_Manager) {
-	game.timers.enemy_spawn_timer -= f32(game.frame_step_ms)
+	frame_step_sec := f32(game_frame_step_sec(game))
+	game.timers.enemy_spawn_timer -= frame_step_sec
 
 	#partial switch game.state {
 	case .Win:
-		game.timers.win_lose_reset_timer -= f32(game.frame_step_ms)
+		game.timers.win_lose_reset_timer -= frame_step_sec
 	case .Lose:
-		game.timers.win_lose_reset_timer -= f32(game.frame_step_ms)
+		game.timers.win_lose_reset_timer -= frame_step_sec
 	}
 
 	if game.timers.enemy_spawn_timer <= 0 {

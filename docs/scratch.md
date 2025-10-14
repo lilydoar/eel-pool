@@ -1377,8 +1377,8 @@ TODO: Render game to an intermediate texture. Render layers to the intermediate 
 
 # Sun Oct 12 2025
 
-- [ ] Terminology Change: Anywhere we use 0.16667 for delta time, change to 60Hz. Use Hz in all places we track frequency.
-- [ ] Units change: Make the default time units seconds.
+- [x] Terminology Change: Anywhere we use 0.16667 for delta time, change to 60Hz. Use Hz in all places we track frequency.
+- [x] Units change: Make the default time units seconds.
 - [ ] Gamepad support
 - [ ] Move drawing code currently in game: `game_draw_tilemap_tile`, `game_draw_animation`, `game_draw_sprite` to calls out to a drawing module
   - Interface will be through submitting commands
