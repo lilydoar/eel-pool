@@ -2,7 +2,10 @@ package game
 
 import "core:log"
 
+// Enable in-game debug behavior
 DEBUG_GAME :: #config(DEBUG_GAME, false)
+
+// Enable per-frame logs
 DEBUG_FRAME :: #config(DEBUG_FRAME, false)
 
 Config :: struct {

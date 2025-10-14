@@ -1,6 +1,5 @@
 package game
 
-
 Camera :: struct {
 	// World position of the camera (center of the view)
 	position:        Vec2,
@@ -59,7 +58,6 @@ camera_world_to_screen :: proc(camera: ^Camera, world_pos: Vec2, screen_size: Ve
 	// Get position relative to camera's top-left corner
 	relative_pos: Vec2 = vec2_sub(world_pos, camera.view_top_left)
 	// Scale from world coordinates to screen coordinates
-	// scale = screen_size / view_size
 	// (smaller view_size = more zoom = larger scale factor)
 	scale: Vec2 = vec2_div(screen_size, camera.view_size)
 	screen_pos: Vec2 = vec2_mul(relative_pos, scale)
@@ -68,17 +66,14 @@ camera_world_to_screen :: proc(camera: ^Camera, world_pos: Vec2, screen_size: Ve
 
 camera_screen_to_world :: proc(camera: ^Camera, screen_pos: Vec2, screen_size: Vec2) -> Vec2 {
 	// Scale from screen coordinates to world coordinates
-	// scale = view_size / screen_size
 	scale: Vec2 = vec2_div(camera.view_size, screen_size)
 	relative_pos: Vec2 = vec2_mul(screen_pos, scale)
 	world_pos: Vec2 = vec2_add(relative_pos, camera.view_top_left)
 	return world_pos
 }
 
-// Convert world size to screen size
 camera_world_size_to_screen :: proc(camera: ^Camera, world_size: Vec2, screen_size: Vec2) -> Vec2 {
 	// Scale from world size to screen size
-	// scale = screen_size / view_size
 	scale: Vec2 = vec2_div(screen_size, camera.view_size)
 	screen_sized: Vec2 = vec2_mul(world_size, scale)
 	return screen_sized
