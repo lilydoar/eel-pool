@@ -1399,5 +1399,9 @@ TODO: Render game to an intermediate texture. Render layers to the intermediate 
 
 - [ ] gameplay state serialization
 - [ ] Animated tiles. Coastlines
+- [ ] Proper logging. Writable to a file. Writeable to stdout. Configurable log levels per module.
+- [ ] Move debug text calls into debug.odin
+- [ ] Ability to define and reuse entity archetypes
 
 - [ ] TODO: https://github.com/johnBuffer/Interpolated
+
