@@ -15,10 +15,14 @@ Entity :: struct {
 	flags:     Entity_Flags,
 	variant:   Entity_Variant,
 
-	// Components
-	position:  C_World_Position,
-	collision: C_World_Collision,
-	sprite:    C_Sprite,
+	// Parts
+	position:  Part_World_Position,
+	collision: Part_World_Collision,
+	sprite:    Part_Sprite,
+
+	// TODO
+	// Fields in scratch are zeroed every frame
+	// scratch:   struct {},
 }
 
 Entity_Variant :: union {
