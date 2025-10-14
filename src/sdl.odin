@@ -7,6 +7,8 @@ import "core:time"
 import sdl3 "vendor:sdl3"
 import sdl3img "vendor:sdl3/image"
 
+// TODO
+// Move to options file
 RenderTargetSize :: Vec2u{640, 360}
 
 SDL :: struct {
@@ -31,7 +33,6 @@ SDL_Window :: struct {
 	size_curr:    Vec2i,
 	is_minimized: bool,
 }
-
 
 SDL_Keyboard :: struct {
 	// Physical keys on the keyboard.
@@ -64,18 +65,6 @@ SDL_Renderer :: struct {
 	clear_color: sdl3.Color,
 	textures:    struct {
 		render_target: SDL_Texture,
-		terrain:       struct {
-			tilemap_atlas_color1: SDL_Texture,
-			tilemap_atlas_color2: SDL_Texture,
-			tilemap_atlas_color3: SDL_Texture,
-		},
-	},
-	tilemaps:    struct {
-		terrain: struct {
-			color1: SDL_Tilemap,
-			color2: SDL_Tilemap,
-			color3: SDL_Tilemap,
-		},
 	},
 }
 
@@ -85,41 +74,15 @@ SDL_Texture :: struct {
 	texture: ^sdl3.Texture,
 }
 
-SDL_Tilemap :: struct {
-	name:      string,
-	dimension: Vec2i,
-	tile_size: Vec2i,
-	texture:   ^sdl3.Texture,
-	tile:      []^sdl3.Surface,
-}
-
 SDL_Animation :: struct {
 	name:         string,
 	texture:      SDL_Texture,
 	frame:        []^sdl3.Surface,
 	delay_ms:     u32,
 
+	// TODO: This is sus
 	// world_offset is the vector from the top left of the frame surface to the world_position of the "thing" the animation represents
 	world_offset: Vec2,
-}
-
-SDL_Level :: struct {
-	name:      string,
-	size:      Vec2u,
-	tile_size: Vec2u,
-	tilesets:  []struct {
-		tileset:  SDL_Tileset,
-		firstgid: u32,
-	},
-	layers:    []struct {
-		name: string,
-		size: Vec2u,
-		data: []u32,
-	},
-}
-
-SDL_Tileset :: struct {
-	name: string,
 }
 
 sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
@@ -155,9 +118,6 @@ sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 
 	s.renderer.ptr = must(sdl3.CreateRenderer(s.window.ptr, nil), "create renderer")
 
-	// s.renderer.clear_color = sdl3.Color{0, 0, 0, 255}
-	s.renderer.clear_color = opts.clear_color
-
 	must(
 		sdl3.SetRenderLogicalPresentation(
 			s.renderer.ptr,
@@ -174,108 +134,6 @@ sdl_init :: proc(s: ^SDL, opts: SDL_Options) {
 	s.renderer.textures.render_target.texture = sdl3.CreateTextureFromSurface(
 		s.renderer.ptr,
 		s.renderer.textures.render_target.surface,
-	)
-
-	terrain_tilemap_color1_name := "terrain_tilemap_color1"
-	terrain_tilemap_color1_path := "assets/Tiny_Swords/Terrain/Tilemap_color1.png"
-
-	terrain_tilemap_color2_name := "terrain_tilemap_color2"
-	terrain_tilemap_color2_path := "assets/Tiny_Swords/Terrain/Tilemap_color2.png"
-
-	terrain_tilemap_color3_name := "terrain_tilemap_color3"
-	terrain_tilemap_color3_path := "assets/Tiny_Swords/Terrain/Tilemap_color3.png"
-
-	// load textures
-	s.renderer.textures.terrain.tilemap_atlas_color1 = sdl_texture_load(
-		&s.renderer,
-		terrain_tilemap_color1_path,
-		terrain_tilemap_color1_name,
-	)
-
-	s.renderer.textures.terrain.tilemap_atlas_color2 = sdl_texture_load(
-		&s.renderer,
-		terrain_tilemap_color2_path,
-		terrain_tilemap_color2_name,
-	)
-
-	s.renderer.textures.terrain.tilemap_atlas_color3 = sdl_texture_load(
-		&s.renderer,
-		terrain_tilemap_color3_path,
-		terrain_tilemap_color3_name,
-	)
-
-	load_tilemap :: proc(s: ^SDL, cfg: struct {
-			name:      string,
-			dimension: Vec2i,
-			atlas:     ^SDL_Texture,
-		}) -> SDL_Tilemap {
-		assert(cfg.dimension.x > 0)
-		assert(cfg.dimension.y > 0)
-		assert(cfg.atlas != nil)
-
-		tilemap := SDL_Tilemap {
-			name      = cfg.name,
-			dimension = cfg.dimension,
-			tile_size = Vec2i {
-				cfg.atlas.surface.w / cfg.dimension.x,
-				cfg.atlas.surface.h / cfg.dimension.y,
-			},
-			texture   = cfg.atlas.texture,
-			tile      = make([]^sdl3.Surface, cfg.dimension.x * cfg.dimension.y),
-		}
-
-		log.debugf(
-			"Loading tilemap '{}' with dimension {} x {} (tile size: {} x {})",
-			cfg.name,
-			cfg.dimension.x,
-			cfg.dimension.y,
-			tilemap.tile_size.x,
-			tilemap.tile_size.y,
-		)
-
-		for y in 0 ..< cfg.dimension.y {
-			for x in 0 ..< cfg.dimension.x {
-				idx := y * cfg.dimension.x + x
-				rect: Maybe(^sdl3.Rect) = &sdl3.Rect {
-					tilemap.tile_size.x * cast(i32)x,
-					tilemap.tile_size.y * cast(i32)y,
-					cast(i32)tilemap.tile_size.x,
-					cast(i32)tilemap.tile_size.y,
-				}
-				tile := sdl3.DuplicateSurface(cfg.atlas.surface)
-				sdl3.SetSurfaceClipRect(tile, rect)
-				tilemap.tile[idx] = tile
-			}
-		}
-
-		return tilemap
-	}
-
-	s.renderer.tilemaps.terrain.color1 = load_tilemap(
-		s,
-		{
-			terrain_tilemap_color1_name,
-			Vec2i{20, 8},
-			&s.renderer.textures.terrain.tilemap_atlas_color1,
-		},
-	)
-
-	s.renderer.tilemaps.terrain.color2 = load_tilemap(
-		s,
-		{
-			terrain_tilemap_color2_name,
-			Vec2i{20, 8},
-			&s.renderer.textures.terrain.tilemap_atlas_color2,
-		},
-	)
-
-	s.renderer.tilemaps.terrain.color3 = load_tilemap(
-		s,
-		{
-			terrain_tilemap_color3_name,
-			Vec2i{20, 8},
-			&s.renderer.textures.terrain.tilemap_atlas_color3,
-		},
 	)
 }
 
@@ -339,11 +197,14 @@ sdl_handle_event :: proc(s: ^SDL, e: sdl3.Event) -> (quit: bool) {
 	#partial switch e.type {
 	case .QUIT, .WINDOW_CLOSE_REQUESTED:
 		quit = true
+
 	case .WINDOW_RESIZED, .WINDOW_PIXEL_SIZE_CHANGED, .WINDOW_METAL_VIEW_RESIZED:
 		s.window.size_curr = sdl_get_window_size(s)
+
 	case .WINDOW_MINIMIZED, .WINDOW_MAXIMIZED, .WINDOW_RESTORED:
 		s.window.size_curr = sdl_get_window_size(s)
 		s.window.is_minimized = e.type == .WINDOW_MINIMIZED
+
 	case .KEY_DOWN, .KEY_UP:
 		pressed := e.type == .KEY_DOWN
 		s.keyboard.scancodes_curr[e.key.scancode] = pressed
@@ -353,8 +214,10 @@ sdl_handle_event :: proc(s: ^SDL, e: sdl3.Event) -> (quit: bool) {
 			delete_key(&s.keyboard.keycodes_curr, e.key.key)
 		}
 		s.keyboard.mods_curr = e.key.mod
+
 	case .MOUSE_MOTION:
 		s.mouse.pos_curr = {e.motion.x, e.motion.y}
+
 	case .MOUSE_BUTTON_DOWN, .MOUSE_BUTTON_UP:
 		if flag, ok := sdl_mouse_button_to_flag(e.button.button); ok {
 			if e.type == .MOUSE_BUTTON_DOWN {
@@ -363,6 +226,7 @@ sdl_handle_event :: proc(s: ^SDL, e: sdl3.Event) -> (quit: bool) {
 				s.mouse.buttons_curr -= {flag}
 			}
 		}
+
 	case .GAMEPAD_ADDED:
 		if s.gamepad != nil {return}
 		s.gamepad = sdl3.OpenGamepad(e.gdevice.which)
@@ -370,11 +234,13 @@ sdl_handle_event :: proc(s: ^SDL, e: sdl3.Event) -> (quit: bool) {
 			log.warn("Open gamepad device: {}", e.gdevice.which)
 			return
 		}
+
 	case .GAMEPAD_REMOVED:
 		if s.gamepad == nil {return}
 		if sdl3.GetGamepadID(s.gamepad) != e.gdevice.which {return}
 		sdl3.CloseGamepad(s.gamepad)
 		s.gamepad = nil
+
 	}
 
 	return
@@ -386,6 +252,9 @@ sdl_frame_end :: proc(s: ^SDL) {
 	sdl3.RenderPresent(s.renderer.ptr)
 }
 
+// TODO
+// Review before continued usage
+// 
 // Capture screenshot from render target and save to file
 sdl_capture_screenshot :: proc(s: ^SDL) {
 	// Generate filename with timestamp and frame count
@@ -423,8 +292,7 @@ sdl_capture_screenshot :: proc(s: ^SDL) {
 
 // Helpers
 sdl_get_window_size :: proc(s: ^SDL) -> (size: Vec2i) {
-	sdl3.GetWindowSize(s.window.ptr, &size.x, &size.y)
-	return
+	sdl3.GetWindowSize(s.window.ptr, &size.x, &size.y);return
 }
 
 // Helper to convert button number to flag
@@ -445,7 +313,6 @@ sdl_mouse_button_to_flag :: proc(button: u8) -> (sdl3.MouseButtonFlag, bool) {
 	}
 }
 
-// Mouse button utility functions 
 sdl_mouse_button_is_down :: proc {
 	sdl_mouse_button_is_down_flag,
 	sdl_mouse_button_is_down_num,
@@ -507,7 +374,6 @@ sdl_mouse_button_was_released_num :: proc(s: ^SDL, button: u8) -> bool {
 	return false
 }
 
-// Mouse position utilities
 sdl_mouse_get_position :: proc(s: ^SDL) -> Vec2 {
 	return s.mouse.pos_curr
 }
@@ -526,8 +392,6 @@ sdl_mouse_get_render_position :: proc(s: ^SDL) -> (pos: Vec2) {
 	sdl3.RenderCoordinatesFromWindow(s.renderer.ptr, m_pos.x, m_pos.y, &pos.x, &pos.y)
 	return
 }
-
-// Keyboard utilities
 
 // Check if key is currently down (held)
 sdl_key_is_down :: proc(s: ^SDL, key: sdl3.Keycode) -> bool {
@@ -568,8 +432,6 @@ sdl_mods_all_active :: proc(s: ^SDL, mods: sdl3.Keymod) -> bool {
 sdl_mods_none_active :: proc(s: ^SDL) -> bool {
 	return s.keyboard.mods_curr == {}
 }
-
-// Renderer utilities
 
 sdl_texture_load :: proc(r: ^SDL_Renderer, file: string, name: string) -> (texture: SDL_Texture) {
 	assert(len(file) > 0)

@@ -10,11 +10,11 @@ import "core:log"
 
 Behavior_Range_Activated_Missile :: struct {
 	cfg:          struct {
-		trigger_radius:       f32,
-		acceleration:         f32,
+		trigger_radius:             f32,
+		acceleration_px_per_frame2: f32,
 		// How long to apply acceleration for
-		acceleration_time_ms: f32,
-		lifetime_ms:          f32,
+		acceleration_time_sec:      f32,
+		lifetime_sec:               f32,
 	},
 	state:        enum {
 		idle,
@@ -55,13 +55,13 @@ range_activated_missile_next_position :: proc(
 ) -> (
 	next_position: Vec2,
 ) {
-	assert(m.cfg.acceleration_time_ms > 0)
+	assert(m.cfg.acceleration_time_sec > 0)
 
 	acc: Vec2
-	if current_time - m.trigger_time > cast(f64)m.cfg.acceleration_time_ms {
+	if current_time - m.trigger_time > cast(f64)m.cfg.acceleration_time_sec {
 		acc = Vec2{0.0, 0.0}
 	} else {
-		acc = vec2_scale(m.flying_dir, m.cfg.acceleration)
+		acc = vec2_scale(m.flying_dir, m.cfg.acceleration_px_per_frame2)
 	}
 
 	vel := vec2_add(current_velocity, acc)
@@ -86,6 +86,6 @@ range_activated_missile_is_lifetime_expired :: proc(
 	m: Behavior_Range_Activated_Missile,
 	current_time: f64,
 ) -> bool {
-	return current_time - m.trigger_time > cast(f64)m.cfg.lifetime_ms
+	return current_time - m.trigger_time > cast(f64)m.cfg.lifetime_sec
 }
 

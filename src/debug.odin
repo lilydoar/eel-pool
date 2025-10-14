@@ -46,3 +46,7 @@ debug_draw_aabb :: proc(r: ^SDL_Renderer, aabb: AABB2, color: Color) {
 	sdl3.RenderRect(r.ptr, &rect)
 }
 
+debug_draw_text :: proc(r: ^SDL_Renderer, pos: Vec2, text: string, color: Color) {
+	// TODO
+}
+

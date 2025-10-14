@@ -14,11 +14,28 @@ Game :: struct {
 	cfg:                   Game_Config,
 	assets:                ^Game_Assets,
 	frame_count:           u64,
-	frame_step_ms:         f64, // ms per game frame (fixed step)
+	update_hz:             f64, // Game update frequency in Hz (e.g., 60 Hz)
 
 	//
 	input:                 bit_set[game_control],
 	event_system:          Event_System,
+	entity_pool:           Entity_Pool,
+	camera:                Camera,
+	timers:                struct {
+		// How long to wait after winning or losing to reset the game
+		win_lose_reset_time:  f32,
+		win_lose_reset_timer: f32,
+		// 
+		enemy_spawn_hz:       f32,
+		enemy_spawn_timer:    f32,
+	},
+	score:                 u32,
+
+	// 
+	level:                 struct {
+		map_data:      ^data.Tiled_Map_Data,
+		playable_area: AABB2,
+	},
 
 	//
 	state:                 enum {
@@ -29,18 +46,9 @@ Game :: struct {
 
 	//
 	tile_screen_size:      Vec2u, // Size of a tile on screen in pixels
-	level:                 Level,
-	entity_pool:           Entity_Pool,
-	camera:                Camera,
 	camera_viewport_scale: f32,
-	timers:                struct {
-		win_lose_reset_time:  f32,
-		win_lose_reset_timer: f32,
-		//
-		enemy_spawn_interval: f32,
-		enemy_spawn_timer:    f32,
-	},
-	score:                 u32,
+
+	//
 	entity:                struct {
 		player: struct {
 			world_x:  f32,
@@ -102,20 +110,10 @@ game_control :: enum {
 
 game_level :: struct {
 	layers: []struct {
-		name:      string,
-		size:      Vec2u,
-		tile:      []u32,
-		collision: []game_tile_collision_kind,
+		name: string,
+		size: Vec2u,
+		tile: []u32,
 	},
-}
-
-game_tile_collision_kind :: enum {
-	empty,
-	solid,
-	slope_up,
-	slope_down,
-	slope_left,
-	slope_right,
 }
 
 game_sprite :: struct {
@@ -141,14 +139,14 @@ game_init :: proc(
 	game.ctx.logger = logger
 	game.assets = assets
 
-	game.frame_step_ms = 1000 / 60 // 16.666 ms per frame at 60 FPS
+	game.update_hz = 60 // 60 Hz update frequency
 
 	game.entity_pool = entity_pool_init()
 
-	game.timers.enemy_spawn_interval = 2000 // Spawn an enemy every 2 seconds
-	game.timers.enemy_spawn_timer = game.timers.enemy_spawn_interval
+	game.timers.enemy_spawn_hz = 2 // Spawn an enemy every 2 seconds
+	game.timers.enemy_spawn_timer = game.timers.enemy_spawn_hz
 
-	game.timers.win_lose_reset_time = 10000 // 10 seconds 
+	game.timers.win_lose_reset_time = 10 // 10 seconds 
 
 	// Load level-1 using asset manager
 	level_path := "data/levels/level-1.json"
@@ -165,7 +163,6 @@ game_init :: proc(
 
 	// log.debugf("%v", game.level.map_data)
 
-	// TODO: Bound to the middle platform of the level
 	game.level.playable_area = AABB2 {
 		min = Vec2{300, 680},
 		max = Vec2{1780, 1360},
@@ -179,21 +176,23 @@ game_init :: proc(
 	game.entity.player.screen_w = 192
 	game.entity.player.screen_h = 192
 
-
 	game.entity.enemy.behavior.cfg = {
-		trigger_radius       = 240,
-		acceleration         = 11,
-		acceleration_time_ms = 1000,
+		trigger_radius             = 240,
+		acceleration_px_per_frame2 = 11,
+		acceleration_time_sec      = 1,
 		// NOTE: The intention of the above acc and acc_t is to design missiles with different motion dynamics
 		// What might be more effective as a design tool is "drawing" velocity curves
 		// Example: Start slow, speed up for most of the length of the shot, slow down at the end
 		// Design experience of drawing line along which the missile will travel, be able to tweak how the missile proceeds along the line 
 		// Once again, interpolation
-		lifetime_ms          = 1800,
+		lifetime_sec               = 1.8,
 	}
 
 	game.cfg.control_key = make(map[game_control]sdl3.Keycode)
 	game.cfg.control_button = make(map[game_control]sdl3.MouseButtonFlag)
+
+	// TODO
+	// Load from options file
 
 	game_bind_control_to_key(game, .player_move_up, sdl3.K_W)
 	game_bind_control_to_key(game, .player_move_down, sdl3.K_S)
@@ -213,19 +212,23 @@ game_init :: proc(
 
 	game.state = .Playing
 
-	event_subscribe_type(&game.event_system, .EntityDestroyed, proc(ctx: rawptr, e: Event) {
-		game: ^Game = cast(^Game)ctx
+	event_system_subscribe_to_type(
+		&game.event_system,
+		.EntityDestroyed,
+		proc(ctx: rawptr, e: Event) {
+			game: ^Game = cast(^Game)ctx
 
-		when DEBUG_GAME {log.debugf("Event received: EntityDestroyed, payload: {}", e.payload)}
+			when DEBUG_GAME {log.debugf("Event received: EntityDestroyed, payload: {}", e.payload)}
 
-		if e.payload == nil {return}
+			if e.payload == nil {return}
 
-		#partial switch v in e.payload {
-		case EventPayloadEntityDestroyed:
-			game.score += 1
-			when DEBUG_GAME {log.debugf("Entity destroyed! New score: {}", game.score)}
-		}
-	})
+			#partial switch v in e.payload {
+			case EventPayloadEntityDestroyed:
+				game.score += 1
+				when DEBUG_GAME {log.debugf("Entity destroyed! New score: {}", game.score)}
+			}
+		},
+	)
 
 	game.camera_viewport_scale = 3.2
 	game.camera = Camera {
@@ -251,7 +254,6 @@ game_reset :: proc(game: ^Game, sdl: ^SDL, asset: ^data.Asset_Manager, assets: ^
 game_deinit :: proc(game: ^Game) {
 	context = game.ctx
 
-	// Cleanup code for the game module
 	log.debug("Begin deinitializing game module")
 	defer log.debug("End deinitializing game module")
 
@@ -261,14 +263,18 @@ game_deinit :: proc(game: ^Game) {
 	delete(game.cfg.control_button)
 }
 
+game_frame_step_sec :: proc(game: ^Game) -> f64 {
+	return 1.0 / game.update_hz
+}
+
 game_update :: proc(sdl: ^SDL, game: ^Game, asset_manager: ^data.Asset_Manager) {
 	context = game.ctx
 
 	// Update logic for the game module
 	when DEBUG_FRAME {log.debugf(
-			"Begin game update: frame_count: {}, game time: {}ms",
+			"Begin game update: frame_count: {}, game time: {}sec",
 			game.frame_count,
-			cast(f64)game.frame_count * game.frame_step_ms,
+			cast(f64)game.frame_count * game_frame_step_sec(game),
 		)}
 	when DEBUG_FRAME {defer log.debug("End game update")}
 
@@ -286,17 +292,18 @@ game_update :: proc(sdl: ^SDL, game: ^Game, asset_manager: ^data.Asset_Manager) 
 	game_update_timers(game, sdl, asset_manager)
 
 	event_system_process(game, &game.event_system)
-	event_system_process_timed(game, &game.event_system, cast(f32)game.frame_step_ms)
+	event_system_process_timed(game, &game.event_system, cast(f32)game_frame_step_sec(game))
 
 	switch game.state {
 	case .Playing:
-		if game.score >= 10 {
+		if game.score >= 1000 {
 			game.state = .Win
 			game.timers.win_lose_reset_timer = game.timers.win_lose_reset_time
 		}
 
-		time_limit_ms: f64 = 60_000 // 60 seconds
-		if cast(f64)game.frame_count * game.frame_step_ms >= time_limit_ms {
+		time_limit_sec: f64 = 60_000 // 60_000 seconds
+		game_time_sec := cast(f64)game.frame_count * game_frame_step_sec(game)
+		if game_time_sec >= time_limit_sec {
 			game.state = .Lose
 			game.timers.win_lose_reset_timer = game.timers.win_lose_reset_time
 		}
@@ -308,13 +315,14 @@ game_update :: proc(sdl: ^SDL, game: ^Game, asset_manager: ^data.Asset_Manager) 
 
 	// Update debug timers
 	if game.debug.capture_feedback_time > 0 {
-		game.debug.capture_feedback_time -= f32(game.frame_step_ms)
+		game.debug.capture_feedback_time -= f32(game_frame_step_sec(game))
 		if game.debug.capture_feedback_time < 0 {
 			game.debug.capture_feedback_time = 0
 		}
 	}
 
-	// Editor actions (trigger on key release to avoid multiple captures)
+	// Editor actions
+
 	if capture_key, ok := game.cfg.control_key[.editor_capture_screen]; ok {
 		if sdl_key_was_released(sdl, capture_key) {
 			// Set flag to capture screenshot at end of frame (after drawing)
@@ -335,14 +343,14 @@ game_update :: proc(sdl: ^SDL, game: ^Game, asset_manager: ^data.Asset_Manager) 
 		entity_pool_create_entity(
 			&game.entity_pool,
 			Entity {
-				position = C_World_Position{mouse_pos.x, mouse_pos.y, 0},
-				collision = C_World_Collision(
+				position = Part_World_Position{mouse_pos.x, mouse_pos.y, 0},
+				collision = Part_World_Collision(
 					AABB2 {
 						min = Vec2{mouse_pos.x, mouse_pos.y},
 						max = Vec2{mouse_pos.x + 64, mouse_pos.y + 64},
 					},
 				),
-				sprite = C_Sprite {
+				sprite = Part_Sprite {
 					world_size   = Vec2{64, 64},
 					// Center the sprite on the entity position
 					world_offset = Vec2{32, 32},
@@ -352,6 +360,7 @@ game_update :: proc(sdl: ^SDL, game: ^Game, asset_manager: ^data.Asset_Manager) 
 		)
 	}
 
+	// End Editor actions
 
 	// Player input -> movement
 	player_desire_move_x: f32
@@ -427,37 +436,165 @@ game_update :: proc(sdl: ^SDL, game: ^Game, asset_manager: ^data.Asset_Manager) 
 game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 	context = game.ctx
 
-	// Drawing logic for the game module
 	when DEBUG_FRAME {log.debug("Begin drawing game frame")}
 	when DEBUG_FRAME {defer log.debug("End drawing game frame")}
 
-	// Draw all level layers
-	if game.level.map_data != nil && len(game.level.map_data.layers) > 0 {
-		for layer, layer_idx in game.level.map_data.layers {
-			switch layer.type {
-			case .tile_layer:
-				when DEBUG_GAME {
-					log.debugf(
-						"Drawing layer {} ({}x{}, {} tiles)",
-						layer.name,
-						layer.width,
-						layer.height,
-						len(layer.data),
-					)
-				}
+	{
+		// Draw all level layers
+		if game.level.map_data != nil && len(game.level.map_data.layers) > 0 {
+			for layer, layer_idx in game.level.map_data.layers {
+				switch layer.type {
+				case .tile_layer:
+					when DEBUG_GAME {
+						log.debugf(
+							"Drawing layer {} ({}x{}, {} tiles)",
+							layer.name,
+							layer.width,
+							layer.height,
+							len(layer.data),
+						)
+					}
 
-				// Draw each tile in the layer
-				for y in 0 ..< layer.height {
-					for x in 0 ..< layer.width {
-						idx := y * layer.width + x
-						gid := layer.data[idx]
+					// Draw each tile in the layer
+					for y in 0 ..< layer.height {
+						for x in 0 ..< layer.width {
+							idx := y * layer.width + x
+							gid := layer.data[idx]
 
-						if gid == 0 {
-							continue // Empty tile
+							if gid == 0 {
+								continue // Empty tile
+							}
+
+							// Parse GID to extract tile ID and rendering parameters
+							gid_info := data.tiled_gid_parse(gid)
+
+							// Find which tileset this GID belongs to (use cleaned tile_id)
+							tileset_idx := -1
+							local_id := gid_info.tile_id
+
+							for ts, i in game.level.map_data.tilesets {
+								if gid_info.tile_id >= ts.firstgid &&
+								   (i == len(game.level.map_data.tilesets) - 1 ||
+										   gid_info.tile_id <
+											   game.level.map_data.tilesets[i + 1].firstgid) {
+									tileset_idx = i
+									local_id = gid_info.tile_id - ts.firstgid
+									break
+								}
+							}
+
+							if tileset_idx < 0 ||
+							   tileset_idx >= len(game.level.map_data.tilesets) {
+								continue
+							}
+
+							tileset := game.level.map_data.tilesets[tileset_idx]
+
+							screen_pos := camera_world_to_screen(
+								&game.camera,
+								Vec2 {
+									cast(f32)(x * game.level.map_data.tile_width),
+									cast(f32)(y * game.level.map_data.tile_height),
+								},
+								Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+							)
+
+							tile_screen_size := camera_world_size_to_screen(
+								&game.camera,
+								Vec2 {
+									f32(game.level.map_data.tile_width),
+									f32(game.level.map_data.tile_height),
+								},
+								Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+							)
+
+							if tileset.is_collection {
+								// Image collection tileset - use individual tile texture
+								if local_id >= u32(len(tileset.tile_textures)) {
+									continue
+								}
+
+								tile_tex := tileset.tile_textures[local_id]
+
+								dst := sdl3.FRect {
+									screen_pos.x,
+									screen_pos.y,
+									tile_screen_size.x,
+									tile_screen_size.y,
+								}
+
+								// Render entire tile texture with flip/rotation from GID
+								if gid_info.use_rotated {
+									sdl3.RenderTextureRotated(
+										r.ptr,
+										tile_tex.texture,
+										nil,
+										&dst,
+										gid_info.rotation,
+										sdl3.FPoint{},
+										gid_info.flip_mode,
+									)
+								} else {
+									sdl3.RenderTexture(r.ptr, tile_tex.texture, nil, &dst)
+								}
+							} else {
+								// Single image tileset - use clip rects
+								if local_id >= u32(len(tileset.tilemap.tile)) {
+									continue
+								}
+
+								// Get tile clip rect
+								if local_id >= u32(len(tileset.tilemap.tile_rects)) {
+									continue
+								}
+
+								clip_rect := tileset.tilemap.tile_rects[local_id]
+
+								dst := sdl3.FRect {
+									screen_pos.x,
+									screen_pos.y,
+									tile_screen_size.x,
+									tile_screen_size.y,
+								}
+
+								src := sdl3.FRect {
+									f32(clip_rect.x),
+									f32(clip_rect.y),
+									f32(clip_rect.w),
+									f32(clip_rect.h),
+								}
+
+								// Render tile from spritesheet with flip/rotation from GID
+								if gid_info.use_rotated {
+									sdl3.RenderTextureRotated(
+										r.ptr,
+										tileset.texture.texture,
+										&src,
+										&dst,
+										gid_info.rotation,
+										sdl3.FPoint{},
+										gid_info.flip_mode,
+									)
+								} else {
+									sdl3.RenderTexture(r.ptr, tileset.texture.texture, &src, &dst)
+								}
+							}
+						}
+					}
+				case .object_layer:
+					when DEBUG_GAME {
+						log.debugf("Drawing object layer {} ({})", layer.name, len(layer.objects))
+					}
+
+					// Draw objects
+					for obj in layer.objects {
+						if obj.gid == 0 {
+							log.debugf("Skipping object {} without GID", obj.id)
+							continue // Skip objects without a tile
 						}
 
 						// Parse GID to extract tile ID and rendering parameters
-						gid_info := data.tiled_gid_parse(gid)
+						gid_info := data.tiled_gid_parse(obj.gid)
 
 						// Find which tileset this GID belongs to (use cleaned tile_id)
 						tileset_idx := -1
@@ -475,45 +612,70 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 						}
 
 						if tileset_idx < 0 || tileset_idx >= len(game.level.map_data.tilesets) {
+							log.debugf(
+								"Skipping object {} with invalid tileset index {}",
+								obj.id,
+								tileset_idx,
+							)
 							continue
 						}
 
 						tileset := game.level.map_data.tilesets[tileset_idx]
 
+						if local_id >= u32(tileset.tile_count) {
+							log.debugf(
+								"Skipping object {} with invalid local tile ID {} (is_collection: {})",
+								obj.id,
+								local_id,
+								tileset.is_collection,
+							)
+							continue
+						}
+
+						// Objects use world coordinates directly
+						// Tiled positions objects at their bottom-left corner
 						screen_pos := camera_world_to_screen(
 							&game.camera,
-							Vec2 {
-								cast(f32)(x * game.level.map_data.tile_width),
-								cast(f32)(y * game.level.map_data.tile_height),
-							},
+							Vec2{obj.position.x, obj.position.y - obj.height},
 							Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 						)
 
-						tile_screen_size := camera_world_size_to_screen(
+						obj_screen_size := camera_world_size_to_screen(
 							&game.camera,
-							Vec2 {
-								f32(game.level.map_data.tile_width),
-								f32(game.level.map_data.tile_height),
-							},
+							Vec2{obj.width, obj.height},
 							Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 						)
 
+						dst := sdl3.FRect {
+							screen_pos.x,
+							screen_pos.y,
+							obj_screen_size.x,
+							obj_screen_size.y,
+						}
+
+						when DEBUG_GAME {
+							log.debugf(
+								"Drawing object {} ({}) at ({}, {})",
+								obj.id,
+								obj.gid,
+								dst.x,
+								dst.y,
+							)
+						}
+
+						// Render object tile with flip/rotation from GID
 						if tileset.is_collection {
-							// Image collection tileset - use individual tile texture
+							// Image collection - use individual tile texture
 							if local_id >= u32(len(tileset.tile_textures)) {
+								log.debugf(
+									"Skipping image collection object {} with invalid local tile ID {}",
+									obj.id,
+									local_id,
+								)
 								continue
 							}
 
 							tile_tex := tileset.tile_textures[local_id]
-
-							dst := sdl3.FRect {
-								screen_pos.x,
-								screen_pos.y,
-								tile_screen_size.x,
-								tile_screen_size.y,
-							}
-
-							// Render entire tile texture with flip/rotation from GID
 							if gid_info.use_rotated {
 								sdl3.RenderTextureRotated(
 									r.ptr,
@@ -528,24 +690,17 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 								sdl3.RenderTexture(r.ptr, tile_tex.texture, nil, &dst)
 							}
 						} else {
-							// Single image tileset - use clip rects
-							if local_id >= u32(len(tileset.tilemap.tile)) {
-								continue
-							}
-
-							// Get tile clip rect
+							// Single image tileset - use clip rect
 							if local_id >= u32(len(tileset.tilemap.tile_rects)) {
+								log.debugf(
+									"Skipping single image object {} with invalid local tile ID {}",
+									obj.id,
+									local_id,
+								)
 								continue
 							}
 
 							clip_rect := tileset.tilemap.tile_rects[local_id]
-
-							dst := sdl3.FRect {
-								screen_pos.x,
-								screen_pos.y,
-								tile_screen_size.x,
-								tile_screen_size.y,
-							}
 
 							src := sdl3.FRect {
 								f32(clip_rect.x),
@@ -554,7 +709,6 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 								f32(clip_rect.h),
 							}
 
-							// Render tile from spritesheet with flip/rotation from GID
 							if gid_info.use_rotated {
 								sdl3.RenderTextureRotated(
 									r.ptr,
@@ -571,156 +725,9 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 						}
 					}
 				}
-			case .object_layer:
-				when DEBUG_GAME {
-					log.debugf("Drawing object layer {} ({})", layer.name, len(layer.objects))
-				}
-
-				// Draw objects
-				for obj in layer.objects {
-					if obj.gid == 0 {
-						log.debugf("Skipping object {} without GID", obj.id)
-						continue // Skip objects without a tile
-					}
-
-					// Parse GID to extract tile ID and rendering parameters
-					gid_info := data.tiled_gid_parse(obj.gid)
-
-					// Find which tileset this GID belongs to (use cleaned tile_id)
-					tileset_idx := -1
-					local_id := gid_info.tile_id
-
-					for ts, i in game.level.map_data.tilesets {
-						if gid_info.tile_id >= ts.firstgid &&
-						   (i == len(game.level.map_data.tilesets) - 1 ||
-								   gid_info.tile_id <
-									   game.level.map_data.tilesets[i + 1].firstgid) {
-							tileset_idx = i
-							local_id = gid_info.tile_id - ts.firstgid
-							break
-						}
-					}
-
-					if tileset_idx < 0 || tileset_idx >= len(game.level.map_data.tilesets) {
-						log.debugf(
-							"Skipping object {} with invalid tileset index {}",
-							obj.id,
-							tileset_idx,
-						)
-						continue
-					}
-
-					tileset := game.level.map_data.tilesets[tileset_idx]
-
-					if local_id >= u32(tileset.tile_count) {
-						log.debugf(
-							"Skipping object {} with invalid local tile ID {} (is_collection: {})",
-							obj.id,
-							local_id,
-							tileset.is_collection,
-						)
-						continue
-					}
-
-					// Objects use world coordinates directly
-					// Tiled positions objects at their bottom-left corner
-					screen_pos := camera_world_to_screen(
-						&game.camera,
-						Vec2{obj.position.x, obj.position.y - obj.height},
-						Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
-					)
-
-					obj_screen_size := camera_world_size_to_screen(
-						&game.camera,
-						Vec2{obj.width, obj.height},
-						Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
-					)
-
-					dst := sdl3.FRect {
-						screen_pos.x,
-						screen_pos.y,
-						obj_screen_size.x,
-						obj_screen_size.y,
-					}
-
-					when DEBUG_GAME {
-						log.debugf(
-							"Drawing object {} ({}) at ({}, {})",
-							obj.id,
-							obj.gid,
-							dst.x,
-							dst.y,
-						)
-					}
-
-					// Render object tile with flip/rotation from GID
-					if tileset.is_collection {
-						// Image collection - use individual tile texture
-						if local_id >= u32(len(tileset.tile_textures)) {
-							log.debugf(
-								"Skipping image collection object {} with invalid local tile ID {}",
-								obj.id,
-								local_id,
-							)
-							continue
-						}
-
-						tile_tex := tileset.tile_textures[local_id]
-						if gid_info.use_rotated {
-							sdl3.RenderTextureRotated(
-								r.ptr,
-								tile_tex.texture,
-								nil,
-								&dst,
-								gid_info.rotation,
-								sdl3.FPoint{},
-								gid_info.flip_mode,
-							)
-						} else {
-							sdl3.RenderTexture(r.ptr, tile_tex.texture, nil, &dst)
-						}
-					} else {
-						// Single image tileset - use clip rect
-						if local_id >= u32(len(tileset.tilemap.tile_rects)) {
-							log.debugf(
-								"Skipping single image object {} with invalid local tile ID {}",
-								obj.id,
-								local_id,
-							)
-							continue
-						}
-
-						clip_rect := tileset.tilemap.tile_rects[local_id]
-
-						src := sdl3.FRect {
-							f32(clip_rect.x),
-							f32(clip_rect.y),
-							f32(clip_rect.w),
-							f32(clip_rect.h),
-						}
-
-						if gid_info.use_rotated {
-							sdl3.RenderTextureRotated(
-								r.ptr,
-								tileset.texture.texture,
-								&src,
-								&dst,
-								gid_info.rotation,
-								sdl3.FPoint{},
-								gid_info.flip_mode,
-							)
-						} else {
-							sdl3.RenderTexture(r.ptr, tileset.texture.texture, &src, &dst)
-						}
-					}
-				}
 			}
 		}
 	}
-
-	// demo_draw_tilemap_atlas(game, r)
-	// demo_draw_idle_atlas(game, r)
-	// demo_draw_player_animations(game, r)
 
 	{
 		// Draw player()
@@ -886,6 +893,8 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 		}
 
 		{
+			// Draw Debug text
+
 			scalex, scaley: f32
 			sdl3.GetRenderScale(r.ptr, &scalex, &scaley)
 			defer sdl3.SetRenderScale(r.ptr, scalex, scaley)
@@ -978,34 +987,34 @@ game_bind_control_to_mouse_button :: proc(
 	game.cfg.control_button[ctrl] = button
 }
 
-game_draw_tilemap_tile :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
-		tilemap:  SDL_Tilemap,
-		tile_idx: u32,
-		dest:     sdl3.FRect,
-	}) {
-
-	clip: sdl3.Rect
-	sdl3.GetSurfaceClipRect(cmd.tilemap.tile[cmd.tile_idx], &clip)
-
-	src: Maybe(^sdl3.FRect) = &sdl3.FRect {
-		cast(f32)clip.x,
-		cast(f32)clip.y,
-		cast(f32)clip.w,
-		cast(f32)clip.h,
-	}
-
-	dst_local := cmd.dest
-	dst: Maybe(^sdl3.FRect) = &dst_local
-
-	// when DEBUG_FRAME {log.debugf(
-	// 		"Render tilemap tile {}: src: {}, dest: {}",
-	// 		cmd.tile_idx,
-	// 		src,
-	// 		dst,
-	// 	)}
-
-	sdl3.RenderTexture(r.ptr, cmd.tilemap.texture, src, dst)
-}
+// game_draw_tilemap_tile :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
+// 		tilemap:  SDL_Tilemap,
+// 		tile_idx: u32,
+// 		dest:     sdl3.FRect,
+// 	}) {
+//
+// 	clip: sdl3.Rect
+// 	sdl3.GetSurfaceClipRect(cmd.tilemap.tile[cmd.tile_idx], &clip)
+//
+// 	src: Maybe(^sdl3.FRect) = &sdl3.FRect {
+// 		cast(f32)clip.x,
+// 		cast(f32)clip.y,
+// 		cast(f32)clip.w,
+// 		cast(f32)clip.h,
+// 	}
+//
+// 	dst_local := cmd.dest
+// 	dst: Maybe(^sdl3.FRect) = &dst_local
+//
+// 	// when DEBUG_FRAME {log.debugf(
+// 	// 		"Render tilemap tile {}: src: {}, dest: {}",
+// 	// 		cmd.tile_idx,
+// 	// 		src,
+// 	// 		dst,
+// 	// 	)}
+//
+// 	sdl3.RenderTexture(r.ptr, cmd.tilemap.texture, src, dst)
+// }
 
 game_draw_animation :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 		anim:         SDL_Animation,
@@ -1017,7 +1026,7 @@ game_draw_animation :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 	frame := (elapsed_ms / cast(u64)cmd.anim.delay_ms) % cast(u64)len(cmd.anim.frame)
 	// when DEBUG_FRAME {
 	// 	log.debugf("animation {} frame: {}", cmd.anim.name, frame)
-	// 	log.debugf("elapsed_ms: {}, delay_ms: {}", elapsed_ms, cmd.anim.delay_ms)
+	// 	log.debugf("elapsed_sec: {}, delay_ms: {}", elapsed_sec, cmd.anim.delay_ms)
 	// 	log.debugf("total frames: {}", len(cmd.anim.frame))
 	// }
 
@@ -1114,7 +1123,7 @@ game_draw_sprite :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 
 game_entity_do_behavior :: proc(game: ^Game) {
 
-	curr_time := cast(f64)game.frame_count * game.frame_step_ms
+	curr_time := cast(f64)game.frame_count * game_frame_step_sec(game)
 
 	for &e in game.entity_pool.entities {
 		if !(.Is_Active in e.flags) {continue}
@@ -1139,13 +1148,10 @@ game_entity_do_behavior :: proc(game: ^Game) {
 					when DEBUG_FRAME {log.debug("Enemy missile triggered!")}
 				}
 			case .active:
-				if range_activated_missile_is_lifetime_expired(
-					v.behavior,
-					cast(f64)game.frame_count * game.frame_step_ms,
-				) {
+				if range_activated_missile_is_lifetime_expired(v.behavior, curr_time) {
 					when DEBUG_FRAME {log.debug("Enemy missile lifetime expired!")}
 					entity_pool_destroy_entity(&game.entity_pool, e)
-					event_publish(
+					event_system_publish(
 						&game.event_system,
 						.EntityDestroyed,
 						EventPayloadEntityDestroyed{e.id},
@@ -1166,17 +1172,18 @@ game_entity_do_behavior :: proc(game: ^Game) {
 }
 
 game_update_timers :: proc(game: ^Game, sdl: ^SDL, asset: ^data.Asset_Manager) {
-	game.timers.enemy_spawn_timer -= f32(game.frame_step_ms)
+	frame_step_sec := f32(game_frame_step_sec(game))
+	game.timers.enemy_spawn_timer -= frame_step_sec
 
 	#partial switch game.state {
 	case .Win:
-		game.timers.win_lose_reset_timer -= f32(game.frame_step_ms)
+		game.timers.win_lose_reset_timer -= frame_step_sec
 	case .Lose:
-		game.timers.win_lose_reset_timer -= f32(game.frame_step_ms)
+		game.timers.win_lose_reset_timer -= frame_step_sec
 	}
 
 	if game.timers.enemy_spawn_timer <= 0 {
-		game.timers.enemy_spawn_timer += game.timers.enemy_spawn_interval
+		game.timers.enemy_spawn_timer += game.timers.enemy_spawn_hz
 
 		// Spawn an enemy at a random position
 		enemy_pos := Vec2 {
@@ -1193,14 +1200,14 @@ game_update_timers :: proc(game: ^Game, sdl: ^SDL, asset: ^data.Asset_Manager) {
 			entity_pool_create_entity(
 				&game.entity_pool,
 				Entity {
-					position = C_World_Position{enemy_pos.x, enemy_pos.y, 0},
-					collision = C_World_Collision(
+					position = Part_World_Position{enemy_pos.x, enemy_pos.y, 0},
+					collision = Part_World_Collision(
 						AABB2 {
 							min = Vec2{enemy_pos.x, enemy_pos.y},
 							max = Vec2{enemy_pos.x + 64, enemy_pos.y + 64},
 						},
 					),
-					sprite = C_Sprite {
+					sprite = Part_Sprite {
 						world_size   = Vec2{64, 64},
 						// Center the sprite on the entity position
 						world_offset = Vec2{32, 32},

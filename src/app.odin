@@ -22,12 +22,12 @@ App :: struct {
 }
 
 App_Time :: struct {
-	curr:                 time.Time,
-	prev:                 time.Time,
-	frame_count:          u64,
+	curr:                         time.Time,
+	prev:                         time.Time,
+	frame_count:                  u64,
 	// The number of game updates performed in the current frame
-	frame_updates:        u32,
-	frame_accumulator_ms: f64,
+	game_updates:                 u32,
+	game_updates_accumulator_sec: f64,
 }
 
 app_create_logger :: proc(app: ^App) -> (l: log.Logger) {
@@ -100,14 +100,15 @@ app_deinit :: proc(app: ^App) {
 should_loop: proc(a: ^App) -> bool = proc(a: ^App) -> bool {return true}
 
 should_update: proc(a: ^App) -> bool = proc(a: ^App) -> bool {
-	if a.time.frame_updates >= a.cfg.max_updates_per_frame {
+	if a.time.game_updates >= a.cfg.max_updates_per_frame {
 		log.warn("Dropping accumulated time")
-		a.time.frame_accumulator_ms = 0
+		a.time.game_updates_accumulator_sec = 0
 		return false
 	}
 
-	ok := a.time.frame_accumulator_ms >= a.game.frame_step_ms
-	if ok {a.time.frame_accumulator_ms -= a.game.frame_step_ms}
+	frame_step_sec := 1.0 / a.game.update_hz
+	ok := a.time.game_updates_accumulator_sec >= frame_step_sec
+	if ok {a.time.game_updates_accumulator_sec -= frame_step_sec}
 
 	return ok
 }
@@ -192,15 +193,15 @@ app_update :: proc(app: ^App) -> (quit: bool) {
 		sdl_frame_end(&app.sdl)
 	}
 
-	app.time.frame_accumulator_ms += time.duration_milliseconds(time_delta)
-	app.time.frame_updates = 0
+	app.time.game_updates_accumulator_sec += time.duration_seconds(time_delta)
+	app.time.game_updates = 0
 
 	when DEBUG_FRAME {
 		log.debugf(
-			"App frame {}: dt=%fms, accumulator=%fms",
+			"App frame {}: dt=%fsec, accumulator=%fsec",
 			app.time.frame_count,
-			time.duration_milliseconds(time_delta),
-			app.time.frame_accumulator_ms,
+			time.duration_seconds(time_delta),
+			app.time.game_updates_accumulator_sec,
 		)
 	}
 
