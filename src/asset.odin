@@ -5,6 +5,9 @@ import "core:log"
 import os "core:os/os2"
 import "vendor:sdl3"
 
+// Asset_Collection: database
+// Asset_Collection_Instance: Loaded assets
+
 asset_sprite :: struct {
 	name:         string,
 	path:         string,

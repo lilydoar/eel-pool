@@ -9,47 +9,68 @@ import os "core:os/os2"
 import "data"
 import sdl3 "vendor:sdl3"
 
-Game :: struct {
-	ctx:                   runtime.Context,
-	cfg:                   Game_Config,
-	assets:                ^Game_Assets,
-	frame_count:           u64,
+Game_Config :: struct {
 	update_hz:             f64, // Game update frequency in Hz (e.g., 60 Hz)
-
 	//
-	input:                 bit_set[game_control],
-	event_system:          Event_System,
-	entity_pool:           Entity_Pool,
-	camera:                Camera,
+	control_key:           map[Game_Input_Action_Type]sdl3.Keycode,
+	control_button:        map[Game_Input_Action_Type]sdl3.MouseButtonFlag,
+	//
 	timers:                struct {
 		// How long to wait after winning or losing to reset the game
-		win_lose_reset_time:  f32,
+		win_lose_reset_time: f32,
+		// How frequently to spawn enemies (seconds between spawns)
+		enemy_spawn_hz:      f32,
+	},
+	entity:                struct {
+		player: struct {
+			player_move_speed_x_axis: f32,
+			player_move_speed_y_axis: f32,
+		},
+		enemy:  struct {
+			behavior: Behavior_Range_Activated_Missile,
+		},
+	},
+	//
+	tile_screen_size:      Vec2u, // Size of a tile on screen in pixels
+	camera_viewport_scale: f32,
+}
+
+// Store this many game input sets. 1 latest + N-1 previous
+GAME_INPUT_BUFFER_SIZE :: 8
+
+// Everything that changes during gameplay
+Game_State :: struct {
+	frame_count: u64,
+	//
+	input:       [GAME_INPUT_BUFFER_SIZE]bit_set[Game_Input_Action_Type],
+	//
+	entity_pool: Entity_Pool,
+	event_queue: Event_Queue,
+
+	// Tells the Game_Head where to render the world from
+	camera:      Camera,
+
+	//
+	timers:      struct {
 		win_lose_reset_timer: f32,
-		// 
-		enemy_spawn_hz:       f32,
 		enemy_spawn_timer:    f32,
 	},
-	score:                 u32,
 
-	// 
-	level:                 struct {
+	//
+	level:       struct {
 		map_data:      ^data.Tiled_Map_Data,
 		playable_area: AABB2,
 	},
 
 	//
-	state:                 enum {
+	state:       enum {
 		Playing,
 		Win,
 		Lose,
 	},
-
+	score:       u32,
 	//
-	tile_screen_size:      Vec2u, // Size of a tile on screen in pixels
-	camera_viewport_scale: f32,
-
-	//
-	entity:                struct {
+	entity:      struct {
 		player: struct {
 			world_x:  f32,
 			world_y:  f32,
@@ -73,32 +94,38 @@ Game :: struct {
 			behavior: Behavior_Range_Activated_Missile,
 		},
 	},
-
-	// Debug-related state
-	debug:                 Game_Debug,
 }
 
-Game_Debug :: struct {
-	capture_feedback_time:      f32, // Time remaining for capture feedback indicator (0 = inactive)
-	capture_screenshot_pending: bool, // Screenshot requested, will be captured at end of frame
+Game_Instance :: struct {
+	ctx:   runtime.Context,
+	//
+	cfg:   Game_Config,
+	state: Game_State,
+	head:  Game_Head,
 }
 
-Game_Config :: struct {
-	control_key:    map[game_control]sdl3.Keycode,
-	control_button: map[game_control]sdl3.MouseButtonFlag,
-	entity:         struct {
-		player: struct {
-			player_move_speed_x_axis: f32,
-			player_move_speed_y_axis: f32,
-		},
-	},
+// game_instance_reload_cfg :: proc() {}
+// game_instance_reload_state :: proc() {}
+// game_instance_reload_head :: proc() {}
+
+// The Game Head is responsible for transforming game state into output.
+// This is here so that running "headless" is possible.
+Game_Head :: struct {
+	platform: ^SDL,
+	asset:    ^data.Asset_Manager, // Pointer to persistent assets
+	// TODO
+	// render: ^data.Render_Manager, // Pointer to persistent render manager
+	// sound: ^data.Sound_Manager, // Pointer to persistent sound manager
 }
 
-game_control :: enum {
+Game_Input_Action_Type :: enum {
 	player_move_up,
 	player_move_down,
 	player_move_left,
 	player_move_right,
+
+	//
+	app_capture_screen,
 
 	//
 	editor_zoom_in,
@@ -108,6 +135,7 @@ game_control :: enum {
 	editor_capture_screen,
 }
 
+// These should probably go eventually. Just glue code
 game_level :: struct {
 	layers: []struct {
 		name: string,
@@ -188,8 +216,8 @@ game_init :: proc(
 		lifetime_sec               = 1.8,
 	}
 
-	game.cfg.control_key = make(map[game_control]sdl3.Keycode)
-	game.cfg.control_button = make(map[game_control]sdl3.MouseButtonFlag)
+	game.cfg.control_key = make(map[Game_Input_Action_Type]sdl3.Keycode)
+	game.cfg.control_button = make(map[Game_Input_Action_Type]sdl3.MouseButtonFlag)
 
 	// TODO
 	// Load from options file
@@ -212,8 +240,8 @@ game_init :: proc(
 
 	game.state = .Playing
 
-	event_system_subscribe_to_type(
-		&game.event_system,
+	event_queue_subscribe_to_type(
+		&game.event_queue,
 		.EntityDestroyed,
 		proc(ctx: rawptr, e: Event) {
 			game: ^Game = cast(^Game)ctx
@@ -296,8 +324,8 @@ game_update :: proc(sdl: ^SDL, game: ^Game, asset_manager: ^data.Asset_Manager) 
 
 	game_update_timers(game, sdl, asset_manager)
 
-	event_system_process(game, &game.event_system)
-	event_system_process_timed(game, &game.event_system, cast(f32)game_frame_step_sec(game))
+	event_queue_process(game, &game.event_queue)
+	event_queue_process_timed(game, &game.event_queue, cast(f32)game_frame_step_sec(game))
 
 	switch game.state {
 	case .Playing:
@@ -982,13 +1010,13 @@ game_draw_debug_feedback :: proc(game: ^Game, r: ^SDL_Renderer) {
 	}
 }
 
-game_bind_control_to_key :: proc(game: ^Game, ctrl: game_control, key: sdl3.Keycode) {
+game_bind_control_to_key :: proc(game: ^Game, ctrl: Game_Input_Action_Type, key: sdl3.Keycode) {
 	game.cfg.control_key[ctrl] = key
 }
 
 game_bind_control_to_mouse_button :: proc(
 	game: ^Game,
-	ctrl: game_control,
+	ctrl: Game_Input_Action_Type,
 	button: sdl3.MouseButtonFlag,
 ) {
 	game.cfg.control_button[ctrl] = button
@@ -1158,8 +1186,8 @@ game_entity_do_behavior :: proc(game: ^Game) {
 				if range_activated_missile_is_lifetime_expired(v.behavior, curr_time) {
 					when DEBUG_FRAME {log.debug("Enemy missile lifetime expired!")}
 					entity_pool_destroy_entity(&game.entity_pool, e)
-					event_system_publish(
-						&game.event_system,
+					event_queue_publish(
+						&game.event_queue,
 						.EntityDestroyed,
 						EventPayloadEntityDestroyed{e.id},
 					)

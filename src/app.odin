@@ -14,7 +14,10 @@ App :: struct {
 	cfg:             Config,
 	sdl:             SDL,
 	time:            App_Time,
-	game:            Game,
+	//
+	game_instance:   Game_Instance,
+
+	//
 	asset_manager:   data.Asset_Manager,
 	assets:          Game_Assets,
 	capture_frames:  [dynamic]u64, // Frame numbers to capture
