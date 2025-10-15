@@ -296,7 +296,7 @@ game_update :: proc(sdl: ^SDL, game: ^Game, asset_manager: ^data.Asset_Manager) 
 
 	switch game.state {
 	case .Playing:
-		if game.score >= 1000 {
+		if game.score >= 10000 {
 			game.state = .Win
 			game.timers.win_lose_reset_timer = game.timers.win_lose_reset_time
 		}
