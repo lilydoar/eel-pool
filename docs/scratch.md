@@ -1405,3 +1405,10 @@ TODO: Render game to an intermediate texture. Render layers to the intermediate 
 
 - [ ] TODO: https://github.com/johnBuffer/Interpolated
 
+# Tue Oct 14 2025
+
+- [ ] Game_Instance struct
+- [ ] Game_Sound struct
+  - Play spawn low pop noise
+  - Play arrow activate noise
+- [ ] Rectangle select for camera area
