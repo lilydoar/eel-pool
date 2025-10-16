@@ -4,6 +4,7 @@ import "base:runtime"
 import "core:container/queue"
 import "core:encoding/json"
 import "core:log"
+import "core:math"
 import "core:math/rand"
 import os "core:os/os2"
 import "data"
@@ -56,11 +57,15 @@ Game_Config :: struct {
 // Store this many game input sets. 1 latest + N-1 previous
 GAME_INPUT_BUFFER_SIZE :: 8
 
+// TODO
+// Make a circular buffer to avoid moving entire buffer every frame
+Game_Input_Buffer :: [GAME_INPUT_BUFFER_SIZE]bit_set[Game_Input_Action_Type]
+
 // Everything that changes during gameplay
 Game_State :: struct {
 	frame_count: u64,
 	//
-	input:       [GAME_INPUT_BUFFER_SIZE]bit_set[Game_Input_Action_Type],
+	input:       Game_Input_Buffer,
 	//
 	entity_pool: Entity_Pool,
 	event_queue: Event_Queue,
@@ -90,20 +95,22 @@ Game_State :: struct {
 	//
 	entity:      struct {
 		player: struct {
-			world_x:  f32,
-			world_y:  f32,
+			world_x:      f32,
+			world_y:      f32,
+			world_x_prev: f32,
+			world_y_prev: f32,
 			// The player's size on the screen in pixels
-			screen_w: f32,
-			screen_h: f32,
+			screen_w:     f32,
+			screen_h:     f32,
 
 			//
-			action:   enum {
+			action:       enum {
 				idle,
 				running,
 				guard,
 				attack,
 			},
-			facing:   enum {
+			facing:       enum {
 				right,
 				left,
 			},
@@ -222,6 +229,9 @@ game_init :: proc(
 	game.state.entity.player.world_y =
 		(game.state.level.playable_area.min.y + game.state.level.playable_area.max.y) * 0.5
 
+	game.state.entity.player.world_x_prev = game.state.entity.player.world_x
+	game.state.entity.player.world_y_prev = game.state.entity.player.world_y
+
 	game.state.entity.player.screen_w = 192
 	game.state.entity.player.screen_h = 192
 
@@ -243,10 +253,15 @@ game_init :: proc(
 	// TODO
 	// Load from options file
 
-	game_bind_control_to_key(game, .player_move_up, sdl3.K_W)
-	game_bind_control_to_key(game, .player_move_down, sdl3.K_S)
-	game_bind_control_to_key(game, .player_move_left, sdl3.K_A)
-	game_bind_control_to_key(game, .player_move_right, sdl3.K_D)
+	// game_bind_control_to_key(game, .player_move_up, sdl3.K_W)
+	// game_bind_control_to_key(game, .player_move_down, sdl3.K_S)
+	// game_bind_control_to_key(game, .player_move_left, sdl3.K_A)
+	// game_bind_control_to_key(game, .player_move_right, sdl3.K_D)
+
+	game_bind_control_to_key(game, .player_move_up, sdl3.K_I)
+	game_bind_control_to_key(game, .player_move_down, sdl3.K_K)
+	game_bind_control_to_key(game, .player_move_left, sdl3.K_J)
+	game_bind_control_to_key(game, .player_move_right, sdl3.K_L)
 
 	game_bind_control_to_mouse_button(game, .editor_place_player, .LEFT)
 	game_bind_control_to_mouse_button(game, .editor_place_enemy, .RIGHT)
@@ -327,7 +342,6 @@ game_frame_step_sec :: proc(game: ^Game_Instance) -> f64 {
 game_update :: proc(sdl: ^SDL, game: ^Game_Instance, asset_manager: ^data.Asset_Manager) {
 	context = game.ctx
 
-	// Update logic for the game module
 	when DEBUG_FRAME {log.debugf(
 			"Begin game update: frame_count: {}, game time: {}sec",
 			game.state.frame_count,
@@ -428,15 +442,34 @@ game_update :: proc(sdl: ^SDL, game: ^Game_Instance, asset_manager: ^data.Asset_
 	// End Editor actions
 
 	// Player input -> movement
+
+	player_delta: Vec2 = {
+		game.state.entity.player.world_x - game.state.entity.player.world_x_prev,
+		game.state.entity.player.world_y - game.state.entity.player.world_y_prev,
+	}
+
+	when DEBUG_FRAME {log.debugf("Player delta: {}, {}", player_delta.x, player_delta.y)}
+
 	player_desire_move_x: f32
 	player_desire_move_y: f32
 	player_final_move_x: f32
 	player_final_move_y: f32
 	{
-		if .player_move_up in game.state.input[0] {player_desire_move_y -= 1.0}
-		if .player_move_down in game.state.input[0] {player_desire_move_y += 1.0}
-		if .player_move_left in game.state.input[0] {player_desire_move_x -= 1.0}
-		if .player_move_right in game.state.input[0] {player_desire_move_x += 1.0}
+		player_desire_move_x = resolve_axis_intent(
+			game.state.input,
+			.player_move_left,
+			.player_move_right,
+			player_delta.x,
+		)
+		player_desire_move_y = resolve_axis_intent(
+			game.state.input,
+			.player_move_up,
+			.player_move_down,
+			player_delta.y,
+		)
+
+		n := vec2_norm_safe(Vec2{player_desire_move_x, player_desire_move_y})
+		player_final_move_x, player_final_move_y = n.x, n.y
 
 		player_final_move_x =
 		cast(f32)(cast(f64)player_desire_move_x * cast(f64)game.cfg.entities.player.move_speed_x)
@@ -444,9 +477,18 @@ game_update :: proc(sdl: ^SDL, game: ^Game_Instance, asset_manager: ^data.Asset_
 		cast(f32)(cast(f64)player_desire_move_y * cast(f64)game.cfg.entities.player.move_speed_y)
 	}
 
+	when DEBUG_FRAME {
+		if vec2_len(Vec2{player_desire_move_x, player_desire_move_y}) > 0 {
+			log.debugf("Player desire move: {}, {}", player_desire_move_x, player_desire_move_y)
+			log.debugf("Player final move: {}, {}", player_final_move_x, player_final_move_y)
+		}
+	}
+
 	game_entity_do_behavior(game)
 
 	// Apply player movement
+	game.state.entity.player.world_y_prev = game.state.entity.player.world_y
+	game.state.entity.player.world_x_prev = game.state.entity.player.world_x
 	game.state.entity.player.world_x += player_final_move_x
 	game.state.entity.player.world_y += player_final_move_y
 
@@ -459,7 +501,8 @@ game_update :: proc(sdl: ^SDL, game: ^Game_Instance, asset_manager: ^data.Asset_
 
 	if player_final_move_x < 0 {
 		game.state.entity.player.facing = .left
-	} else if player_final_move_x > 0 {
+	}
+	if player_final_move_x > 0 {
 		game.state.entity.player.facing = .right
 	}
 
@@ -496,7 +539,14 @@ game_update :: proc(sdl: ^SDL, game: ^Game_Instance, asset_manager: ^data.Asset_
 		if !target_visible {log.warn("Camera target (player) is outside of the camera view!")}
 	}
 
+	// Prep for next frame
 	game.state.frame_count += 1
+
+	// Push all input states back by one
+	for i in 0 ..< GAME_INPUT_BUFFER_SIZE - 1 {
+		game.state.input[GAME_INPUT_BUFFER_SIZE - 1 - i] =
+			game.state.input[GAME_INPUT_BUFFER_SIZE - 2 - i]
+	}
 }
 
 game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
@@ -511,15 +561,15 @@ game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 			for layer, layer_idx in game.state.level.map_data.layers {
 				switch layer.type {
 				case .tile_layer:
-					when DEBUG_GAME {
-						log.debugf(
-							"Drawing layer {} ({}x{}, {} tiles)",
-							layer.name,
-							layer.width,
-							layer.height,
-							len(layer.data),
-						)
-					}
+					// when DEBUG_GAME {
+					// 	log.debugf(
+					// 		"Drawing layer {} ({}x{}, {} tiles)",
+					// 		layer.name,
+					// 		layer.width,
+					// 		layer.height,
+					// 		len(layer.data),
+					// 	)
+					// }
 
 					// Draw each tile in the layer
 					for y in 0 ..< layer.height {
@@ -648,9 +698,9 @@ game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 						}
 					}
 				case .object_layer:
-					when DEBUG_GAME {
-						log.debugf("Drawing object layer {} ({})", layer.name, len(layer.objects))
-					}
+					// when DEBUG_GAME {
+					// 	log.debugf("Drawing object layer {} ({})", layer.name, len(layer.objects))
+					// }
 
 					// Draw objects
 					for obj in layer.objects {
@@ -720,15 +770,15 @@ game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 							obj_screen_size.y,
 						}
 
-						when DEBUG_GAME {
-							log.debugf(
-								"Drawing object {} ({}) at ({}, {})",
-								obj.id,
-								obj.gid,
-								dst.x,
-								dst.y,
-							)
-						}
+						// when DEBUG_GAME {
+						// 	log.debugf(
+						// 		"Drawing object {} ({}) at ({}, {})",
+						// 		obj.id,
+						// 		obj.gid,
+						// 		dst.x,
+						// 		dst.y,
+						// 	)
+						// }
 
 						// Render object tile with flip/rotation from GID
 						if tileset.is_collection {
@@ -1316,5 +1366,117 @@ game_update_timers :: proc(game: ^Game_Instance, sdl: ^SDL, asset: ^data.Asset_M
 		if game.state.timers.win_lose_reset_timer <=
 		   0 {game_reset(game, sdl, asset, game.head.assets)}
 	}
+}
+
+// Begin game_input helpers
+
+// t is equal to t steps back in time.
+// 0 = current frame, 1 = previous frame, etc.
+input_action_is_active :: proc(
+	input: Game_Input_Buffer,
+	action: Game_Input_Action_Type,
+	t: i32 = 0,
+) -> bool {
+	assert(t >= 0 && t < GAME_INPUT_BUFFER_SIZE)
+	return action in input[t]
+}
+
+input_action_is_not_active :: proc(
+	input: Game_Input_Buffer,
+	action: Game_Input_Action_Type,
+	t: u32 = 0,
+) -> bool {
+	assert(t >= 0 && t < GAME_INPUT_BUFFER_SIZE)
+	return !(action in input[t])
+}
+
+input_action_was_pressed :: proc(
+	input: Game_Input_Buffer,
+	action: Game_Input_Action_Type,
+	t: u32 = 0,
+) -> bool {
+	assert(t >= 0 && t < GAME_INPUT_BUFFER_SIZE - 1)
+	return action in input[t] && !(action in input[t + 1])
+}
+
+// Check if action has been held for n frames (including current frame)
+input_action_is_held :: proc(
+	input: Game_Input_Buffer,
+	action: Game_Input_Action_Type,
+	n: u32 = 1,
+) -> bool {
+	assert(n > 0 && n < GAME_INPUT_BUFFER_SIZE)
+	out := action in input[0]
+	for i in 1 ..= n {
+		out = out && action in input[i]
+	}
+	return out
+}
+
+input_action_was_released :: proc(
+	input: Game_Input_Buffer,
+	action: Game_Input_Action_Type,
+) -> bool {
+	return !(action in input[0]) && action in input[1]
+}
+
+// End game_input helpers
+
+// Resolve movement intent from input history
+resolve_axis_intent :: proc(
+	input: Game_Input_Buffer,
+	neg, pos: Game_Input_Action_Type,
+	prev: f32,
+) -> f32 {
+	left_active := input_action_is_active(input, neg)
+	right_active := input_action_is_active(input, pos)
+
+	// If exactly one is active, easy
+	if left_active && !right_active do return -1.0
+	if right_active && !left_active do return +1.0
+
+	// If neither active, no movement
+	if !left_active && !right_active do return 0.0
+
+	// Both are active — find which was pressed more recently
+	left_press_time := -1
+	right_press_time := -1
+
+	for t in 0 ..< GAME_INPUT_BUFFER_SIZE - 1 {
+		if left_press_time == -1 && input_action_was_pressed(input, neg, cast(u32)t) do left_press_time = t
+		if right_press_time == -1 && input_action_was_pressed(input, pos, cast(u32)t) do right_press_time = t
+		if left_press_time >= 0 && right_press_time >= 0 {break}
+	}
+
+	// when DEBUG_FRAME {
+	// 	for i in 0 ..< GAME_INPUT_BUFFER_SIZE {
+	// 		log.debugf("  input[{}]: {:?}", i, input[i])
+	// 	}
+	//
+	// 	log.debugf(
+	// 		"resolve_axis_intent: left_active: {}, right_active: {}, left_press_time: {}, right_press_time: {}, prev: {}",
+	// 		left_active,
+	// 		right_active,
+	// 		left_press_time,
+	// 		right_press_time,
+	// 		prev,
+	// 	)
+	// }
+
+	if left_press_time != -1 && right_press_time != -1 {
+		if left_press_time < right_press_time {
+			return -1.0 // Left was pressed more recently
+		}
+		if right_press_time < left_press_time {
+			return +1.0 // Right was pressed more recently
+		}
+	} else if left_press_time != -1 {
+		return -1.0 // Only left was pressed
+	} else if right_press_time != -1 {
+		return +1.0 // Only right was pressed
+	}
+
+	// If we never find a press event, return the prev direction of movement
+	return math.sign(prev)
 }
 
