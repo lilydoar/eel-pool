@@ -1412,3 +1412,14 @@ TODO: Render game to an intermediate texture. Render layers to the intermediate 
   - Play spawn low pop noise
   - Play arrow activate noise
 - [ ] Rectangle select for camera area
+
+# Wed Oct 15 2025
+
+Entity Behavior Idea
+
+Right now the arrows jump from their position and stop after "sliding" for a
+bit. Then they sit for a lil bit and then despawn.
+It would be cool to have them not despawn and instead return to their ready
+state after some cooldown.
+Falling off cliff is a kill condition for this entity.
+Concept: Frog like pouncing behavior.
