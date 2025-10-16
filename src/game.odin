@@ -280,14 +280,19 @@ game_update :: proc(sdl: ^SDL, game: ^Game, asset_manager: ^data.Asset_Manager) 
 
 	game.input = {}
 	for k, keycode in game.cfg.control_key {
-		if sdl.keyboard.keycodes_curr[keycode] {game.input = game.input + {k}}
+		if sdl_key_is_down(sdl, keycode) {game.input = game.input + {k}}
 	}
 	for k, v in game.cfg.control_button {
-		if sdl_mouse_button_is_down(sdl, v) {game.input = game.input + {k}}
+		if sdl_mouse_button_was_released(sdl, v) {game.input = game.input + {k}}
 	}
 	when DEBUG_FRAME {log.debugf("Current game input: {}", game.input)}
 
 	mouse_pos := sdl_mouse_get_render_position(sdl)
+	mouse_pos_world := camera_screen_to_world(
+		&game.camera,
+		mouse_pos,
+		Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+	)
 
 	game_update_timers(game, sdl, asset_manager)
 
@@ -307,6 +312,7 @@ game_update :: proc(sdl: ^SDL, game: ^Game, asset_manager: ^data.Asset_Manager) 
 			game.state = .Lose
 			game.timers.win_lose_reset_timer = game.timers.win_lose_reset_time
 		}
+
 	case .Win:
 		return
 	case .Lose:
@@ -337,8 +343,9 @@ game_update :: proc(sdl: ^SDL, game: ^Game, asset_manager: ^data.Asset_Manager) 
 	}
 
 	if .editor_place_player in game.input {
-		game.entity.player.world_x = mouse_pos.x
-		game.entity.player.world_y = mouse_pos.y
+		game.entity.player.world_x = mouse_pos_world.x
+		game.entity.player.world_y = mouse_pos_world.y
+
 	} else if .editor_place_enemy in game.input {
 		entity_pool_create_entity(
 			&game.entity_pool,
