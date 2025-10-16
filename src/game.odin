@@ -9,30 +9,48 @@ import os "core:os/os2"
 import "data"
 import sdl3 "vendor:sdl3"
 
+// Configuration data that can be loaded from DB/files and doesn't change during gameplay
+// Organized to align with database schema (each substruct = table/config section)
 Game_Config :: struct {
-	update_hz:             f64, // Game update frequency in Hz (e.g., 60 Hz)
-	//
-	control_key:           map[Game_Input_Action_Type]sdl3.Keycode,
-	control_button:        map[Game_Input_Action_Type]sdl3.MouseButtonFlag,
-	//
-	timers:                struct {
-		// How long to wait after winning or losing to reset the game
-		win_lose_reset_time: f32,
-		// How frequently to spawn enemies (seconds between spawns)
-		enemy_spawn_hz:      f32,
+	// Core game rules and constants (maps to: game_settings table)
+	game:      struct {
+		update_hz: f64, // Game update frequency in Hz (e.g., 60 Hz)
 	},
-	entity:                struct {
+
+	// Input configuration (maps to: input_bindings table)
+	input:     struct {
+		key_bindings:    map[Game_Input_Action_Type]sdl3.Keycode,
+		button_bindings: map[Game_Input_Action_Type]sdl3.MouseButtonFlag,
+	},
+
+	// Timer configuration (maps to: timer_config table)
+	timers:    struct {
+		win_lose_reset_time: f32, // How long to wait after winning or losing to reset the game
+		enemy_spawn_hz:      f32, // How frequently to spawn enemies (seconds between spawns)
+	},
+
+	// Entity templates/archetypes (maps to: entity_templates table)
+	entities:  struct {
 		player: struct {
-			player_move_speed_x_axis: f32,
-			player_move_speed_y_axis: f32,
+			move_speed_x: f32,
+			move_speed_y: f32,
 		},
 		enemy:  struct {
 			behavior: Behavior_Range_Activated_Missile,
 		},
 	},
-	//
-	tile_screen_size:      Vec2u, // Size of a tile on screen in pixels
-	camera_viewport_scale: f32,
+
+	// Camera configuration (maps to: camera_config table)
+	camera:    struct {
+		viewport_scale:  f32,
+		lag_follow_rate: f32, // How quickly camera catches up to target (0-1, higher = faster)
+		leash_distance:  Vec2, // Max distance camera can lag behind target
+	},
+
+	// Rendering configuration (maps to: rendering_config table)
+	rendering: struct {
+		tile_screen_size: Vec2u, // Size of a tile on screen in pixels
+	},
 }
 
 // Store this many game input sets. 1 latest + N-1 previous
@@ -63,7 +81,7 @@ Game_State :: struct {
 	},
 
 	//
-	state:       enum {
+	mode:        enum {
 		Playing,
 		Win,
 		Lose,
@@ -137,7 +155,7 @@ Game_Input_Action_Type :: enum {
 }
 
 // These should probably go eventually. Just glue code
-game_level :: struct {
+Game_Level :: struct {
 	layers: []struct {
 		name: string,
 		size: Vec2u,
@@ -145,7 +163,7 @@ game_level :: struct {
 	},
 }
 
-game_sprite :: struct {
+Game_Sprite :: struct {
 	texture:      SDL_Texture,
 	world_offset: Vec2,
 }
@@ -170,7 +188,7 @@ game_init :: proc(
 	game.head.asset = asset_manager
 	game.head.assets = assets
 
-	game.cfg.update_hz = 60 // 60 Hz update frequency
+	game.cfg.game.update_hz = 60 // 60 Hz update frequency
 
 	game.state.entity_pool = entity_pool_init()
 
@@ -219,8 +237,8 @@ game_init :: proc(
 		lifetime_sec               = 1.8,
 	}
 
-	game.cfg.control_key = make(map[Game_Input_Action_Type]sdl3.Keycode)
-	game.cfg.control_button = make(map[Game_Input_Action_Type]sdl3.MouseButtonFlag)
+	game.cfg.input.key_bindings = make(map[Game_Input_Action_Type]sdl3.Keycode)
+	game.cfg.input.button_bindings = make(map[Game_Input_Action_Type]sdl3.MouseButtonFlag)
 
 	// TODO
 	// Load from options file
@@ -236,12 +254,12 @@ game_init :: proc(
 	game_bind_control_to_key(game, .editor_zoom_in, sdl3.K_EQUALS)
 	game_bind_control_to_key(game, .editor_zoom_out, sdl3.K_MINUS)
 
-	game.cfg.entity.player.player_move_speed_x_axis = 4
-	game.cfg.entity.player.player_move_speed_y_axis = 4
+	game.cfg.entities.player.move_speed_x = 4
+	game.cfg.entities.player.move_speed_y = 4
 
-	game.cfg.tile_screen_size = {32, 32}
+	game.cfg.rendering.tile_screen_size = {32, 32}
 
-	game.state.state = .Playing
+	game.state.mode = .Playing
 
 	event_queue_subscribe_to_type(
 		&game.state.event_queue,
@@ -261,17 +279,20 @@ game_init :: proc(
 		},
 	)
 
-	game.cfg.camera_viewport_scale = 3.2
+	game.cfg.camera.viewport_scale = 3.2
+	game.cfg.camera.lag_follow_rate = 0.1
+	game.cfg.camera.leash_distance = Vec2{300, 200}
+
 	game.state.camera = Camera {
 		position        = Vec2{game.state.entity.player.world_x, game.state.entity.player.world_y},
 		view_size       = Vec2 {
-			cast(f32)(RenderTargetSize.x) * game.cfg.camera_viewport_scale,
-			cast(f32)(RenderTargetSize.y) * game.cfg.camera_viewport_scale,
+			cast(f32)(RenderTargetSize.x) * game.cfg.camera.viewport_scale,
+			cast(f32)(RenderTargetSize.y) * game.cfg.camera.viewport_scale,
 		},
 		target_position = Vec2{game.state.entity.player.world_x, game.state.entity.player.world_y},
 		follow_mode     = .with_leash,
-		lag_follow_rate = 0.1,
-		leash_distance  = Vec2{300, 200},
+		lag_follow_rate = game.cfg.camera.lag_follow_rate,
+		leash_distance  = game.cfg.camera.leash_distance,
 	}
 	camera_update(&game.state.camera)
 }
@@ -295,12 +316,12 @@ game_deinit :: proc(game: ^Game_Instance) {
 
 	entity_pool_deinit(&game.state.entity_pool)
 
-	delete(game.cfg.control_key)
-	delete(game.cfg.control_button)
+	delete(game.cfg.input.key_bindings)
+	delete(game.cfg.input.button_bindings)
 }
 
 game_frame_step_sec :: proc(game: ^Game_Instance) -> f64 {
-	return 1.0 / game.cfg.update_hz
+	return 1.0 / game.cfg.game.update_hz
 }
 
 game_update :: proc(sdl: ^SDL, game: ^Game_Instance, asset_manager: ^data.Asset_Manager) {
@@ -315,10 +336,10 @@ game_update :: proc(sdl: ^SDL, game: ^Game_Instance, asset_manager: ^data.Asset_
 	when DEBUG_FRAME {defer log.debug("End game update")}
 
 	game.state.input[0] = {}
-	for k, keycode in game.cfg.control_key {
+	for k, keycode in game.cfg.input.key_bindings {
 		if sdl_key_is_down(sdl, keycode) {game.state.input[0] = game.state.input[0] + {k}}
 	}
-	for k, v in game.cfg.control_button {
+	for k, v in game.cfg.input.button_bindings {
 		if sdl_mouse_button_was_released(sdl, v) {game.state.input[0] = game.state.input[0] + {k}}
 	}
 	when DEBUG_FRAME {log.debugf("Current game input: {}", game.state.input[0])}
@@ -334,17 +355,17 @@ game_update :: proc(sdl: ^SDL, game: ^Game_Instance, asset_manager: ^data.Asset_
 
 	event_queue_process(game, &game.state.event_queue, cast(f32)game_frame_step_sec(game))
 
-	switch game.state.state {
+	switch game.state.mode {
 	case .Playing:
 		if game.state.score >= 10000 {
-			game.state.state = .Win
+			game.state.mode = .Win
 			game.state.timers.win_lose_reset_timer = game.cfg.timers.win_lose_reset_time
 		}
 
 		time_limit_sec: f64 = 60_000 // 60_000 seconds
 		game_time_sec := cast(f64)game.state.frame_count * game_frame_step_sec(game)
 		if game_time_sec >= time_limit_sec {
-			game.state.state = .Lose
+			game.state.mode = .Lose
 			game.state.timers.win_lose_reset_timer = game.cfg.timers.win_lose_reset_time
 		}
 
@@ -366,7 +387,7 @@ game_update :: proc(sdl: ^SDL, game: ^Game_Instance, asset_manager: ^data.Asset_
 	// Editor actions
 
 	// TODO: Add debug struct to appropriate location
-	// if capture_key, ok := game.cfg.control_key[.editor_capture_screen]; ok {
+	// if capture_key, ok := game.cfg.input.key_bindings[.editor_capture_screen]; ok {
 	// 	if sdl_key_was_released(sdl, capture_key) {
 	// 		// Set flag to capture screenshot at end of frame (after drawing)
 	// 		game.debug.capture_screenshot_pending = true
@@ -418,11 +439,9 @@ game_update :: proc(sdl: ^SDL, game: ^Game_Instance, asset_manager: ^data.Asset_
 		if .player_move_right in game.state.input[0] {player_desire_move_x += 1.0}
 
 		player_final_move_x =
-		cast(f32)(cast(f64)player_desire_move_x *
-			cast(f64)game.cfg.entity.player.player_move_speed_x_axis)
+		cast(f32)(cast(f64)player_desire_move_x * cast(f64)game.cfg.entities.player.move_speed_x)
 		player_final_move_y =
-		cast(f32)(cast(f64)player_desire_move_y *
-			cast(f64)game.cfg.entity.player.player_move_speed_y_axis)
+		cast(f32)(cast(f64)player_desire_move_y * cast(f64)game.cfg.entities.player.move_speed_y)
 	}
 
 	game_entity_do_behavior(game)
@@ -779,7 +798,7 @@ game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 
 	{
 		// Draw player()
-		if game.state.state == .Playing {
+		if game.state.mode == .Playing {
 			screen_pos := camera_world_to_screen(
 				&game.state.camera,
 				Vec2{game.state.entity.player.world_x, game.state.entity.player.world_y},
@@ -822,7 +841,7 @@ game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 
 	{
 		// Draw enemy()
-		if game.state.state == .Playing {
+		if game.state.mode == .Playing {
 			for e in game.state.entity_pool.entities {
 				if !(.Is_Active in e.flags) {continue}
 
@@ -995,7 +1014,7 @@ game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 		sdl3.SetRenderScale(r.ptr, 1.5, 1.5)
 		sdl3.SetRenderDrawColor(r.ptr, 255, 255, 255, 255)
 
-		switch game.state.state {
+		switch game.state.mode {
 		case .Playing:
 			sdl3.RenderDebugTextFormat(r.ptr, 10, 10, "Score: %d", game.state.score)
 		case .Win:
@@ -1037,7 +1056,7 @@ game_bind_control_to_key :: proc(
 	ctrl: Game_Input_Action_Type,
 	key: sdl3.Keycode,
 ) {
-	game.cfg.control_key[ctrl] = key
+	game.cfg.input.key_bindings[ctrl] = key
 }
 
 game_bind_control_to_mouse_button :: proc(
@@ -1045,7 +1064,7 @@ game_bind_control_to_mouse_button :: proc(
 	ctrl: Game_Input_Action_Type,
 	button: sdl3.MouseButtonFlag,
 ) {
-	game.cfg.control_button[ctrl] = button
+	game.cfg.input.button_bindings[ctrl] = button
 }
 
 // game_draw_tilemap_tile :: proc(game: ^Game_Instance, r: ^SDL_Renderer, cmd: struct {
@@ -1133,7 +1152,7 @@ game_draw_animation :: proc(game: ^Game_Instance, r: ^SDL_Renderer, cmd: struct 
 }
 
 game_draw_sprite :: proc(game: ^Game_Instance, r: ^SDL_Renderer, cmd: struct {
-		sprite:       game_sprite,
+		sprite:       Game_Sprite,
 		dest:         sdl3.FRect,
 		rotation_deg: f32,
 		mirror_x:     bool,
@@ -1236,7 +1255,7 @@ game_update_timers :: proc(game: ^Game_Instance, sdl: ^SDL, asset: ^data.Asset_M
 	frame_step_sec := f32(game_frame_step_sec(game))
 	game.state.timers.enemy_spawn_timer -= frame_step_sec
 
-	#partial switch game.state.state {
+	#partial switch game.state.mode {
 	case .Win:
 		game.state.timers.win_lose_reset_timer -= frame_step_sec
 	case .Lose:
@@ -1289,7 +1308,7 @@ game_update_timers :: proc(game: ^Game_Instance, sdl: ^SDL, asset: ^data.Asset_M
 		}
 	}
 
-	#partial switch game.state.state {
+	#partial switch game.state.mode {
 	case .Win:
 		if game.state.timers.win_lose_reset_timer <=
 		   0 {game_reset(game, sdl, asset, game.head.assets)}

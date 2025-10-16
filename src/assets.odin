@@ -15,7 +15,7 @@ Game_Assets :: struct {
 	animation_player_attack1: SDL_Animation,
 	animation_player_attack2: SDL_Animation,
 	// Sprites
-	sprite_archer_arrow:      game_sprite,
+	sprite_archer_arrow:      Game_Sprite,
 }
 
 // Initialize all game assets (animations and sprites)
@@ -94,3 +94,4 @@ animations_deinit_from :: proc(assets: ^Game_Assets, s: ^SDL) {
 	asset_animation_unload(assets.animation_player_attack1)
 	asset_animation_unload(assets.animation_player_attack2)
 }
+

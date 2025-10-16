@@ -116,7 +116,7 @@ should_update: proc(a: ^App) -> bool = proc(a: ^App) -> bool {
 		return false
 	}
 
-	frame_step_sec := 1.0 / a.game_instance.cfg.update_hz
+	frame_step_sec := 1.0 / a.game_instance.cfg.game.update_hz
 	ok := a.time.game_updates_accumulator_sec >= frame_step_sec
 	if ok {a.time.game_updates_accumulator_sec -= frame_step_sec}
 
