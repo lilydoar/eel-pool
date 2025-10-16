@@ -150,4 +150,3 @@ asset_tiled_map_draw :: proc(r: ^SDL_Renderer, m: Asset_Tiled_Map) {
 	// TODO: Draw out a complete map
 	// TODO: Viewport/zoom/pan/etc
 }
-

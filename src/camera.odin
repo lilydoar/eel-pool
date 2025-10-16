@@ -92,4 +92,3 @@ camera_zoom_by_factor :: proc(camera: ^Camera, factor: f32) {
 
 	camera.leash_distance = vec2_scale(camera.leash_distance, factor)
 }
-

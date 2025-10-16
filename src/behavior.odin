@@ -88,4 +88,3 @@ range_activated_missile_is_lifetime_expired :: proc(
 ) -> bool {
 	return current_time - m.trigger_time > cast(f64)m.cfg.lifetime_sec
 }
-

@@ -60,4 +60,3 @@ must_run :: proc(cmd: []string) {assert(run(cmd), "Process failed")}
 // 		handle := cast(^os.Handle)raw_handle
 // 		os.close(handle)
 // 	}, &fd)
-

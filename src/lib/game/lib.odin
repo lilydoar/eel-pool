@@ -1,15 +1,22 @@
 package lib
 
 import game "../.."
+import data "../../data"
 import "base:runtime"
 import "core:log"
-import data "../../data"
 
 @(export)
 game_state :: proc() -> rawptr {return nil}
 
 @(export)
-game_init :: proc(game_ptr: rawptr, ctx: rawptr, logger: rawptr, sdl: rawptr, asset: rawptr, assets: rawptr) {
+game_init :: proc(
+	game_ptr: rawptr,
+	ctx: rawptr,
+	logger: rawptr,
+	sdl: rawptr,
+	asset: rawptr,
+	assets: rawptr,
+) {
 	game_typed := cast(^game.Game)game_ptr
 	ctx_typed := cast(^runtime.Context)ctx
 	logger_typed := cast(^log.Logger)logger
@@ -32,4 +39,3 @@ game_update :: proc(sdl: rawptr, game_ptr: rawptr, asset: rawptr) {
 	asset_typed := cast(^data.Asset_Manager)asset
 	game.game_update(sdl_typed, game_typed, asset_typed)
 }
-

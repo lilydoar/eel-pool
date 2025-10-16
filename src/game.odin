@@ -113,6 +113,7 @@ Game_Instance :: struct {
 Game_Head :: struct {
 	platform: ^SDL,
 	asset:    ^data.Asset_Manager, // Pointer to persistent assets
+	assets:   ^Game_Assets, // Pointer to loaded game assets (animations, sprites, etc.)
 	// TODO
 	// render: ^data.Render_Manager, // Pointer to persistent render manager
 	// sound: ^data.Sound_Manager, // Pointer to persistent sound manager
@@ -150,7 +151,7 @@ game_sprite :: struct {
 }
 
 game_init :: proc(
-	game: ^Game,
+	game: ^Game_Instance,
 	ctx: runtime.Context,
 	logger: log.Logger,
 	sdl: ^SDL,
@@ -165,16 +166,18 @@ game_init :: proc(
 
 	game.ctx = ctx
 	game.ctx.logger = logger
-	game.assets = assets
+	game.head.platform = sdl
+	game.head.asset = asset_manager
+	game.head.assets = assets
 
-	game.update_hz = 60 // 60 Hz update frequency
+	game.cfg.update_hz = 60 // 60 Hz update frequency
 
-	game.entity_pool = entity_pool_init()
+	game.state.entity_pool = entity_pool_init()
 
-	game.timers.enemy_spawn_hz = 2 // Spawn an enemy every 2 seconds
-	game.timers.enemy_spawn_timer = game.timers.enemy_spawn_hz
+	game.cfg.timers.enemy_spawn_hz = 2 // Spawn an enemy every 2 seconds
+	game.state.timers.enemy_spawn_timer = game.cfg.timers.enemy_spawn_hz
 
-	game.timers.win_lose_reset_time = 10 // 10 seconds 
+	game.cfg.timers.win_lose_reset_time = 10 // 10 seconds 
 
 	// Load level-1 using asset manager
 	level_path := "data/levels/level-1.json"
@@ -183,35 +186,35 @@ game_init :: proc(
 	}
 	map_data, ok := data.tiled_map_load(asset_manager, &sdl_wrapper, level_path)
 	if ok {
-		game.level.map_data = map_data
+		game.state.level.map_data = map_data
 		log.infof("Loaded level: {} ({}x{} tiles)", level_path, map_data.width, map_data.height)
 	} else {
 		log.errorf("Failed to load level: {}", level_path)
 	}
 
-	// log.debugf("%v", game.level.map_data)
+	// log.debugf("%v", game.state.level.map_data)
 
-	game.level.playable_area = AABB2 {
+	game.state.level.playable_area = AABB2 {
 		min = Vec2{300, 680},
 		max = Vec2{1780, 1360},
 	}
 
-	game.entity.player.world_x =
-		(game.level.playable_area.min.x + game.level.playable_area.max.x) * 0.5
-	game.entity.player.world_y =
-		(game.level.playable_area.min.y + game.level.playable_area.max.y) * 0.5
+	game.state.entity.player.world_x =
+		(game.state.level.playable_area.min.x + game.state.level.playable_area.max.x) * 0.5
+	game.state.entity.player.world_y =
+		(game.state.level.playable_area.min.y + game.state.level.playable_area.max.y) * 0.5
 
-	game.entity.player.screen_w = 192
-	game.entity.player.screen_h = 192
+	game.state.entity.player.screen_w = 192
+	game.state.entity.player.screen_h = 192
 
-	game.entity.enemy.behavior.cfg = {
+	game.state.entity.enemy.behavior.cfg = {
 		trigger_radius             = 240,
 		acceleration_px_per_frame2 = 11,
 		acceleration_time_sec      = 1,
 		// NOTE: The intention of the above acc and acc_t is to design missiles with different motion dynamics
 		// What might be more effective as a design tool is "drawing" velocity curves
 		// Example: Start slow, speed up for most of the length of the shot, slow down at the end
-		// Design experience of drawing line along which the missile will travel, be able to tweak how the missile proceeds along the line 
+		// Design experience of drawing line along which the missile will travel, be able to tweak how the missile proceeds along the line
 		// Once again, interpolation
 		lifetime_sec               = 1.8,
 	}
@@ -236,15 +239,15 @@ game_init :: proc(
 	game.cfg.entity.player.player_move_speed_x_axis = 4
 	game.cfg.entity.player.player_move_speed_y_axis = 4
 
-	game.tile_screen_size = {32, 32}
+	game.cfg.tile_screen_size = {32, 32}
 
-	game.state = .Playing
+	game.state.state = .Playing
 
 	event_queue_subscribe_to_type(
-		&game.event_queue,
+		&game.state.event_queue,
 		.EntityDestroyed,
 		proc(ctx: rawptr, e: Event) {
-			game: ^Game = cast(^Game)ctx
+			game: ^Game_Instance = cast(^Game_Instance)ctx
 
 			when DEBUG_GAME {log.debugf("Event received: EntityDestroyed, payload: {}", e.payload)}
 
@@ -252,50 +255,55 @@ game_init :: proc(
 
 			#partial switch v in e.payload {
 			case EventPayloadEntityDestroyed:
-				game.score += 1
-				when DEBUG_GAME {log.debugf("Entity destroyed! New score: {}", game.score)}
+				game.state.score += 1
+				when DEBUG_GAME {log.debugf("Entity destroyed! New score: {}", game.state.score)}
 			}
 		},
 	)
 
-	game.camera_viewport_scale = 3.2
-	game.camera = Camera {
-		position        = Vec2{game.entity.player.world_x, game.entity.player.world_y},
+	game.cfg.camera_viewport_scale = 3.2
+	game.state.camera = Camera {
+		position        = Vec2{game.state.entity.player.world_x, game.state.entity.player.world_y},
 		view_size       = Vec2 {
-			cast(f32)(RenderTargetSize.x) * game.camera_viewport_scale,
-			cast(f32)(RenderTargetSize.y) * game.camera_viewport_scale,
+			cast(f32)(RenderTargetSize.x) * game.cfg.camera_viewport_scale,
+			cast(f32)(RenderTargetSize.y) * game.cfg.camera_viewport_scale,
 		},
-		target_position = Vec2{game.entity.player.world_x, game.entity.player.world_y},
+		target_position = Vec2{game.state.entity.player.world_x, game.state.entity.player.world_y},
 		follow_mode     = .with_leash,
 		lag_follow_rate = 0.1,
 		leash_distance  = Vec2{300, 200},
 	}
-	camera_update(&game.camera)
+	camera_update(&game.state.camera)
 }
 
-game_reset :: proc(game: ^Game, sdl: ^SDL, asset: ^data.Asset_Manager, assets: ^Game_Assets) {
-	assets_backup := game.assets
-	game^ = Game{}
+game_reset :: proc(
+	game: ^Game_Instance,
+	sdl: ^SDL,
+	asset: ^data.Asset_Manager,
+	assets: ^Game_Assets,
+) {
+	assets_backup := game.head.assets
+	game^ = Game_Instance{}
 	game_init(game, context, context.logger, sdl, asset, assets_backup)
 }
 
-game_deinit :: proc(game: ^Game) {
+game_deinit :: proc(game: ^Game_Instance) {
 	context = game.ctx
 
 	log.debug("Begin deinitializing game module")
 	defer log.debug("End deinitializing game module")
 
-	entity_pool_deinit(&game.entity_pool)
+	entity_pool_deinit(&game.state.entity_pool)
 
 	delete(game.cfg.control_key)
 	delete(game.cfg.control_button)
 }
 
-game_frame_step_sec :: proc(game: ^Game) -> f64 {
-	return 1.0 / game.update_hz
+game_frame_step_sec :: proc(game: ^Game_Instance) -> f64 {
+	return 1.0 / game.cfg.update_hz
 }
 
-game_update :: proc(sdl: ^SDL, game: ^Game, asset_manager: ^data.Asset_Manager) {
+game_update :: proc(sdl: ^SDL, game: ^Game_Instance, asset_manager: ^data.Asset_Manager) {
 	context = game.ctx
 
 	// Update logic for the game module
@@ -468,7 +476,7 @@ game_update :: proc(sdl: ^SDL, game: ^Game, asset_manager: ^data.Asset_Manager) 
 	game.frame_count += 1
 }
 
-game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
+game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 	context = game.ctx
 
 	when DEBUG_FRAME {log.debug("Begin drawing game frame")}
@@ -788,11 +796,19 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 
 			mirror_x := false if game.entity.player.facing == .right else true
 
-			switch game.entity.player.action {
+			switch game.state.entity.player.action {
 			case .idle:
-				game_draw_animation(game, r, {game.assets.animation_player_idle, dst, 0, mirror_x})
+				game_draw_animation(
+					game,
+					r,
+					{game.head.assets.animation_player_idle, dst, 0, mirror_x},
+				)
 			case .running:
-				game_draw_animation(game, r, {game.assets.animation_player_run, dst, 0, mirror_x})
+				game_draw_animation(
+					game,
+					r,
+					{game.head.assets.animation_player_run, dst, 0, mirror_x},
+				)
 			case .guard:
 			case .attack:
 			}
@@ -840,19 +856,19 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 
 					rotation := rad_to_deg(vec2_angle(vec_enemy_to_player))
 
-					switch game.entity.enemy.behavior.state {
+					switch game.state.entity.enemy.behavior.state {
 					case .idle:
 						game_draw_sprite(
 							game,
 							r,
-							{game.assets.sprite_archer_arrow, dst, rotation, false},
+							{game.head.assets.sprite_archer_arrow, dst, rotation, false},
 						)
 					case .active:
 						// TODO: Rotate to face player
 						game_draw_sprite(
 							game,
 							r,
-							{game.assets.sprite_archer_arrow, dst, rotation, false},
+							{game.head.assets.sprite_archer_arrow, dst, rotation, false},
 						)
 					}
 
@@ -986,7 +1002,7 @@ game_draw :: proc(game: ^Game, r: ^SDL_Renderer) {
 }
 
 // Draw debug visual feedback (screenshot indicator, etc.)
-game_draw_debug_feedback :: proc(game: ^Game, r: ^SDL_Renderer) {
+game_draw_debug_feedback :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 	// Update and draw capture feedback indicator
 	if game.debug.capture_feedback_time > 0 {
 		// Calculate fade: 1.0 at start, 0.0 at end
@@ -1010,19 +1026,23 @@ game_draw_debug_feedback :: proc(game: ^Game, r: ^SDL_Renderer) {
 	}
 }
 
-game_bind_control_to_key :: proc(game: ^Game, ctrl: Game_Input_Action_Type, key: sdl3.Keycode) {
+game_bind_control_to_key :: proc(
+	game: ^Game_Instance,
+	ctrl: Game_Input_Action_Type,
+	key: sdl3.Keycode,
+) {
 	game.cfg.control_key[ctrl] = key
 }
 
 game_bind_control_to_mouse_button :: proc(
-	game: ^Game,
+	game: ^Game_Instance,
 	ctrl: Game_Input_Action_Type,
 	button: sdl3.MouseButtonFlag,
 ) {
 	game.cfg.control_button[ctrl] = button
 }
 
-// game_draw_tilemap_tile :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
+// game_draw_tilemap_tile :: proc(game: ^Game_Instance, r: ^SDL_Renderer, cmd: struct {
 // 		tilemap:  SDL_Tilemap,
 // 		tile_idx: u32,
 // 		dest:     sdl3.FRect,
@@ -1051,7 +1071,7 @@ game_bind_control_to_mouse_button :: proc(
 // 	sdl3.RenderTexture(r.ptr, cmd.tilemap.texture, src, dst)
 // }
 
-game_draw_animation :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
+game_draw_animation :: proc(game: ^Game_Instance, r: ^SDL_Renderer, cmd: struct {
 		anim:         SDL_Animation,
 		dest:         sdl3.FRect,
 		rotation_deg: f32,
@@ -1106,7 +1126,7 @@ game_draw_animation :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 	)
 }
 
-game_draw_sprite :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
+game_draw_sprite :: proc(game: ^Game_Instance, r: ^SDL_Renderer, cmd: struct {
 		sprite:       game_sprite,
 		dest:         sdl3.FRect,
 		rotation_deg: f32,
@@ -1156,7 +1176,7 @@ game_draw_sprite :: proc(game: ^Game, r: ^SDL_Renderer, cmd: struct {
 	)
 }
 
-game_entity_do_behavior :: proc(game: ^Game) {
+game_entity_do_behavior :: proc(game: ^Game_Instance) {
 
 	curr_time := cast(f64)game.frame_count * game_frame_step_sec(game)
 
@@ -1206,7 +1226,7 @@ game_entity_do_behavior :: proc(game: ^Game) {
 	}
 }
 
-game_update_timers :: proc(game: ^Game, sdl: ^SDL, asset: ^data.Asset_Manager) {
+game_update_timers :: proc(game: ^Game_Instance, sdl: ^SDL, asset: ^data.Asset_Manager) {
 	frame_step_sec := f32(game_frame_step_sec(game))
 	game.timers.enemy_spawn_timer -= frame_step_sec
 
@@ -1253,11 +1273,12 @@ game_update_timers :: proc(game: ^Game, sdl: ^SDL, asset: ^data.Asset_Manager) {
 		}
 	}
 
-	#partial switch game.state {
+	#partial switch game.state.state {
 	case .Win:
-		if game.timers.win_lose_reset_timer <= 0 {game_reset(game, sdl, asset, game.assets)}
+		if game.state.timers.win_lose_reset_timer <=
+		   0 {game_reset(game, sdl, asset, game.head.assets)}
 	case .Lose:
-		if game.timers.win_lose_reset_timer <= 0 {game_reset(game, sdl, asset, game.assets)}
+		if game.state.timers.win_lose_reset_timer <=
+		   0 {game_reset(game, sdl, asset, game.head.assets)}
 	}
 }
-

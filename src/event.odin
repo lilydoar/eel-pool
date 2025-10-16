@@ -114,4 +114,3 @@ event_queue_process :: proc(ctx: rawptr, e: ^Event_Queue, delta_time: f32) {
 	event_queue_process_untimed(ctx, e)
 	event_queue_process_timed(ctx, e, delta_time)
 }
-

@@ -16,7 +16,7 @@ when ODIN_OS == .Darwin {
 	foreign import sqlite3 "system:sqlite3.lib"
 }
 
-@(default_calling_convention="c")
+@(default_calling_convention = "c")
 foreign sqlite3 {
 	sqlite3_open :: proc(filename: cstring, db: ^^Sqlite3) -> c.int ---
 	sqlite3_close :: proc(db: ^Sqlite3) -> c.int ---
@@ -39,9 +39,9 @@ foreign sqlite3 {
 Sqlite3 :: struct {}
 Sqlite3_Stmt :: struct {}
 
-SQLITE_OK      :: 0
-SQLITE_ROW     :: 100
-SQLITE_DONE    :: 101
+SQLITE_OK :: 0
+SQLITE_ROW :: 100
+SQLITE_DONE :: 101
 SQLITE_TRANSIENT :: rawptr(uintptr(max(int)))
 
 // Asset Database Handle
@@ -51,55 +51,55 @@ Asset_DB :: struct {
 
 // Core Asset Types
 Tileset :: struct {
-	id: i32,
-	source_id: i32,
-	name: string,
-	image_path: string,
-	tile_width: i32,
+	id:          i32,
+	source_id:   i32,
+	name:        string,
+	image_path:  string,
+	tile_width:  i32,
 	tile_height: i32,
-	columns: i32,
-	tile_count: i32,
-	spacing: i32,
-	margin: i32,
+	columns:     i32,
+	tile_count:  i32,
+	spacing:     i32,
+	margin:      i32,
 }
 
 Tile :: struct {
-	id: i32,
-	tileset_id: i32,
-	local_id: i32,
+	id:            i32,
+	tileset_id:    i32,
+	local_id:      i32,
 	has_collision: bool,
 	has_animation: bool,
 }
 
 Tile_Collision :: struct {
-	id: i32,
-	tile_id: i32,
+	id:         i32,
+	tile_id:    i32,
 	shape_type: string,
-	x: f32,
-	y: f32,
-	width: f32,
-	height: f32,
-	points: string, // JSON
+	x:          f32,
+	y:          f32,
+	width:      f32,
+	height:     f32,
+	points:     string, // JSON
 }
 
 Sprite_Sheet :: struct {
-	id: i32,
-	name: string,
-	image_path: string,
-	frame_width: i32,
-	frame_height: i32,
-	frame_count: i32,
-	columns: i32,
+	id:             i32,
+	name:           string,
+	image_path:     string,
+	frame_width:    i32,
+	frame_height:   i32,
+	frame_count:    i32,
+	columns:        i32,
 	world_offset_x: f32,
 	world_offset_y: f32,
 }
 
 Animation :: struct {
-	id: i32,
-	name: string,
+	id:              i32,
+	name:            string,
 	sprite_sheet_id: i32,
-	frame_delay_ms: i32,
-	loop: bool,
+	frame_delay_ms:  i32,
+	loop:            bool,
 }
 
 // Initialize database from schema file
@@ -160,17 +160,17 @@ asset_db_get_tileset :: proc(db: ^Asset_DB, tileset_id: i32) -> (Tileset, bool) 
 	sqlite3_bind_int(stmt, 1, c.int(tileset_id))
 
 	if sqlite3_step(stmt) == SQLITE_ROW {
-		tileset := Tileset{
-			id = i32(sqlite3_column_int(stmt, 0)),
-			source_id = i32(sqlite3_column_int(stmt, 1)),
-			name = strings.clone_from_cstring(sqlite3_column_text(stmt, 2)),
-			image_path = strings.clone_from_cstring(sqlite3_column_text(stmt, 3)),
-			tile_width = i32(sqlite3_column_int(stmt, 4)),
+		tileset := Tileset {
+			id          = i32(sqlite3_column_int(stmt, 0)),
+			source_id   = i32(sqlite3_column_int(stmt, 1)),
+			name        = strings.clone_from_cstring(sqlite3_column_text(stmt, 2)),
+			image_path  = strings.clone_from_cstring(sqlite3_column_text(stmt, 3)),
+			tile_width  = i32(sqlite3_column_int(stmt, 4)),
 			tile_height = i32(sqlite3_column_int(stmt, 5)),
-			columns = i32(sqlite3_column_int(stmt, 6)),
-			tile_count = i32(sqlite3_column_int(stmt, 7)),
-			spacing = i32(sqlite3_column_int(stmt, 8)),
-			margin = i32(sqlite3_column_int(stmt, 9)),
+			columns     = i32(sqlite3_column_int(stmt, 6)),
+			tile_count  = i32(sqlite3_column_int(stmt, 7)),
+			spacing     = i32(sqlite3_column_int(stmt, 8)),
+			margin      = i32(sqlite3_column_int(stmt, 9)),
 		}
 		return tileset, true
 	}
@@ -194,14 +194,14 @@ asset_db_get_sprite_sheet :: proc(db: ^Asset_DB, name: string) -> (Sprite_Sheet,
 	sqlite3_bind_text(stmt, 1, name_cstr, -1, SQLITE_TRANSIENT)
 
 	if sqlite3_step(stmt) == SQLITE_ROW {
-		sheet := Sprite_Sheet{
-			id = i32(sqlite3_column_int(stmt, 0)),
-			name = strings.clone_from_cstring(sqlite3_column_text(stmt, 1)),
-			image_path = strings.clone_from_cstring(sqlite3_column_text(stmt, 2)),
-			frame_width = i32(sqlite3_column_int(stmt, 3)),
-			frame_height = i32(sqlite3_column_int(stmt, 4)),
-			frame_count = i32(sqlite3_column_int(stmt, 5)),
-			columns = i32(sqlite3_column_int(stmt, 6)),
+		sheet := Sprite_Sheet {
+			id             = i32(sqlite3_column_int(stmt, 0)),
+			name           = strings.clone_from_cstring(sqlite3_column_text(stmt, 1)),
+			image_path     = strings.clone_from_cstring(sqlite3_column_text(stmt, 2)),
+			frame_width    = i32(sqlite3_column_int(stmt, 3)),
+			frame_height   = i32(sqlite3_column_int(stmt, 4)),
+			frame_count    = i32(sqlite3_column_int(stmt, 5)),
+			columns        = i32(sqlite3_column_int(stmt, 6)),
 			world_offset_x = f32(sqlite3_column_double(stmt, 7)),
 			world_offset_y = f32(sqlite3_column_double(stmt, 8)),
 		}
@@ -212,7 +212,11 @@ asset_db_get_sprite_sheet :: proc(db: ^Asset_DB, name: string) -> (Sprite_Sheet,
 }
 
 // Query tiles with collision data for a tileset
-asset_db_get_tiles_with_collision :: proc(db: ^Asset_DB, tileset_id: i32, allocator := context.allocator) -> []Tile {
+asset_db_get_tiles_with_collision :: proc(
+	db: ^Asset_DB,
+	tileset_id: i32,
+	allocator := context.allocator,
+) -> []Tile {
 	sql := "SELECT id, tileset_id, local_id, has_collision, has_animation FROM tiles WHERE tileset_id = ? AND has_collision = 1"
 
 	stmt: ^Sqlite3_Stmt
@@ -226,10 +230,10 @@ asset_db_get_tiles_with_collision :: proc(db: ^Asset_DB, tileset_id: i32, alloca
 
 	tiles := make([dynamic]Tile, allocator)
 	for sqlite3_step(stmt) == SQLITE_ROW {
-		tile := Tile{
-			id = i32(sqlite3_column_int(stmt, 0)),
-			tileset_id = i32(sqlite3_column_int(stmt, 1)),
-			local_id = i32(sqlite3_column_int(stmt, 2)),
+		tile := Tile {
+			id            = i32(sqlite3_column_int(stmt, 0)),
+			tileset_id    = i32(sqlite3_column_int(stmt, 1)),
+			local_id      = i32(sqlite3_column_int(stmt, 2)),
 			has_collision = sqlite3_column_int(stmt, 3) != 0,
 			has_animation = sqlite3_column_int(stmt, 4) != 0,
 		}
@@ -240,7 +244,11 @@ asset_db_get_tiles_with_collision :: proc(db: ^Asset_DB, tileset_id: i32, alloca
 }
 
 // Query collision shapes for a tile
-asset_db_get_tile_collisions :: proc(db: ^Asset_DB, tile_id: i32, allocator := context.allocator) -> []Tile_Collision {
+asset_db_get_tile_collisions :: proc(
+	db: ^Asset_DB,
+	tile_id: i32,
+	allocator := context.allocator,
+) -> []Tile_Collision {
 	sql := "SELECT id, tile_id, shape_type, x, y, width, height, points FROM tile_collisions WHERE tile_id = ?"
 
 	stmt: ^Sqlite3_Stmt
@@ -254,15 +262,15 @@ asset_db_get_tile_collisions :: proc(db: ^Asset_DB, tile_id: i32, allocator := c
 
 	collisions := make([dynamic]Tile_Collision, allocator)
 	for sqlite3_step(stmt) == SQLITE_ROW {
-		collision := Tile_Collision{
-			id = i32(sqlite3_column_int(stmt, 0)),
-			tile_id = i32(sqlite3_column_int(stmt, 1)),
+		collision := Tile_Collision {
+			id         = i32(sqlite3_column_int(stmt, 0)),
+			tile_id    = i32(sqlite3_column_int(stmt, 1)),
 			shape_type = strings.clone_from_cstring(sqlite3_column_text(stmt, 2)),
-			x = f32(sqlite3_column_double(stmt, 3)),
-			y = f32(sqlite3_column_double(stmt, 4)),
-			width = f32(sqlite3_column_double(stmt, 5)),
-			height = f32(sqlite3_column_double(stmt, 6)),
-			points = strings.clone_from_cstring(sqlite3_column_text(stmt, 7)),
+			x          = f32(sqlite3_column_double(stmt, 3)),
+			y          = f32(sqlite3_column_double(stmt, 4)),
+			width      = f32(sqlite3_column_double(stmt, 5)),
+			height     = f32(sqlite3_column_double(stmt, 6)),
+			points     = strings.clone_from_cstring(sqlite3_column_text(stmt, 7)),
 		}
 		append(&collisions, collision)
 	}
@@ -286,12 +294,12 @@ asset_db_get_animation :: proc(db: ^Asset_DB, name: string) -> (Animation, bool)
 	sqlite3_bind_text(stmt, 1, name_cstr, -1, SQLITE_TRANSIENT)
 
 	if sqlite3_step(stmt) == SQLITE_ROW {
-		anim := Animation{
-			id = i32(sqlite3_column_int(stmt, 0)),
-			name = strings.clone_from_cstring(sqlite3_column_text(stmt, 1)),
+		anim := Animation {
+			id              = i32(sqlite3_column_int(stmt, 0)),
+			name            = strings.clone_from_cstring(sqlite3_column_text(stmt, 1)),
 			sprite_sheet_id = i32(sqlite3_column_int(stmt, 2)),
-			frame_delay_ms = i32(sqlite3_column_int(stmt, 3)),
-			loop = sqlite3_column_int(stmt, 4) != 0,
+			frame_delay_ms  = i32(sqlite3_column_int(stmt, 3)),
+			loop            = sqlite3_column_int(stmt, 4) != 0,
 		}
 		return anim, true
 	}

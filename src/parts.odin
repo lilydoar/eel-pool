@@ -13,4 +13,3 @@ Part_Sprite :: struct {
 	world_size:   Vec2,
 	world_offset: Vec2,
 }
-

@@ -94,4 +94,3 @@ animations_deinit_from :: proc(assets: ^Game_Assets, s: ^SDL) {
 	asset_animation_unload(assets.animation_player_attack1)
 	asset_animation_unload(assets.animation_player_attack2)
 }
-
