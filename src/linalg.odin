@@ -833,4 +833,3 @@ mat4_scale :: proc(scale: Vec4) -> Mat4 {
 	}
 	//odinfmt: enable
 }
-

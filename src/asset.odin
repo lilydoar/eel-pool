@@ -5,6 +5,9 @@ import "core:log"
 import os "core:os/os2"
 import "vendor:sdl3"
 
+// Asset_Collection: database
+// Asset_Collection_Instance: Loaded assets
+
 asset_sprite :: struct {
 	name:         string,
 	path:         string,
@@ -103,7 +106,7 @@ asset_animation_unload :: proc(a: SDL_Animation) {
 	sdl3.DestroyTexture(a.texture.texture)
 }
 
-asset_sprite_load :: proc(s: ^SDL, sprite: asset_sprite) -> (spr: game_sprite) {
+asset_sprite_load :: proc(s: ^SDL, sprite: asset_sprite) -> (spr: Game_Sprite) {
 	log.debugf("Loading sprite: {}", sprite.name)
 	defer log.debugf("Sprite loaded: {}", sprite.name)
 
@@ -115,7 +118,7 @@ asset_sprite_load :: proc(s: ^SDL, sprite: asset_sprite) -> (spr: game_sprite) {
 	return spr
 }
 
-asset_sprite_unload :: proc(sprite: game_sprite) {
+asset_sprite_unload :: proc(sprite: Game_Sprite) {
 	log.debugf("Unloading sprite {}", sprite.texture.name)
 	sdl3.DestroyTexture(sprite.texture.texture)
 }

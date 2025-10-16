@@ -83,7 +83,12 @@ main :: proc() {
 		release = {
 			entry = "entry/game/",
 			out = "release/game",
-			flags = {"-warnings-as-errors", "-disable-assert", "-o:speed", "-extra-linker-flags:-lsqlite3"},
+			flags = {
+				"-warnings-as-errors",
+				"-disable-assert",
+				"-o:speed",
+				"-extra-linker-flags:-lsqlite3",
+			},
 		},
 		dev = {
 			entry = "entry/game/",
@@ -91,7 +96,11 @@ main :: proc() {
 			flags = {"-debug", "-extra-linker-flags:-lsqlite3"},
 			env = {"RUST_BACKTRACE=full"},
 		},
-		gamelib = {lib = "lib/game/", out = "gamelib/game", flags = {"-debug", "-extra-linker-flags:-lsqlite3"}},
+		gamelib = {
+			lib = "lib/game/",
+			out = "gamelib/game",
+			flags = {"-debug", "-extra-linker-flags:-lsqlite3"},
+		},
 		docs = {out = "docs/gen/"},
 	}
 
@@ -286,4 +295,3 @@ release :: proc(opt: Options, cfg: Config) {
 		if !ok {cmd_failed = true}
 	}
 }
-

@@ -94,4 +94,3 @@ entity_pool_destroy_entity :: proc(pool: ^Entity_Pool, entity: Entity) {
 	pool.entities[entity.id] = Entity{}
 	pool.entities[entity.id].id = entity.id
 }
-

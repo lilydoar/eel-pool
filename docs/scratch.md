@@ -1386,7 +1386,7 @@ TODO: Render game to an intermediate texture. Render layers to the intermediate 
   - Extract all coupling between the game module and visual assets into strictly handle based interactions
     - draw module connects handles and assets during the processing/execution of a draw call
 
-- [ ] Separate game struct variables into buckets that can be kept, or reloaded, across reloads:
+- [x] Separate game struct variables into buckets that can be kept, or reloaded, across reloads:
   - Config (any value that would be set in an editor)
     - Can be reloaded separately from code changes
     - Essentially, reload constants from the DB
@@ -1395,7 +1395,7 @@ TODO: Render game to an intermediate texture. Render layers to the intermediate 
   - Frame state
     - Will not be effected by hot reloads since it should be reset at the beginning of each frame
 
-- [ ] Separate game struct variables by what would be serialized when saving vs what would be dropped
+- [x] Separate game struct variables by what would be serialized when saving vs what would be dropped
 
 - [ ] gameplay state serialization
 - [ ] Animated tiles. Coastlines
@@ -1407,7 +1407,7 @@ TODO: Render game to an intermediate texture. Render layers to the intermediate 
 
 # Tue Oct 14 2025
 
-- [ ] Game_Instance struct
+- [x] Game_Instance struct
 - [ ] Game_Sound struct
   - Play spawn low pop noise
   - Play arrow activate noise

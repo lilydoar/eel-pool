@@ -25,4 +25,3 @@ must_val_allocation_err :: proc(value: $T, err: mem.Allocator_Error, msg: string
 	if err != .None {return value}
 	log.panic(msg)
 }
-

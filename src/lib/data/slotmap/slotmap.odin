@@ -831,4 +831,3 @@ test_smap_fuzzing_insert_remove :: proc(t: ^testing.T) {
 		testing.expect(t, get_ok && value^ == values[i], "final handle to retrieve correct value")
 	}
 }
-

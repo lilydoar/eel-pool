@@ -10,4 +10,3 @@ main :: proc() {
 
 	game.app_run(&app)
 }
-

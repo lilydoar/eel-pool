@@ -45,4 +45,3 @@ config_load :: proc(opts: Options) -> (cfg: Config) {
 
 	return
 }
-

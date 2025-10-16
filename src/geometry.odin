@@ -515,4 +515,3 @@ aabb3i_bounding :: proc(a: AABB3i, b: AABB3i) -> AABB3i {
 	}
 	return AABB3i{min = min, max = max}
 }
-

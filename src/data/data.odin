@@ -641,4 +641,3 @@ tiled_map_draw_layer :: proc(
 		}
 	}
 }
-

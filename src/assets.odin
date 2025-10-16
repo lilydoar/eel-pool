@@ -15,7 +15,7 @@ Game_Assets :: struct {
 	animation_player_attack1: SDL_Animation,
 	animation_player_attack2: SDL_Animation,
 	// Sprites
-	sprite_archer_arrow:      game_sprite,
+	sprite_archer_arrow:      Game_Sprite,
 }
 
 // Initialize all game assets (animations and sprites)

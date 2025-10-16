@@ -14,7 +14,10 @@ App :: struct {
 	cfg:             Config,
 	sdl:             SDL,
 	time:            App_Time,
-	game:            Game,
+	//
+	game_instance:   Game_Instance,
+
+	//
 	asset_manager:   data.Asset_Manager,
 	assets:          Game_Assets,
 	capture_frames:  [dynamic]u64, // Frame numbers to capture
@@ -75,7 +78,14 @@ app_init :: proc(app: ^App, ctx: runtime.Context) {
 
 	game_assets_init(&app.assets, &app.sdl)
 
-	game_init(&app.game, app.ctx, app.ctx.logger, &app.sdl, &app.asset_manager, &app.assets)
+	game_init(
+		&app.game_instance,
+		app.ctx,
+		app.ctx.logger,
+		&app.sdl,
+		&app.asset_manager,
+		&app.assets,
+	)
 
 	// TODO: Initialize other subsystems (e.g., job system, ...)
 }
@@ -86,7 +96,7 @@ app_deinit :: proc(app: ^App) {
 	log.info("Deinitializing Application...")
 	defer log.info("Application deinitialized")
 
-	game_deinit(&app.game)
+	game_deinit(&app.game_instance)
 
 	game_assets_deinit(&app.assets, &app.sdl)
 
@@ -106,7 +116,7 @@ should_update: proc(a: ^App) -> bool = proc(a: ^App) -> bool {
 		return false
 	}
 
-	frame_step_sec := 1.0 / a.game.update_hz
+	frame_step_sec := 1.0 / a.game_instance.cfg.game.update_hz
 	ok := a.time.game_updates_accumulator_sec >= frame_step_sec
 	if ok {a.time.game_updates_accumulator_sec -= frame_step_sec}
 
@@ -174,14 +184,15 @@ app_update :: proc(app: ^App) -> (quit: bool) {
 	defer {
 		if capture_screen {
 			sdl_capture_screenshot(&app.sdl)
-			app.game.debug.capture_feedback_time = 2000.0
+			// TODO: app.game_instance.debug.capture_feedback_time = 2000.0
 		}
 
 		// Capture from interactive key press (0 key)
-		if app.game.debug.capture_screenshot_pending {
+		// TODO: if app.game_instance.debug.capture_screenshot_pending {
+		if false {
 			sdl_capture_screenshot(&app.sdl)
-			app.game.debug.capture_feedback_time = 2000.0
-			app.game.debug.capture_screenshot_pending = false
+			// TODO: app.game_instance.debug.capture_feedback_time = 2000.0
+			// TODO: app.game_instance.debug.capture_screenshot_pending = false
 		}
 
 		// Capture on exit if this is the last frame
@@ -205,8 +216,8 @@ app_update :: proc(app: ^App) -> (quit: bool) {
 		)
 	}
 
-	for should_update(app) {game_update(&app.sdl, &app.game, &app.asset_manager)}
-	game_draw(&app.game, &app.sdl.renderer)
+	for should_update(app) {game_update(&app.sdl, &app.game_instance, &app.asset_manager)}
+	game_draw(&app.game_instance, &app.sdl.renderer)
 
 	return
 }
@@ -240,4 +251,3 @@ app_parse_capture_option :: proc(app: ^App) {
 		}
 	}
 }
-
