@@ -11,6 +11,7 @@ Game_Assets :: struct {
 	// Animations
 	animation_player_idle:    SDL_Animation,
 	animation_player_run:     SDL_Animation,
+	animation_player_dash:    SDL_Animation,
 	animation_player_guard:   SDL_Animation,
 	animation_player_attack1: SDL_Animation,
 	animation_player_attack2: SDL_Animation,
@@ -79,6 +80,7 @@ animations_init_into :: proc(assets: ^Game_Assets, s: ^SDL) {
 
 	assets.animation_player_idle = asset_animation_load(s, animation_data["player_idle"])
 	assets.animation_player_run = asset_animation_load(s, animation_data["player_run"])
+	assets.animation_player_dash = asset_animation_load(s, animation_data["player_dash"])
 	assets.animation_player_guard = asset_animation_load(s, animation_data["player_guard"])
 	assets.animation_player_attack1 = asset_animation_load(s, animation_data["player_attack1"])
 	assets.animation_player_attack2 = asset_animation_load(s, animation_data["player_attack2"])
@@ -90,6 +92,7 @@ animations_deinit_from :: proc(assets: ^Game_Assets, s: ^SDL) {
 
 	asset_animation_unload(assets.animation_player_idle)
 	asset_animation_unload(assets.animation_player_run)
+	asset_animation_unload(assets.animation_player_dash)
 	asset_animation_unload(assets.animation_player_guard)
 	asset_animation_unload(assets.animation_player_attack1)
 	asset_animation_unload(assets.animation_player_attack2)

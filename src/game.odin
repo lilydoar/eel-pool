@@ -107,6 +107,7 @@ Game_State :: struct {
 			action:       enum {
 				idle,
 				running,
+				dashing,
 				guard,
 				attack,
 			},
@@ -882,6 +883,12 @@ game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 					game,
 					r,
 					{game.head.assets.animation_player_run, dst, 0, mirror_x},
+				)
+			case .dashing:
+				game_draw_animation(
+					game,
+					r,
+					{game.head.assets.animation_player_dash, dst, 0, mirror_x},
 				)
 			case .guard:
 			case .attack:

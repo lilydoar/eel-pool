@@ -28,6 +28,20 @@
         }
     },
     {
+        "name": "player_dash",
+        "path": "assets/Tiny_Swords/Units/Blue_Units/Warrior/Warrior_dash.png",
+        "frame_count": 6,
+        "delay_ms": 10,
+        "size": {
+            "x": 192,
+            "y": 192
+        },
+        "world_offset": {
+            "x": 96,
+            "y": 96
+        }
+    },
+    {
         "name": "player_guard",
         "path": "assets/Tiny_Swords/Units/Blue_Units/Warrior/Warrior_guard.png",
         "frame_count": 6,
