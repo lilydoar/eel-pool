@@ -26,8 +26,10 @@ Game_Config :: struct {
 
 	// Timer configuration (maps to: timer_config table)
 	timers:    struct {
-		win_lose_reset_time: f32, // How long to wait after winning or losing to reset the game
-		enemy_spawn_hz:      f32, // How frequently to spawn enemies (seconds between spawns)
+		win_lose_reset_time:  f32, // How long to wait after winning or losing to reset the game
+		enemy_spawn_hz:       f32, // How frequently to spawn enemies (seconds between spawns)
+		player_dash_time:     f32, // How long the dash lasts
+		player_dash_cooldown: f32, // How long between player dashes
 	},
 
 	// Entity templates/archetypes (maps to: entity_templates table)
@@ -35,6 +37,8 @@ Game_Config :: struct {
 		player: struct {
 			move_speed_x: f32,
 			move_speed_y: f32,
+			dash_speed_x: f32,
+			dash_speed_y: f32,
 		},
 		enemy:  struct {
 			behavior: Behavior_Range_Activated_Missile,
@@ -77,6 +81,10 @@ Game_State :: struct {
 	timers:      struct {
 		win_lose_reset_timer: f32,
 		enemy_spawn_timer:    f32,
+		// Time left during the player dash
+		player_dash_timer:    f32,
+		// time left before the player can dash again
+		player_dash_cooldown: f32,
 	},
 
 	//
@@ -95,26 +103,27 @@ Game_State :: struct {
 	//
 	entity:      struct {
 		player: struct {
-			world_x:      f32,
-			world_y:      f32,
-			world_x_prev: f32,
-			world_y_prev: f32,
+			world_x:        f32,
+			world_y:        f32,
+			world_x_prev:   f32,
+			world_y_prev:   f32,
 			// The player's size on the screen in pixels
-			screen_w:     f32,
-			screen_h:     f32,
+			screen_w:       f32,
+			screen_h:       f32,
 
 			//
-			action:       enum {
+			action:         enum {
 				idle,
 				running,
 				dashing,
 				guard,
 				attack,
 			},
-			facing:       enum {
+			facing:         enum {
 				right,
 				left,
 			},
+			dash_direction: Vec2,
 		},
 		enemy:  struct {
 			behavior: Behavior_Range_Activated_Missile,
@@ -150,6 +159,7 @@ Game_Input_Action_Type :: enum {
 	player_move_down,
 	player_move_left,
 	player_move_right,
+	player_move_dash,
 
 	//
 	app_capture_screen,
@@ -203,7 +213,9 @@ game_init :: proc(
 	game.cfg.timers.enemy_spawn_hz = 2 // Spawn an enemy every 2 seconds
 	game.state.timers.enemy_spawn_timer = game.cfg.timers.enemy_spawn_hz
 
-	game.cfg.timers.win_lose_reset_time = 10 // 10 seconds 
+	game.cfg.timers.win_lose_reset_time = 10 // 10 seconds
+	game.cfg.timers.player_dash_time = 0.46 // 0.2 seconds (12 frames at 60Hz)
+	game.cfg.timers.player_dash_cooldown = 1.0 // 1 second cooldown between dashes 
 
 	// Load level-1 using asset manager
 	level_path := "data/levels/level-1.json"
@@ -264,6 +276,8 @@ game_init :: proc(
 	game_bind_control_to_key(game, .player_move_left, sdl3.K_J)
 	game_bind_control_to_key(game, .player_move_right, sdl3.K_L)
 
+	game_bind_control_to_key(game, .player_move_dash, sdl3.K_A)
+
 	game_bind_control_to_mouse_button(game, .editor_place_player, .LEFT)
 	game_bind_control_to_mouse_button(game, .editor_place_enemy, .RIGHT)
 	game_bind_control_to_key(game, .editor_capture_screen, sdl3.K_0)
@@ -272,6 +286,8 @@ game_init :: proc(
 
 	game.cfg.entities.player.move_speed_x = 4
 	game.cfg.entities.player.move_speed_y = 4
+	game.cfg.entities.player.dash_speed_x = 12
+	game.cfg.entities.player.dash_speed_y = 12
 
 	game.cfg.rendering.tile_screen_size = {32, 32}
 
@@ -451,31 +467,79 @@ game_update :: proc(sdl: ^SDL, game: ^Game_Instance, asset_manager: ^data.Asset_
 
 	when DEBUG_FRAME {log.debugf("Player delta: {}, {}", player_delta.x, player_delta.y)}
 
-	player_desire_move_x: f32
-	player_desire_move_y: f32
-	player_final_move_x: f32
-	player_final_move_y: f32
-	{
-		player_desire_move_x = resolve_axis_intent(
+	// Check for dash input BEFORE movement calculation
+	if .player_move_dash in game.state.input[0] &&
+	   game.state.timers.player_dash_cooldown <= 0 &&
+	   game.state.entity.player.action != .dashing {
+		// Calculate dash direction from current input
+		dash_x := resolve_axis_intent(
 			game.state.input,
 			.player_move_left,
 			.player_move_right,
 			player_delta.x,
 		)
-		player_desire_move_y = resolve_axis_intent(
+		dash_y := resolve_axis_intent(
 			game.state.input,
 			.player_move_up,
 			.player_move_down,
 			player_delta.y,
 		)
 
-		n := vec2_norm_safe(Vec2{player_desire_move_x, player_desire_move_y})
-		player_final_move_x, player_final_move_y = n.x, n.y
+		// If no directional input, use previous movement direction
+		if dash_x == 0 && dash_y == 0 {
+			game.state.entity.player.dash_direction = vec2_norm_safe(player_delta)
+		} else {
+			game.state.entity.player.dash_direction = vec2_norm_safe(Vec2{dash_x, dash_y})
+		}
 
-		player_final_move_x =
-		cast(f32)(cast(f64)player_desire_move_x * cast(f64)game.cfg.entities.player.move_speed_x)
-		player_final_move_y =
-		cast(f32)(cast(f64)player_desire_move_y * cast(f64)game.cfg.entities.player.move_speed_y)
+		when DEBUG_GAME {
+			log.debugf(
+				"Player dash started! Direction: ({}, {})",
+				game.state.entity.player.dash_direction.x,
+				game.state.entity.player.dash_direction.y,
+			)
+		}
+
+		game.state.entity.player.action = .dashing
+		game.state.timers.player_dash_timer = game.cfg.timers.player_dash_time
+	}
+
+	player_desire_move_x: f32
+	player_desire_move_y: f32
+	player_final_move_x: f32
+	player_final_move_y: f32
+	{
+		#partial switch game.state.entity.player.action {
+		case .idle, .running:
+			player_desire_move_x = resolve_axis_intent(
+				game.state.input,
+				.player_move_left,
+				.player_move_right,
+				player_delta.x,
+			)
+			player_desire_move_y = resolve_axis_intent(
+				game.state.input,
+				.player_move_up,
+				.player_move_down,
+				player_delta.y,
+			)
+
+			n := vec2_norm_safe(Vec2{player_desire_move_x, player_desire_move_y})
+			player_final_move_x, player_final_move_y = n.x, n.y
+
+			player_final_move_x =
+			cast(f32)(cast(f64)player_desire_move_x *
+				cast(f64)game.cfg.entities.player.move_speed_x)
+			player_final_move_y =
+			cast(f32)(cast(f64)player_desire_move_y *
+				cast(f64)game.cfg.entities.player.move_speed_y)
+		case .dashing:
+			// Use the stored dash direction
+			player_final_move_x =
+				game.state.entity.player.dash_direction.x * game.cfg.entities.player.dash_speed_x
+			player_final_move_y =
+				game.state.entity.player.dash_direction.y * game.cfg.entities.player.dash_speed_y
+		}
 	}
 
 	when DEBUG_FRAME {
@@ -493,12 +557,35 @@ game_update :: proc(sdl: ^SDL, game: ^Game_Instance, asset_manager: ^data.Asset_
 	game.state.entity.player.world_x += player_final_move_x
 	game.state.entity.player.world_y += player_final_move_y
 
-	// Apply player state
-	if player_final_move_x == 0 && player_final_move_y == 0 {
-		game.state.entity.player.action = .idle
-	} else {
-		game.state.entity.player.action = .running
+	// Apply player state transitions
+
+	switch game.state.entity.player.action {
+	case .idle:
+		if player_final_move_x > 0 || player_final_move_y > 0 {
+			game.state.entity.player.action = .running
+		}
+	case .running:
+		if player_final_move_x == 0 && player_final_move_y == 0 {
+			game.state.entity.player.action = .idle
+		}
+	case .dashing:
+		if game.state.timers.player_dash_timer <= 0 {
+			if player_final_move_x == 0 && player_final_move_y == 0 {
+				game.state.entity.player.action = .idle
+			} else {
+				game.state.entity.player.action = .running
+			}
+			game.state.timers.player_dash_cooldown = game.cfg.timers.player_dash_cooldown
+		}
+	case .guard:
+	case .attack:
 	}
+
+	// if player_final_move_x == 0 && player_final_move_y == 0 {
+	// 	game.state.entity.player.action = .idle
+	// } else {
+	// 	game.state.entity.player.action = .running
+	// }
 
 	if player_final_move_x < 0 {
 		game.state.entity.player.facing = .left
@@ -1310,7 +1397,6 @@ game_entity_do_behavior :: proc(game: ^Game_Instance) {
 
 game_update_timers :: proc(game: ^Game_Instance, sdl: ^SDL, asset: ^data.Asset_Manager) {
 	frame_step_sec := f32(game_frame_step_sec(game))
-	game.state.timers.enemy_spawn_timer -= frame_step_sec
 
 	#partial switch game.state.mode {
 	case .Win:
@@ -1318,6 +1404,17 @@ game_update_timers :: proc(game: ^Game_Instance, sdl: ^SDL, asset: ^data.Asset_M
 	case .Lose:
 		game.state.timers.win_lose_reset_timer -= frame_step_sec
 	}
+
+	game.state.timers.enemy_spawn_timer -= frame_step_sec
+
+	if game.state.entity.player.action == .dashing {
+		game.state.timers.player_dash_timer -= frame_step_sec
+	} else {
+		game.state.timers.player_dash_cooldown -= frame_step_sec
+		if game.state.timers.player_dash_cooldown < 0 {game.state.timers.player_dash_cooldown = 0}
+	}
+
+	//
 
 	if game.state.timers.enemy_spawn_timer <= 0 {
 		game.state.timers.enemy_spawn_timer += game.cfg.timers.enemy_spawn_hz
@@ -1373,6 +1470,8 @@ game_update_timers :: proc(game: ^Game_Instance, sdl: ^SDL, asset: ^data.Asset_M
 		if game.state.timers.win_lose_reset_timer <=
 		   0 {game_reset(game, sdl, asset, game.head.assets)}
 	}
+
+
 }
 
 // Begin game_input helpers
