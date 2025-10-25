@@ -15,6 +15,11 @@ Game_Assets :: struct {
 	animation_player_guard:   SDL_Animation,
 	animation_player_attack1: SDL_Animation,
 	animation_player_attack2: SDL_Animation,
+	//
+	animation_archer_idle:    SDL_Animation,
+	animation_archer_run:     SDL_Animation,
+	animation_archer_shoot:   SDL_Animation,
+
 	// Sprites
 	sprite_archer_arrow:      Game_Sprite,
 }
@@ -84,6 +89,10 @@ animations_init_into :: proc(assets: ^Game_Assets, s: ^SDL) {
 	assets.animation_player_guard = asset_animation_load(s, animation_data["player_guard"])
 	assets.animation_player_attack1 = asset_animation_load(s, animation_data["player_attack1"])
 	assets.animation_player_attack2 = asset_animation_load(s, animation_data["player_attack2"])
+
+	assets.animation_archer_idle = asset_animation_load(s, animation_data["archer_idle"])
+	assets.animation_archer_run = asset_animation_load(s, animation_data["archer_run"])
+	assets.animation_archer_shoot = asset_animation_load(s, animation_data["archer_shoot"])
 }
 
 animations_deinit_from :: proc(assets: ^Game_Assets, s: ^SDL) {

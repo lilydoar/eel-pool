@@ -28,6 +28,8 @@ Entity :: struct {
 Entity_Variant :: union {
 	Entity_Player,
 	Entity_Enemy,
+	Entity_Missile,
+	Entity_Archer,
 }
 
 Entity_Player :: struct {
@@ -48,6 +50,24 @@ Entity_Enemy :: struct {
 	behavior: Behavior_Range_Activated_Missile,
 }
 
+Entity_Missile :: struct {
+	direction: Vec2,
+	behavior:  Behavior_Missile,
+}
+
+Entity_Archer :: struct {
+	behavior: Behavior_Range_Activated_Missle_Spawner,
+	facing:   enum {
+		right,
+		left,
+	},
+	action:   enum {
+		idle,
+		running,
+		shoot,
+	},
+}
+
 Entity_Pool :: struct {
 	// TODO: Slotmap
 	// src/lib/slotmap/slotmap.odin
@@ -63,6 +83,16 @@ entity_pool_init :: proc() -> Entity_Pool {
 
 entity_pool_deinit :: proc(pool: ^Entity_Pool) {
 	delete(pool.entities)
+}
+
+entity_pool_get_entity :: proc(pool: ^Entity_Pool, id: Entity_ID) -> Entity {
+	assert(int(id) >= 0 && int(id) < len(pool.entities))
+	return pool.entities[id]
+}
+
+entity_pool_get_entity_mut :: proc(pool: ^Entity_Pool, id: Entity_ID) -> ^Entity {
+	assert(int(id) >= 0 && int(id) < len(pool.entities))
+	return &pool.entities[id]
 }
 
 entity_pool_create_entity :: proc(pool: ^Entity_Pool, entity: Entity) -> ^Entity {

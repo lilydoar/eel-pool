@@ -43,6 +43,9 @@ Game_Config :: struct {
 		enemy:  struct {
 			behavior: Behavior_Range_Activated_Missile,
 		},
+		archer: struct {
+			behavior: Behavior_Range_Activated_Missle_Spawner,
+		},
 	},
 
 	// Camera configuration (maps to: camera_config table)
@@ -67,18 +70,19 @@ Game_Input_Buffer :: [GAME_INPUT_BUFFER_SIZE]bit_set[Game_Input_Action_Type]
 
 // Everything that changes during gameplay
 Game_State :: struct {
-	frame_count: u64,
+	frame_count:           u64,
 	//
-	input:       Game_Input_Buffer,
+	input:                 Game_Input_Buffer,
 	//
-	entity_pool: Entity_Pool,
-	event_queue: Event_Queue,
+	entity_pool:           Entity_Pool,
+	entity_prototype_pool: Entity_Pool,
+	event_queue:           Event_Queue,
 
 	// Tells the Game_Head where to render the world from
-	camera:      Camera,
+	camera:                Camera,
 
 	//
-	timers:      struct {
+	timers:                struct {
 		win_lose_reset_timer: f32,
 		enemy_spawn_timer:    f32,
 		// Time left during the player dash
@@ -88,20 +92,20 @@ Game_State :: struct {
 	},
 
 	//
-	level:       struct {
+	level:                 struct {
 		map_data:      ^data.Tiled_Map_Data,
 		playable_area: AABB2,
 	},
 
 	//
-	mode:        enum {
+	mode:                  enum {
 		Playing,
 		Win,
 		Lose,
 	},
-	score:       u32,
+	score:                 u32,
 	//
-	entity:      struct {
+	entity:                struct {
 		player: struct {
 			world_x:        f32,
 			world_y:        f32,
@@ -127,6 +131,9 @@ Game_State :: struct {
 		},
 		enemy:  struct {
 			behavior: Behavior_Range_Activated_Missile,
+		},
+		archer: struct {
+			behavior: Behavior_Range_Activated_Missle_Spawner,
 		},
 	},
 }
@@ -209,6 +216,7 @@ game_init :: proc(
 	game.cfg.game.update_hz = 60 // 60 Hz update frequency
 
 	game.state.entity_pool = entity_pool_init()
+	game.state.entity_prototype_pool = entity_pool_init()
 
 	game.cfg.timers.enemy_spawn_hz = 2 // Spawn an enemy every 2 seconds
 	game.state.timers.enemy_spawn_timer = game.cfg.timers.enemy_spawn_hz
@@ -248,7 +256,7 @@ game_init :: proc(
 	game.state.entity.player.screen_w = 192
 	game.state.entity.player.screen_h = 192
 
-	game.state.entity.enemy.behavior.cfg = {
+	game.cfg.entities.enemy.behavior.cfg = {
 		trigger_radius             = 240,
 		acceleration_px_per_frame2 = 11,
 		acceleration_time_sec      = 1,
@@ -259,6 +267,22 @@ game_init :: proc(
 		// Once again, interpolation
 		lifetime_sec               = 1.8,
 	}
+
+	missile := entity_pool_create_entity(
+		&game.state.entity_prototype_pool,
+		Entity {
+			variant = Entity_Missile{behavior = {cfg = {speed = 10, lifetime_sec = 0.8}}},
+			sprite = Part_Sprite{world_size = Vec2{32, 32}, world_offset = Vec2{16, 16}},
+		},
+	)
+	game.cfg.entities.archer.behavior.cfg = {
+		trigger_rad  = 240,
+		cooldown_sec = 1.6,
+		proto        = missile.id,
+	}
+
+	game.state.entity.enemy.behavior.cfg = game.cfg.entities.enemy.behavior.cfg
+	game.state.entity.archer.behavior.cfg = game.cfg.entities.archer.behavior.cfg
 
 	game.cfg.input.key_bindings = make(map[Game_Input_Action_Type]sdl3.Keycode)
 	game.cfg.input.button_bindings = make(map[Game_Input_Action_Type]sdl3.MouseButtonFlag)
@@ -1038,7 +1062,70 @@ game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 							{game.head.assets.sprite_archer_arrow, dst, rotation, false},
 						)
 					}
+				case Entity_Missile:
+					screen_pos := camera_world_to_screen(
+						&game.state.camera,
+						Vec2{e.position.x, e.position.y},
+						Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+					)
 
+					enemy_screen_size := camera_world_size_to_screen(
+						&game.state.camera,
+						e.sprite.world_size,
+						Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+					)
+
+					dst := sdl3.FRect {
+						screen_pos.x,
+						screen_pos.y,
+						enemy_screen_size.x,
+						enemy_screen_size.y,
+					}
+
+					rotation := rad_to_deg(vec2_angle(v.direction))
+
+					game_draw_sprite(
+						game,
+						r,
+						{game.head.assets.sprite_archer_arrow, dst, rotation, false},
+					)
+
+				case Entity_Archer:
+					screen_pos := camera_world_to_screen(
+						&game.state.camera,
+						Vec2{e.position.x, e.position.y},
+						Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+					)
+
+					enemy_screen_size := camera_world_size_to_screen(
+						&game.state.camera,
+						e.sprite.world_size,
+						Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
+					)
+
+					dst := sdl3.FRect {
+						screen_pos.x,
+						screen_pos.y,
+						enemy_screen_size.x,
+						enemy_screen_size.y,
+					}
+
+					mirror_x := false if v.facing == .right else true
+
+					switch v.behavior.state {
+					case .idle:
+						game_draw_animation(
+							game,
+							r,
+							{game.head.assets.animation_archer_idle, dst, 0, mirror_x},
+						)
+					case .cooldown:
+						game_draw_animation(
+							game,
+							r,
+							{game.head.assets.animation_archer_shoot, dst, 0, mirror_x},
+						)
+					}
 				}
 			}
 		}
@@ -1390,6 +1477,43 @@ game_entity_do_behavior :: proc(game: ^Game_Instance) {
 				)
 				e.position.x, e.position.y = next_pos.x, next_pos.y
 			}
+
+		case Entity_Missile:
+			if behavior_missile_lifetime_is_expired(v.behavior, curr_time) {
+				entity_pool_destroy_entity(&game.state.entity_pool, e)
+				event_queue_publish(
+					&game.state.event_queue,
+					.EntityDestroyed,
+					EventPayloadEntityDestroyed{e.id},
+				)
+				continue
+			}
+
+			next_pos := behavior_missile_next_pos(
+				&v.behavior,
+				curr_time,
+				Vec2{e.position.x, e.position.y},
+			)
+			e.position.x, e.position.y = next_pos.x, next_pos.y
+
+		case Entity_Archer:
+			// Update facing direction based on player position
+			player_direction_x := game.state.entity.player.world_x - e.position.x
+			if player_direction_x < 0 {
+				v.facing = .left
+			}
+			if player_direction_x > 0 {
+				v.facing = .right
+			}
+
+			range_activated_missile_spawner_update(
+				&v.behavior,
+				&game.state.entity_pool,
+				&game.state.entity_prototype_pool,
+				curr_time,
+				Vec2{e.position.x, e.position.y},
+				Vec2{game.state.entity.player.world_x, game.state.entity.player.world_y},
+			)
 		}
 	}
 }
@@ -1438,26 +1562,38 @@ game_update_timers :: proc(game: ^Game_Instance, sdl: ^SDL, asset: ^data.Asset_M
 		)
 
 		if dst_to_player >= game.state.entity.enemy.behavior.cfg.trigger_radius * 1.1 {
-			entity_pool_create_entity(
-				&game.state.entity_pool,
-				Entity {
-					position = Part_World_Position{enemy_pos.x, enemy_pos.y, 0},
-					collision = Part_World_Collision(
-						AABB2 {
-							min = Vec2{enemy_pos.x, enemy_pos.y},
-							max = Vec2{enemy_pos.x + 64, enemy_pos.y + 64},
-						},
-					),
-					sprite = Part_Sprite {
-						world_size   = Vec2{64, 64},
-						// Center the sprite on the entity position
-						world_offset = Vec2{32, 32},
+
+			e := Entity {
+				position = Part_World_Position{enemy_pos.x, enemy_pos.y, 0},
+				collision = Part_World_Collision(
+					AABB2 {
+						min = Vec2{enemy_pos.x, enemy_pos.y},
+						max = Vec2{enemy_pos.x + 192, enemy_pos.y + 192},
 					},
-					variant = Entity_Enemy {
-						behavior = {cfg = game.state.entity.enemy.behavior.cfg},
-					},
+				),
+				sprite = Part_Sprite {
+					world_size   = Vec2{192, 192},
+					// Center the sprite on the entity position
+					world_offset = Vec2{96, 96},
 				},
-			)
+				variant = Entity_Archer{behavior = {cfg = game.state.entity.archer.behavior.cfg}},
+			}
+			// e := Entity {
+			// 	position = Part_World_Position{enemy_pos.x, enemy_pos.y, 0},
+			// 	collision = Part_World_Collision(
+			// 		AABB2 {
+			// 			min = Vec2{enemy_pos.x, enemy_pos.y},
+			// 			max = Vec2{enemy_pos.x + 64, enemy_pos.y + 64},
+			// 		},
+			// 	),
+			// 	sprite = Part_Sprite {
+			// 		world_size   = Vec2{64, 64},
+			// 		// Center the sprite on the entity position
+			// 		world_offset = Vec2{32, 32},
+			// 	},
+			// 	variant = Entity_Enemy{behavior = {cfg = game.state.entity.enemy.behavior.cfg}},
+			// }
+			entity_pool_create_entity(&game.state.entity_pool, e)
 		}
 	}
 

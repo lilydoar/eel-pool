@@ -47,7 +47,7 @@ Behavior_Range_Activated_Missle_Spawner :: struct {
 	cfg:          struct {
 		trigger_rad:  f32,
 		cooldown_sec: f64,
-		proto:        Entity,
+		proto:        Entity_ID,
 	},
 	state:        enum {
 		idle,
@@ -58,7 +58,8 @@ Behavior_Range_Activated_Missle_Spawner :: struct {
 
 range_activated_missile_spawner_update :: proc(
 	b: ^Behavior_Range_Activated_Missle_Spawner,
-	pool: ^Entity_Pool,
+	e_pool: ^Entity_Pool,
+	p_pool: ^Entity_Pool,
 	current_time: f64,
 	current_position: Vec2,
 	target_position: Vec2,
@@ -75,7 +76,22 @@ range_activated_missile_spawner_update :: proc(
 
 			missile_dir := vec2_norm_safe(missile_to_target)
 
-			entity_pool_create_entity(pool, b.cfg.proto)
+			// Get prototype and create a copy with proper initialization
+			proto := entity_pool_get_entity(p_pool, b.cfg.proto)
+			missile := proto
+
+			// Set position to archer's position
+			missile.position = Part_World_Position{current_position.x, current_position.y, 0}
+
+			// Initialize missile variant with direction and active state
+			if missile_var, ok := &missile.variant.(Entity_Missile); ok {
+				missile_var.direction = missile_dir
+				missile_var.behavior.direction = missile_dir
+				missile_var.behavior.state = .active
+				missile_var.behavior.trigger_time = current_time
+			}
+
+			entity_pool_create_entity(e_pool, missile)
 		}
 	case .cooldown:
 		// Wait for cooldown to expire

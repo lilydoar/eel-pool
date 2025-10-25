@@ -251,3 +251,4 @@ app_parse_capture_option :: proc(app: ^App) {
 		}
 	}
 }
+
