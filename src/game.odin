@@ -266,21 +266,20 @@ game_init :: proc(
 	// TODO
 	// Load from options file
 
-	// game_bind_control_to_key(game, .player_move_up, sdl3.K_W)
-	// game_bind_control_to_key(game, .player_move_down, sdl3.K_S)
-	// game_bind_control_to_key(game, .player_move_left, sdl3.K_A)
-	// game_bind_control_to_key(game, .player_move_right, sdl3.K_D)
+	game_bind_control_to_key(game, .player_move_up, sdl3.K_W)
+	game_bind_control_to_key(game, .player_move_down, sdl3.K_S)
+	game_bind_control_to_key(game, .player_move_left, sdl3.K_A)
+	game_bind_control_to_key(game, .player_move_right, sdl3.K_D)
+	game_bind_control_to_key(game, .player_move_dash, sdl3.K_J)
 
-	game_bind_control_to_key(game, .player_move_up, sdl3.K_I)
-	game_bind_control_to_key(game, .player_move_down, sdl3.K_K)
-	game_bind_control_to_key(game, .player_move_left, sdl3.K_J)
-	game_bind_control_to_key(game, .player_move_right, sdl3.K_L)
+	// game_bind_control_to_key(game, .player_move_up, sdl3.K_I)
+	// game_bind_control_to_key(game, .player_move_down, sdl3.K_K)
+	// game_bind_control_to_key(game, .player_move_left, sdl3.K_J)
+	// game_bind_control_to_key(game, .player_move_right, sdl3.K_L)
 
-	game_bind_control_to_key(game, .player_move_dash, sdl3.K_A)
-
-	game_bind_control_to_mouse_button(game, .editor_place_player, .LEFT)
-	game_bind_control_to_mouse_button(game, .editor_place_enemy, .RIGHT)
-	game_bind_control_to_key(game, .editor_capture_screen, sdl3.K_0)
+	// game_bind_control_to_mouse_button(game, .editor_place_player, .LEFT)
+	// game_bind_control_to_mouse_button(game, .editor_place_enemy, .RIGHT)
+	// game_bind_control_to_key(game, .editor_capture_screen, sdl3.K_0)
 	game_bind_control_to_key(game, .editor_zoom_in, sdl3.K_EQUALS)
 	game_bind_control_to_key(game, .editor_zoom_out, sdl3.K_MINUS)
 
