@@ -2,6 +2,89 @@ package game
 
 import "core:log"
 
+// Fire in a direction at a constant speed
+
+Behavior_Missile :: struct {
+	cfg:          struct {
+		speed:        f32,
+		lifetime_sec: f32,
+	},
+	state:        enum {
+		inactive,
+		active,
+	},
+	trigger_time: f64,
+	direction:    Vec2,
+}
+
+behavior_missile_next_pos :: proc(
+	b: ^Behavior_Missile,
+	current_time: f64,
+	current_pos: Vec2,
+) -> (
+	next_pos: Vec2,
+) {
+	switch b.state {
+	case .inactive:
+		// Do nothing
+		return current_pos
+	case .active:
+		vel := vec2_scale(b.direction, b.cfg.speed)
+		next_position := vec2_add(current_pos, vel)
+		return next_position
+	}
+	return current_pos
+}
+
+behavior_missile_lifetime_is_expired :: proc(b: Behavior_Missile, current_time: f64) -> bool {
+	return current_time - b.trigger_time > cast(f64)b.cfg.lifetime_sec
+}
+
+// Every N seconds fire a missile
+// Fire towards current target position
+
+Behavior_Range_Activated_Missle_Spawner :: struct {
+	cfg:          struct {
+		trigger_rad:  f32,
+		cooldown_sec: f64,
+		proto:        Entity,
+	},
+	state:        enum {
+		idle,
+		cooldown,
+	},
+	trigger_time: f64,
+}
+
+range_activated_missile_spawner_update :: proc(
+	b: ^Behavior_Range_Activated_Missle_Spawner,
+	pool: ^Entity_Pool,
+	current_time: f64,
+	current_position: Vec2,
+	target_position: Vec2,
+) {
+	switch b.state {
+	case .idle:
+		// Check for target in range
+		// If target in range, spawn missile and switch to cooldown state
+		missile_to_target: Vec2
+		missile_to_target = vec2_sub(target_position, current_position)
+		if vec2_len(missile_to_target) < b.cfg.trigger_rad {
+			b.trigger_time = current_time
+			b.state = .cooldown
+
+			missile_dir := vec2_norm_safe(missile_to_target)
+
+			entity_pool_create_entity(pool, b.cfg.proto)
+		}
+	case .cooldown:
+		// Wait for cooldown to expire
+		if current_time - b.trigger_time > b.cfg.cooldown_sec {
+			b.state = .idle
+		}
+	}
+}
+
 // Arrow sprite is a range activated missile
 // Starts in idle state
 // When player enters range it activates
@@ -88,3 +171,4 @@ range_activated_missile_is_lifetime_expired :: proc(
 ) -> bool {
 	return current_time - m.trigger_time > cast(f64)m.cfg.lifetime_sec
 }
+
