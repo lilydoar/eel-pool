@@ -14,8 +14,11 @@ App :: struct {
 	cfg:             Config,
 	sdl:             SDL,
 	time:            App_Time,
+
 	//
-	game_instance:   Game_Instance,
+	game_config:     Game_Config,
+	game_state:      Game_State,
+	game_head:       Maybe(Game_Head),
 
 	//
 	asset_manager:   data.Asset_Manager,
@@ -30,20 +33,11 @@ App_Time :: struct {
 	frame_count:                  u64,
 	// The number of game updates performed in the current frame
 	game_updates:                 u32,
+	// The accumulator collects time and when it has enough time, it performs game updates 
 	game_updates_accumulator_sec: f64,
 }
 
 app_create_logger :: proc(app: ^App) -> (l: log.Logger) {
-	cfg := app.cfg.logger
-
-	if cfg.to_file == "" {
-		return log.create_console_logger(opt = cfg.opts)
-	}
-
-	// TODO: Support file logging
-	// f, err := os.open(cfg.logger.to_file)
-	// l = log.create_file_logger(f, opt = cfg.logger.opts)
-
 	return
 }
 
@@ -78,8 +72,13 @@ app_init :: proc(app: ^App, ctx: runtime.Context) {
 
 	game_assets_init(&app.assets, &app.sdl)
 
+	// Initialize game_head
+	app.game_head = Game_Head{}
+
 	game_init(
-		&app.game_instance,
+		&app.game_config,
+		&app.game_state,
+		&app.game_head.?,
 		app.ctx,
 		app.ctx.logger,
 		&app.sdl,
@@ -96,7 +95,9 @@ app_deinit :: proc(app: ^App) {
 	log.info("Deinitializing Application...")
 	defer log.info("Application deinitialized")
 
-	game_deinit(&app.game_instance)
+	if head, ok := app.game_head.?; ok {
+		game_deinit(&app.game_config, &app.game_state, &head)
+	}
 
 	game_assets_deinit(&app.assets, &app.sdl)
 
@@ -116,7 +117,7 @@ should_update: proc(a: ^App) -> bool = proc(a: ^App) -> bool {
 		return false
 	}
 
-	frame_step_sec := 1.0 / a.game_instance.cfg.game.update_hz
+	frame_step_sec := 1.0 / a.game_config.game.update_hz
 	ok := a.time.game_updates_accumulator_sec >= frame_step_sec
 	if ok {a.time.game_updates_accumulator_sec -= frame_step_sec}
 
@@ -216,8 +217,12 @@ app_update :: proc(app: ^App) -> (quit: bool) {
 		)
 	}
 
-	for should_update(app) {game_update(&app.sdl, &app.game_instance, &app.asset_manager)}
-	game_draw(&app.game_instance, &app.sdl.renderer)
+	for should_update(app) {
+		game_update(&app.sdl, &app.game_config, &app.game_state, &app.asset_manager)
+	}
+	if head, ok := app.game_head.?; ok {
+		game_draw(&app.game_config, &app.game_state, &head, &app.sdl.renderer)
+	}
 
 	return
 }

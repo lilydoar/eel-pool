@@ -194,7 +194,9 @@ Game_Sprite :: struct {
 }
 
 game_init :: proc(
-	game: ^Game_Instance,
+	game_cfg: ^Game_Config,
+	game_state: ^Game_State,
+	game_head: ^Game_Head,
 	ctx: runtime.Context,
 	logger: log.Logger,
 	sdl: ^SDL,
@@ -207,23 +209,21 @@ game_init :: proc(
 	log.debug("Begin initializing game module")
 	defer log.debug("End initializing game module")
 
-	game.ctx = ctx
-	game.ctx.logger = logger
-	game.head.platform = sdl
-	game.head.asset = asset_manager
-	game.head.assets = assets
+	game_head.platform = sdl
+	game_head.asset = asset_manager
+	game_head.assets = assets
 
-	game.cfg.game.update_hz = 60 // 60 Hz update frequency
+	game_cfg.game.update_hz = 60 // 60 Hz update frequency
 
-	game.state.entity_pool = entity_pool_init()
-	game.state.entity_prototype_pool = entity_pool_init()
+	game_state.entity_pool = entity_pool_init()
+	game_state.entity_prototype_pool = entity_pool_init()
 
-	game.cfg.timers.enemy_spawn_hz = 2 // Spawn an enemy every 2 seconds
-	game.state.timers.enemy_spawn_timer = game.cfg.timers.enemy_spawn_hz
+	game_cfg.timers.enemy_spawn_hz = 2 // Spawn an enemy every 2 seconds
+	game_state.timers.enemy_spawn_timer = game_cfg.timers.enemy_spawn_hz
 
-	game.cfg.timers.win_lose_reset_time = 10 // 10 seconds
-	game.cfg.timers.player_dash_time = 0.46 // 0.2 seconds (12 frames at 60Hz)
-	game.cfg.timers.player_dash_cooldown = 1.0 // 1 second cooldown between dashes 
+	game_cfg.timers.win_lose_reset_time = 10 // 10 seconds
+	game_cfg.timers.player_dash_time = 0.46 // 0.2 seconds (12 frames at 60Hz)
+	game_cfg.timers.player_dash_cooldown = 1.0 // 1 second cooldown between dashes 
 
 	// Load level-1 using asset manager
 	level_path := "data/levels/level-1.json"
@@ -232,31 +232,31 @@ game_init :: proc(
 	}
 	map_data, ok := data.tiled_map_load(asset_manager, &sdl_wrapper, level_path)
 	if ok {
-		game.state.level.map_data = map_data
+		game_state.level.map_data = map_data
 		log.infof("Loaded level: {} ({}x{} tiles)", level_path, map_data.width, map_data.height)
 	} else {
 		log.errorf("Failed to load level: {}", level_path)
 	}
 
-	// log.debugf("%v", game.state.level.map_data)
+	// log.debugf("%v", game_state.level.map_data)
 
-	game.state.level.playable_area = AABB2 {
+	game_state.level.playable_area = AABB2 {
 		min = Vec2{300, 680},
 		max = Vec2{1780, 1360},
 	}
 
-	game.state.entity.player.world_x =
-		(game.state.level.playable_area.min.x + game.state.level.playable_area.max.x) * 0.5
-	game.state.entity.player.world_y =
-		(game.state.level.playable_area.min.y + game.state.level.playable_area.max.y) * 0.5
+	game_state.entity.player.world_x =
+		(game_state.level.playable_area.min.x + game_state.level.playable_area.max.x) * 0.5
+	game_state.entity.player.world_y =
+		(game_state.level.playable_area.min.y + game_state.level.playable_area.max.y) * 0.5
 
-	game.state.entity.player.world_x_prev = game.state.entity.player.world_x
-	game.state.entity.player.world_y_prev = game.state.entity.player.world_y
+	game_state.entity.player.world_x_prev = game_state.entity.player.world_x
+	game_state.entity.player.world_y_prev = game_state.entity.player.world_y
 
-	game.state.entity.player.screen_w = 192
-	game.state.entity.player.screen_h = 192
+	game_state.entity.player.screen_w = 192
+	game_state.entity.player.screen_h = 192
 
-	game.cfg.entities.enemy.behavior.cfg = {
+	game_cfg.entities.enemy.behavior.cfg = {
 		trigger_radius             = 240,
 		acceleration_px_per_frame2 = 11,
 		acceleration_time_sec      = 1,
@@ -269,58 +269,58 @@ game_init :: proc(
 	}
 
 	missile := entity_pool_create_entity(
-		&game.state.entity_prototype_pool,
+		&game_state.entity_prototype_pool,
 		Entity {
 			variant = Entity_Missile{behavior = {cfg = {speed = 10, lifetime_sec = 0.8}}},
 			sprite = Part_Sprite{world_size = Vec2{32, 32}, world_offset = Vec2{16, 16}},
 		},
 	)
-	game.cfg.entities.archer.behavior.cfg = {
+	game_cfg.entities.archer.behavior.cfg = {
 		trigger_rad  = 240,
 		cooldown_sec = 1.6,
 		proto        = missile.id,
 	}
 
-	game.state.entity.enemy.behavior.cfg = game.cfg.entities.enemy.behavior.cfg
-	game.state.entity.archer.behavior.cfg = game.cfg.entities.archer.behavior.cfg
+	game_state.entity.enemy.behavior.cfg = game_cfg.entities.enemy.behavior.cfg
+	game_state.entity.archer.behavior.cfg = game_cfg.entities.archer.behavior.cfg
 
-	game.cfg.input.key_bindings = make(map[Game_Input_Action_Type]sdl3.Keycode)
-	game.cfg.input.button_bindings = make(map[Game_Input_Action_Type]sdl3.MouseButtonFlag)
+	game_cfg.input.key_bindings = make(map[Game_Input_Action_Type]sdl3.Keycode)
+	game_cfg.input.button_bindings = make(map[Game_Input_Action_Type]sdl3.MouseButtonFlag)
 
 	// TODO
 	// Load from options file
 
-	game_bind_control_to_key(game, .player_move_up, sdl3.K_W)
-	game_bind_control_to_key(game, .player_move_down, sdl3.K_S)
-	game_bind_control_to_key(game, .player_move_left, sdl3.K_A)
-	game_bind_control_to_key(game, .player_move_right, sdl3.K_D)
-	game_bind_control_to_key(game, .player_move_dash, sdl3.K_J)
+	game_bind_control_to_key(game_cfg, .player_move_up, sdl3.K_W)
+	game_bind_control_to_key(game_cfg, .player_move_down, sdl3.K_S)
+	game_bind_control_to_key(game_cfg, .player_move_left, sdl3.K_A)
+	game_bind_control_to_key(game_cfg, .player_move_right, sdl3.K_D)
+	game_bind_control_to_key(game_cfg, .player_move_dash, sdl3.K_J)
 
-	// game_bind_control_to_key(game, .player_move_up, sdl3.K_I)
-	// game_bind_control_to_key(game, .player_move_down, sdl3.K_K)
-	// game_bind_control_to_key(game, .player_move_left, sdl3.K_J)
-	// game_bind_control_to_key(game, .player_move_right, sdl3.K_L)
+	// game_bind_control_to_key(game_cfg, .player_move_up, sdl3.K_I)
+	// game_bind_control_to_key(game_cfg, .player_move_down, sdl3.K_K)
+	// game_bind_control_to_key(game_cfg, .player_move_left, sdl3.K_J)
+	// game_bind_control_to_key(game_cfg, .player_move_right, sdl3.K_L)
 
-	// game_bind_control_to_mouse_button(game, .editor_place_player, .LEFT)
-	// game_bind_control_to_mouse_button(game, .editor_place_enemy, .RIGHT)
-	// game_bind_control_to_key(game, .editor_capture_screen, sdl3.K_0)
-	game_bind_control_to_key(game, .editor_zoom_in, sdl3.K_EQUALS)
-	game_bind_control_to_key(game, .editor_zoom_out, sdl3.K_MINUS)
+	// game_bind_control_to_mouse_button(game_cfg, .editor_place_player, .LEFT)
+	// game_bind_control_to_mouse_button(game_cfg, .editor_place_enemy, .RIGHT)
+	// game_bind_control_to_key(game_cfg, .editor_capture_screen, sdl3.K_0)
+	game_bind_control_to_key(game_cfg, .editor_zoom_in, sdl3.K_EQUALS)
+	game_bind_control_to_key(game_cfg, .editor_zoom_out, sdl3.K_MINUS)
 
-	game.cfg.entities.player.move_speed_x = 4
-	game.cfg.entities.player.move_speed_y = 4
-	game.cfg.entities.player.dash_speed_x = 12
-	game.cfg.entities.player.dash_speed_y = 12
+	game_cfg.entities.player.move_speed_x = 4
+	game_cfg.entities.player.move_speed_y = 4
+	game_cfg.entities.player.dash_speed_x = 12
+	game_cfg.entities.player.dash_speed_y = 12
 
-	game.cfg.rendering.tile_screen_size = {32, 32}
+	game_cfg.rendering.tile_screen_size = {32, 32}
 
-	game.state.mode = .Playing
+	game_state.mode = .Playing
 
 	event_queue_subscribe_to_type(
-		&game.state.event_queue,
+		&game_state.event_queue,
 		.EntityDestroyed,
 		proc(ctx: rawptr, e: Event) {
-			game: ^Game_Instance = cast(^Game_Instance)ctx
+			game_state := cast(^Game_State)ctx
 
 			when DEBUG_GAME {log.debugf("Event received: EntityDestroyed, payload: {}", e.payload)}
 
@@ -328,99 +328,105 @@ game_init :: proc(
 
 			#partial switch v in e.payload {
 			case EventPayloadEntityDestroyed:
-				game.state.score += 1
-				when DEBUG_GAME {log.debugf("Entity destroyed! New score: {}", game.state.score)}
+				game_state.score += 1
+				when DEBUG_GAME {log.debugf("Entity destroyed! New score: {}", game_state.score)}
 			}
 		},
 	)
 
-	game.cfg.camera.viewport_scale = 3.2
-	game.cfg.camera.lag_follow_rate = 0.1
-	game.cfg.camera.leash_distance = Vec2{300, 200}
+	game_cfg.camera.viewport_scale = 3.2
+	game_cfg.camera.lag_follow_rate = 0.1
+	game_cfg.camera.leash_distance = Vec2{300, 200}
 
-	game.state.camera = Camera {
-		position        = Vec2{game.state.entity.player.world_x, game.state.entity.player.world_y},
+	game_state.camera = Camera {
+		position        = Vec2{game_state.entity.player.world_x, game_state.entity.player.world_y},
 		view_size       = Vec2 {
-			cast(f32)(RenderTargetSize.x) * game.cfg.camera.viewport_scale,
-			cast(f32)(RenderTargetSize.y) * game.cfg.camera.viewport_scale,
+			cast(f32)(RenderTargetSize.x) * game_cfg.camera.viewport_scale,
+			cast(f32)(RenderTargetSize.y) * game_cfg.camera.viewport_scale,
 		},
-		target_position = Vec2{game.state.entity.player.world_x, game.state.entity.player.world_y},
+		target_position = Vec2{game_state.entity.player.world_x, game_state.entity.player.world_y},
 		follow_mode     = .with_leash,
-		lag_follow_rate = game.cfg.camera.lag_follow_rate,
-		leash_distance  = game.cfg.camera.leash_distance,
+		lag_follow_rate = game_cfg.camera.lag_follow_rate,
+		leash_distance  = game_cfg.camera.leash_distance,
 	}
-	camera_update(&game.state.camera)
+	camera_update(&game_state.camera)
 }
 
 game_reset :: proc(
-	game: ^Game_Instance,
+	game_cfg: ^Game_Config,
+	game_state: ^Game_State,
+	game_head: ^Game_Head,
 	sdl: ^SDL,
 	asset: ^data.Asset_Manager,
 	assets: ^Game_Assets,
 ) {
-	assets_backup := game.head.assets
-	game^ = Game_Instance{}
-	game_init(game, context, context.logger, sdl, asset, assets_backup)
+	assets_backup := game_head.assets
+	game_cfg^ = Game_Config{}
+	game_state^ = Game_State{}
+	game_head^ = Game_Head{}
+	game_init(game_cfg, game_state, game_head, context, context.logger, sdl, asset, assets_backup)
 }
 
-game_deinit :: proc(game: ^Game_Instance) {
-	context = game.ctx
-
+game_deinit :: proc(game_cfg: ^Game_Config, game_state: ^Game_State, game_head: ^Game_Head) {
 	log.debug("Begin deinitializing game module")
 	defer log.debug("End deinitializing game module")
 
-	entity_pool_deinit(&game.state.entity_pool)
+	entity_pool_deinit(&game_state.entity_pool)
 
-	delete(game.cfg.input.key_bindings)
-	delete(game.cfg.input.button_bindings)
+	delete(game_cfg.input.key_bindings)
+	delete(game_cfg.input.button_bindings)
 }
 
-game_frame_step_sec :: proc(game: ^Game_Instance) -> f64 {
-	return 1.0 / game.cfg.game.update_hz
+game_frame_step_sec :: proc(game_cfg: ^Game_Config) -> f64 {
+	return 1.0 / game_cfg.game.update_hz
 }
 
-game_update :: proc(sdl: ^SDL, game: ^Game_Instance, asset_manager: ^data.Asset_Manager) {
-	context = game.ctx
+game_update :: proc(
+	sdl: ^SDL,
+	game_cfg: ^Game_Config,
+	game_state: ^Game_State,
+	asset_manager: ^data.Asset_Manager,
+) {
 
 	when DEBUG_FRAME {log.debugf(
 			"Begin game update: frame_count: {}, game time: {}sec",
-			game.state.frame_count,
-			cast(f64)game.state.frame_count * game_frame_step_sec(game),
+			game_state.frame_count,
+			cast(f64)game_state.frame_count * game_frame_step_sec(game_cfg),
 		)}
 	when DEBUG_FRAME {defer log.debug("End game update")}
 
-	game.state.input[0] = {}
-	for k, keycode in game.cfg.input.key_bindings {
-		if sdl_key_is_down(sdl, keycode) {game.state.input[0] = game.state.input[0] + {k}}
+	game_state.input[0] = {}
+	for k, keycode in game_cfg.input.key_bindings {
+		if sdl_key_is_down(sdl, keycode) {game_state.input[0] = game_state.input[0] + {k}}
 	}
-	for k, v in game.cfg.input.button_bindings {
-		if sdl_mouse_button_was_released(sdl, v) {game.state.input[0] = game.state.input[0] + {k}}
+	for k, v in game_cfg.input.button_bindings {
+		if sdl_mouse_button_was_released(sdl, v) {game_state.input[0] = game_state.input[0] + {k}}
 	}
-	when DEBUG_FRAME {log.debugf("Current game input: {}", game.state.input[0])}
+	when DEBUG_FRAME {log.debugf("Current game input: {}", game_state.input[0])}
 
 	mouse_pos := sdl_mouse_get_render_position(sdl)
 	mouse_pos_world := camera_screen_to_world(
-		&game.state.camera,
+		&game_state.camera,
 		mouse_pos,
 		Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 	)
 
-	game_update_timers(game, sdl, asset_manager)
+	game_update_timers(game_cfg, game_state, sdl, asset_manager)
 
-	event_queue_process(game, &game.state.event_queue, cast(f32)game_frame_step_sec(game))
+	event_queue_process(game_state, &game_state.event_queue, cast(f32)game_frame_step_sec(game_cfg))
 
-	switch game.state.mode {
+	switch game_state.mode {
 	case .Playing:
-		if game.state.score >= 10000 {
-			game.state.mode = .Win
-			game.state.timers.win_lose_reset_timer = game.cfg.timers.win_lose_reset_time
+		if game_state.score >= 10000 {
+			game_state.mode = .Win
+			game_state.timers.win_lose_reset_timer = game_cfg.timers.win_lose_reset_time
 		}
 
 		time_limit_sec: f64 = 60_000 // 60_000 seconds
-		game_time_sec := cast(f64)game.state.frame_count * game_frame_step_sec(game)
+		game_time_sec := cast(f64)game_state.frame_count * game_frame_step_sec(game_cfg)
 		if game_time_sec >= time_limit_sec {
-			game.state.mode = .Lose
-			game.state.timers.win_lose_reset_timer = game.cfg.timers.win_lose_reset_time
+			game_state.mode = .Lose
+			game_state.timers.win_lose_reset_timer = game_cfg.timers.win_lose_reset_time
 		}
 
 	case .Win:
@@ -431,36 +437,36 @@ game_update :: proc(sdl: ^SDL, game: ^Game_Instance, asset_manager: ^data.Asset_
 
 	// Update debug timers
 	// TODO: Add debug struct to appropriate location
-	// if game.debug.capture_feedback_time > 0 {
-	// 	game.debug.capture_feedback_time -= f32(game_frame_step_sec(game))
-	// 	if game.debug.capture_feedback_time < 0 {
-	// 		game.debug.capture_feedback_time = 0
+	// if game_state.debug.capture_feedback_time > 0 {
+	// 	game_state.debug.capture_feedback_time -= f32(game_frame_step_sec(game_cfg))
+	// 	if game_state.debug.capture_feedback_time < 0 {
+	// 		game_state.debug.capture_feedback_time = 0
 	// 	}
 	// }
 
 	// Editor actions
 
 	// TODO: Add debug struct to appropriate location
-	// if capture_key, ok := game.cfg.input.key_bindings[.editor_capture_screen]; ok {
+	// if capture_key, ok := game_cfg.input.key_bindings[.editor_capture_screen]; ok {
 	// 	if sdl_key_was_released(sdl, capture_key) {
 	// 		// Set flag to capture screenshot at end of frame (after drawing)
-	// 		game.debug.capture_screenshot_pending = true
+	// 		game_state.debug.capture_screenshot_pending = true
 	// 	}
 	// }
 
-	if .editor_zoom_in in game.state.input[0] {
-		camera_zoom_by_factor(&game.state.camera, 1.1)
-	} else if .editor_zoom_out in game.state.input[0] {
-		camera_zoom_by_factor(&game.state.camera, 1 / 1.1)
+	if .editor_zoom_in in game_state.input[0] {
+		camera_zoom_by_factor(&game_state.camera, 1.1)
+	} else if .editor_zoom_out in game_state.input[0] {
+		camera_zoom_by_factor(&game_state.camera, 1 / 1.1)
 	}
 
-	if .editor_place_player in game.state.input[0] {
-		game.state.entity.player.world_x = mouse_pos_world.x
-		game.state.entity.player.world_y = mouse_pos_world.y
+	if .editor_place_player in game_state.input[0] {
+		game_state.entity.player.world_x = mouse_pos_world.x
+		game_state.entity.player.world_y = mouse_pos_world.y
 
-	} else if .editor_place_enemy in game.state.input[0] {
+	} else if .editor_place_enemy in game_state.input[0] {
 		entity_pool_create_entity(
-			&game.state.entity_pool,
+			&game_state.entity_pool,
 			Entity {
 				position = Part_World_Position{mouse_pos.x, mouse_pos.y, 0},
 				collision = Part_World_Collision(
@@ -474,7 +480,7 @@ game_update :: proc(sdl: ^SDL, game: ^Game_Instance, asset_manager: ^data.Asset_
 					// Center the sprite on the entity position
 					world_offset = Vec2{32, 32},
 				},
-				variant = Entity_Enemy{behavior = {cfg = game.state.entity.enemy.behavior.cfg}},
+				variant = Entity_Enemy{behavior = {cfg = game_state.entity.enemy.behavior.cfg}},
 			},
 		)
 	}
@@ -484,29 +490,29 @@ game_update :: proc(sdl: ^SDL, game: ^Game_Instance, asset_manager: ^data.Asset_
 	// Player input -> movement
 
 	player_delta: Vec2 = {
-		game.state.entity.player.world_x - game.state.entity.player.world_x_prev,
-		game.state.entity.player.world_y - game.state.entity.player.world_y_prev,
+		game_state.entity.player.world_x - game_state.entity.player.world_x_prev,
+		game_state.entity.player.world_y - game_state.entity.player.world_y_prev,
 	}
 
 	when DEBUG_FRAME {log.debugf("Player delta: {}, {}", player_delta.x, player_delta.y)}
 
 	// Check for dash input BEFORE movement calculation
-	if .player_move_dash in game.state.input[0] &&
-	   game.state.timers.player_dash_cooldown <= 0 &&
-	   game.state.entity.player.action != .dashing &&
-	   (.player_move_left in game.state.input[0] ||
-			   .player_move_right in game.state.input[0] ||
-			   .player_move_up in game.state.input[0] ||
-			   .player_move_down in game.state.input[0]) {
+	if .player_move_dash in game_state.input[0] &&
+	   game_state.timers.player_dash_cooldown <= 0 &&
+	   game_state.entity.player.action != .dashing &&
+	   (.player_move_left in game_state.input[0] ||
+			   .player_move_right in game_state.input[0] ||
+			   .player_move_up in game_state.input[0] ||
+			   .player_move_down in game_state.input[0]) {
 		// Calculate dash direction from current input
 		dash_x := resolve_axis_intent(
-			game.state.input,
+			game_state.input,
 			.player_move_left,
 			.player_move_right,
 			player_delta.x,
 		)
 		dash_y := resolve_axis_intent(
-			game.state.input,
+			game_state.input,
 			.player_move_up,
 			.player_move_down,
 			player_delta.y,
@@ -514,21 +520,21 @@ game_update :: proc(sdl: ^SDL, game: ^Game_Instance, asset_manager: ^data.Asset_
 
 		// If no directional input, use previous movement direction
 		if dash_x == 0 && dash_y == 0 {
-			game.state.entity.player.dash_direction = vec2_norm_safe(player_delta)
+			game_state.entity.player.dash_direction = vec2_norm_safe(player_delta)
 		} else {
-			game.state.entity.player.dash_direction = vec2_norm_safe(Vec2{dash_x, dash_y})
+			game_state.entity.player.dash_direction = vec2_norm_safe(Vec2{dash_x, dash_y})
 		}
 
 		when DEBUG_GAME {
 			log.debugf(
 				"Player dash started! Direction: ({}, {})",
-				game.state.entity.player.dash_direction.x,
-				game.state.entity.player.dash_direction.y,
+				game_state.entity.player.dash_direction.x,
+				game_state.entity.player.dash_direction.y,
 			)
 		}
 
-		game.state.entity.player.action = .dashing
-		game.state.timers.player_dash_timer = game.cfg.timers.player_dash_time
+		game_state.entity.player.action = .dashing
+		game_state.timers.player_dash_timer = game_cfg.timers.player_dash_time
 	}
 
 	player_desire_move_x: f32
@@ -536,16 +542,16 @@ game_update :: proc(sdl: ^SDL, game: ^Game_Instance, asset_manager: ^data.Asset_
 	player_final_move_x: f32
 	player_final_move_y: f32
 	{
-		#partial switch game.state.entity.player.action {
+		#partial switch game_state.entity.player.action {
 		case .idle, .running:
 			player_desire_move_x = resolve_axis_intent(
-				game.state.input,
+				game_state.input,
 				.player_move_left,
 				.player_move_right,
 				player_delta.x,
 			)
 			player_desire_move_y = resolve_axis_intent(
-				game.state.input,
+				game_state.input,
 				.player_move_up,
 				.player_move_down,
 				player_delta.y,
@@ -556,16 +562,16 @@ game_update :: proc(sdl: ^SDL, game: ^Game_Instance, asset_manager: ^data.Asset_
 
 			player_final_move_x =
 			cast(f32)(cast(f64)player_desire_move_x *
-				cast(f64)game.cfg.entities.player.move_speed_x)
+				cast(f64)game_cfg.entities.player.move_speed_x)
 			player_final_move_y =
 			cast(f32)(cast(f64)player_desire_move_y *
-				cast(f64)game.cfg.entities.player.move_speed_y)
+				cast(f64)game_cfg.entities.player.move_speed_y)
 		case .dashing:
 			// Use the stored dash direction
 			player_final_move_x =
-				game.state.entity.player.dash_direction.x * game.cfg.entities.player.dash_speed_x
+				game_state.entity.player.dash_direction.x * game_cfg.entities.player.dash_speed_x
 			player_final_move_y =
-				game.state.entity.player.dash_direction.y * game.cfg.entities.player.dash_speed_y
+				game_state.entity.player.dash_direction.y * game_cfg.entities.player.dash_speed_y
 		}
 	}
 
@@ -576,62 +582,62 @@ game_update :: proc(sdl: ^SDL, game: ^Game_Instance, asset_manager: ^data.Asset_
 		}
 	}
 
-	game_entity_do_behavior(game)
+	game_entity_do_behavior(game_cfg, game_state)
 
 	// Apply player movement
-	game.state.entity.player.world_y_prev = game.state.entity.player.world_y
-	game.state.entity.player.world_x_prev = game.state.entity.player.world_x
-	game.state.entity.player.world_x += player_final_move_x
-	game.state.entity.player.world_y += player_final_move_y
+	game_state.entity.player.world_y_prev = game_state.entity.player.world_y
+	game_state.entity.player.world_x_prev = game_state.entity.player.world_x
+	game_state.entity.player.world_x += player_final_move_x
+	game_state.entity.player.world_y += player_final_move_y
 
 	// Apply player state transitions
 
-	switch game.state.entity.player.action {
+	switch game_state.entity.player.action {
 	case .idle:
 		if player_final_move_x > 0 || player_final_move_y > 0 {
-			game.state.entity.player.action = .running
+			game_state.entity.player.action = .running
 		}
 	case .running:
 		if player_final_move_x == 0 && player_final_move_y == 0 {
-			game.state.entity.player.action = .idle
+			game_state.entity.player.action = .idle
 		}
 	case .dashing:
-		if game.state.timers.player_dash_timer <= 0 {
+		if game_state.timers.player_dash_timer <= 0 {
 			if player_final_move_x == 0 && player_final_move_y == 0 {
-				game.state.entity.player.action = .idle
+				game_state.entity.player.action = .idle
 			} else {
-				game.state.entity.player.action = .running
+				game_state.entity.player.action = .running
 			}
-			game.state.timers.player_dash_cooldown = game.cfg.timers.player_dash_cooldown
+			game_state.timers.player_dash_cooldown = game_cfg.timers.player_dash_cooldown
 		}
 	case .guard:
 	case .attack:
 	}
 
 	// if player_final_move_x == 0 && player_final_move_y == 0 {
-	// 	game.state.entity.player.action = .idle
+	// 	game_state.entity.player.action = .idle
 	// } else {
-	// 	game.state.entity.player.action = .running
+	// 	game_state.entity.player.action = .running
 	// }
 
 	if player_final_move_x < 0 {
-		game.state.entity.player.facing = .left
+		game_state.entity.player.facing = .left
 	}
 	if player_final_move_x > 0 {
-		game.state.entity.player.facing = .right
+		game_state.entity.player.facing = .right
 	}
 
 	// Apply player bounds
 	{
-		game.state.entity.player.world_x = clamp(
-			game.state.entity.player.world_x,
-			game.state.level.playable_area.min.x,
-			game.state.level.playable_area.max.x,
+		game_state.entity.player.world_x = clamp(
+			game_state.entity.player.world_x,
+			game_state.level.playable_area.min.x,
+			game_state.level.playable_area.max.x,
 		)
-		game.state.entity.player.world_y = clamp(
-			game.state.entity.player.world_y,
-			game.state.level.playable_area.min.y,
-			game.state.level.playable_area.max.y,
+		game_state.entity.player.world_y = clamp(
+			game_state.entity.player.world_y,
+			game_state.level.playable_area.min.y,
+			game_state.level.playable_area.max.y,
 		)
 	}
 
@@ -640,40 +646,43 @@ game_update :: proc(sdl: ^SDL, game: ^Game_Instance, asset_manager: ^data.Asset_
 	// 	log.debugf("player final move: {}, {}", player_final_move_x, player_final_move_y)
 	// 	log.debugf(
 	// 		"player position: {}, {}",
-	// 		game.state.entity.player.screen_x,
-	// 		game.state.entity.player.screen_y,
+	// 		game_state.entity.player.screen_x,
+	// 		game_state.entity.player.screen_y,
 	// 	)
 	// }
 
 	camera_set_target(
-		&game.state.camera,
-		Vec2{game.state.entity.player.world_x, game.state.entity.player.world_y},
+		&game_state.camera,
+		Vec2{game_state.entity.player.world_x, game_state.entity.player.world_y},
 	)
-	target_visible := camera_update(&game.state.camera)
+	target_visible := camera_update(&game_state.camera)
 	when DEBUG_GAME {
 		if !target_visible {log.warn("Camera target (player) is outside of the camera view!")}
 	}
 
 	// Prep for next frame
-	game.state.frame_count += 1
+	game_state.frame_count += 1
 
 	// Push all input states back by one
 	for i in 0 ..< GAME_INPUT_BUFFER_SIZE - 1 {
-		game.state.input[GAME_INPUT_BUFFER_SIZE - 1 - i] =
-			game.state.input[GAME_INPUT_BUFFER_SIZE - 2 - i]
+		game_state.input[GAME_INPUT_BUFFER_SIZE - 1 - i] =
+			game_state.input[GAME_INPUT_BUFFER_SIZE - 2 - i]
 	}
 }
 
-game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
-	context = game.ctx
-
+game_draw :: proc(
+	game_cfg: ^Game_Config,
+	game_state: ^Game_State,
+	game_head: ^Game_Head,
+	r: ^SDL_Renderer,
+) {
 	when DEBUG_FRAME {log.debug("Begin drawing game frame")}
 	when DEBUG_FRAME {defer log.debug("End drawing game frame")}
 
 	{
 		// Draw all level layers
-		if game.state.level.map_data != nil && len(game.state.level.map_data.layers) > 0 {
-			for layer, layer_idx in game.state.level.map_data.layers {
+		if game_state.level.map_data != nil && len(game_state.level.map_data.layers) > 0 {
+			for layer, layer_idx in game_state.level.map_data.layers {
 				switch layer.type {
 				case .tile_layer:
 					// when DEBUG_GAME {
@@ -703,11 +712,11 @@ game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 							tileset_idx := -1
 							local_id := gid_info.tile_id
 
-							for ts, i in game.state.level.map_data.tilesets {
+							for ts, i in game_state.level.map_data.tilesets {
 								if gid_info.tile_id >= ts.firstgid &&
-								   (i == len(game.state.level.map_data.tilesets) - 1 ||
+								   (i == len(game_state.level.map_data.tilesets) - 1 ||
 										   gid_info.tile_id <
-											   game.state.level.map_data.tilesets[i + 1].firstgid) {
+											   game_state.level.map_data.tilesets[i + 1].firstgid) {
 									tileset_idx = i
 									local_id = gid_info.tile_id - ts.firstgid
 									break
@@ -715,26 +724,26 @@ game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 							}
 
 							if tileset_idx < 0 ||
-							   tileset_idx >= len(game.state.level.map_data.tilesets) {
+							   tileset_idx >= len(game_state.level.map_data.tilesets) {
 								continue
 							}
 
-							tileset := game.state.level.map_data.tilesets[tileset_idx]
+							tileset := game_state.level.map_data.tilesets[tileset_idx]
 
 							screen_pos := camera_world_to_screen(
-								&game.state.camera,
+								&game_state.camera,
 								Vec2 {
-									cast(f32)(x * game.state.level.map_data.tile_width),
-									cast(f32)(y * game.state.level.map_data.tile_height),
+									cast(f32)(x * game_state.level.map_data.tile_width),
+									cast(f32)(y * game_state.level.map_data.tile_height),
 								},
 								Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 							)
 
 							tile_screen_size := camera_world_size_to_screen(
-								&game.state.camera,
+								&game_state.camera,
 								Vec2 {
-									f32(game.state.level.map_data.tile_width),
-									f32(game.state.level.map_data.tile_height),
+									f32(game_state.level.map_data.tile_width),
+									f32(game_state.level.map_data.tile_height),
 								},
 								Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 							)
@@ -831,11 +840,11 @@ game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 						tileset_idx := -1
 						local_id := gid_info.tile_id
 
-						for ts, i in game.state.level.map_data.tilesets {
+						for ts, i in game_state.level.map_data.tilesets {
 							if gid_info.tile_id >= ts.firstgid &&
-							   (i == len(game.state.level.map_data.tilesets) - 1 ||
+							   (i == len(game_state.level.map_data.tilesets) - 1 ||
 									   gid_info.tile_id <
-										   game.state.level.map_data.tilesets[i + 1].firstgid) {
+										   game_state.level.map_data.tilesets[i + 1].firstgid) {
 								tileset_idx = i
 								local_id = gid_info.tile_id - ts.firstgid
 								break
@@ -843,7 +852,7 @@ game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 						}
 
 						if tileset_idx < 0 ||
-						   tileset_idx >= len(game.state.level.map_data.tilesets) {
+						   tileset_idx >= len(game_state.level.map_data.tilesets) {
 							log.debugf(
 								"Skipping object {} with invalid tileset index {}",
 								obj.id,
@@ -852,7 +861,7 @@ game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 							continue
 						}
 
-						tileset := game.state.level.map_data.tilesets[tileset_idx]
+						tileset := game_state.level.map_data.tilesets[tileset_idx]
 
 						if local_id >= u32(tileset.tile_count) {
 							log.debugf(
@@ -867,13 +876,13 @@ game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 						// Objects use world coordinates directly
 						// Tiled positions objects at their bottom-left corner
 						screen_pos := camera_world_to_screen(
-							&game.state.camera,
+							&game_state.camera,
 							Vec2{obj.position.x, obj.position.y - obj.height},
 							Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 						)
 
 						obj_screen_size := camera_world_size_to_screen(
-							&game.state.camera,
+							&game_state.camera,
 							Vec2{obj.width, obj.height},
 							Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 						)
@@ -963,16 +972,16 @@ game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 
 	{
 		// Draw player()
-		if game.state.mode == .Playing {
+		if game_state.mode == .Playing {
 			screen_pos := camera_world_to_screen(
-				&game.state.camera,
-				Vec2{game.state.entity.player.world_x, game.state.entity.player.world_y},
+				&game_state.camera,
+				Vec2{game_state.entity.player.world_x, game_state.entity.player.world_y},
 				Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 			)
 
 			player_screen_size := camera_world_size_to_screen(
-				&game.state.camera,
-				Vec2{game.state.entity.player.screen_w, game.state.entity.player.screen_h},
+				&game_state.camera,
+				Vec2{game_state.entity.player.screen_w, game_state.entity.player.screen_h},
 				Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 			)
 
@@ -983,26 +992,29 @@ game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 				player_screen_size.y,
 			}
 
-			mirror_x := false if game.state.entity.player.facing == .right else true
+			mirror_x := false if game_state.entity.player.facing == .right else true
 
-			switch game.state.entity.player.action {
+			switch game_state.entity.player.action {
 			case .idle:
 				game_draw_animation(
-					game,
+					game_state,
+					game_cfg,
 					r,
-					{game.head.assets.animation_player_idle, dst, 0, mirror_x},
+					{game_head.assets.animation_player_idle, dst, 0, mirror_x},
 				)
 			case .running:
 				game_draw_animation(
-					game,
+					game_state,
+					game_cfg,
 					r,
-					{game.head.assets.animation_player_run, dst, 0, mirror_x},
+					{game_head.assets.animation_player_run, dst, 0, mirror_x},
 				)
 			case .dashing:
 				game_draw_animation(
-					game,
+					game_state,
+					game_cfg,
 					r,
-					{game.head.assets.animation_player_dash, dst, 0, mirror_x},
+					{game_head.assets.animation_player_dash, dst, 0, mirror_x},
 				)
 			case .guard:
 			case .attack:
@@ -1012,20 +1024,20 @@ game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 
 	{
 		// Draw enemy()
-		if game.state.mode == .Playing {
-			for e in game.state.entity_pool.entities {
+		if game_state.mode == .Playing {
+			for e in game_state.entity_pool.entities {
 				if !(.Is_Active in e.flags) {continue}
 
 				#partial switch v in e.variant {
 				case Entity_Enemy:
 					screen_pos := camera_world_to_screen(
-						&game.state.camera,
+						&game_state.camera,
 						Vec2{e.position.x, e.position.y},
 						Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 					)
 
 					enemy_screen_size := camera_world_size_to_screen(
-						&game.state.camera,
+						&game_state.camera,
 						e.sprite.world_size,
 						Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 					)
@@ -1039,8 +1051,8 @@ game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 
 					// rotate the enemy to face the player
 					player_screen_pos := camera_world_to_screen(
-						&game.state.camera,
-						Vec2{game.state.entity.player.world_x, game.state.entity.player.world_y},
+						&game_state.camera,
+						Vec2{game_state.entity.player.world_x, game_state.entity.player.world_y},
 						Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 					)
 
@@ -1051,30 +1063,30 @@ game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 
 					rotation := rad_to_deg(vec2_angle(vec_enemy_to_player))
 
-					switch game.state.entity.enemy.behavior.state {
+					switch game_state.entity.enemy.behavior.state {
 					case .idle:
 						game_draw_sprite(
-							game,
+							game_state,
 							r,
-							{game.head.assets.sprite_archer_arrow, dst, rotation, false},
+							{game_head.assets.sprite_archer_arrow, dst, rotation, false},
 						)
 					case .active:
 						// TODO: Rotate to face player
 						game_draw_sprite(
-							game,
+							game_state,
 							r,
-							{game.head.assets.sprite_archer_arrow, dst, rotation, false},
+							{game_head.assets.sprite_archer_arrow, dst, rotation, false},
 						)
 					}
 				case Entity_Missile:
 					screen_pos := camera_world_to_screen(
-						&game.state.camera,
+						&game_state.camera,
 						Vec2{e.position.x, e.position.y},
 						Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 					)
 
 					enemy_screen_size := camera_world_size_to_screen(
-						&game.state.camera,
+						&game_state.camera,
 						e.sprite.world_size,
 						Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 					)
@@ -1089,20 +1101,20 @@ game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 					rotation := rad_to_deg(vec2_angle(v.direction))
 
 					game_draw_sprite(
-						game,
+						game_state,
 						r,
-						{game.head.assets.sprite_archer_arrow, dst, rotation, false},
+						{game_head.assets.sprite_archer_arrow, dst, rotation, false},
 					)
 
 				case Entity_Archer:
 					screen_pos := camera_world_to_screen(
-						&game.state.camera,
+						&game_state.camera,
 						Vec2{e.position.x, e.position.y},
 						Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 					)
 
 					enemy_screen_size := camera_world_size_to_screen(
-						&game.state.camera,
+						&game_state.camera,
 						e.sprite.world_size,
 						Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 					)
@@ -1119,15 +1131,17 @@ game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 					switch v.behavior.state {
 					case .idle:
 						game_draw_animation(
-							game,
+							game_state,
+							game_cfg,
 							r,
-							{game.head.assets.animation_archer_idle, dst, 0, mirror_x},
+							{game_head.assets.animation_archer_idle, dst, 0, mirror_x},
 						)
 					case .cooldown:
 						game_draw_animation(
-							game,
+							game_state,
+							game_cfg,
 							r,
-							{game.head.assets.animation_archer_shoot, dst, 0, mirror_x},
+							{game_head.assets.animation_archer_shoot, dst, 0, mirror_x},
 						)
 					}
 				}
@@ -1164,19 +1178,19 @@ game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 		// 	color_new(0, 0, 255, 255),
 		// )
 
-		for e in game.state.entity_pool.entities {
+		for e in game_state.entity_pool.entities {
 			if !(.Is_Active in e.flags) {continue}
 			#partial switch v in e.variant {
 			case Entity_Enemy:
 				e_screen_pos := camera_world_to_screen(
-					&game.state.camera,
+					&game_state.camera,
 					Vec2{e.position.x, e.position.y},
 					Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 				)
 
 				// Convert trigger radius from world to screen space
 				trigger_radius_screen :=
-					camera_world_size_to_screen(&game.state.camera, Vec2{cast(f32)game.state.entity.enemy.behavior.cfg.trigger_radius, 0}, Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y}).x
+					camera_world_size_to_screen(&game_state.camera, Vec2{cast(f32)game_state.entity.enemy.behavior.cfg.trigger_radius, 0}, Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y}).x
 
 				// Draw trigger radius circle around enemy
 				debug_draw_circle(
@@ -1187,8 +1201,8 @@ game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 
 				// Draw line from enemy to player
 				player_screen_pos := camera_world_to_screen(
-					&game.state.camera,
-					Vec2{game.state.entity.player.world_x, game.state.entity.player.world_y},
+					&game_state.camera,
+					Vec2{game_state.entity.player.world_x, game_state.entity.player.world_y},
 					Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 				)
 
@@ -1216,13 +1230,13 @@ game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 				10,
 				20,
 				"World Pos: (%f, %f)",
-				game.state.entity.player.world_x,
-				game.state.entity.player.world_y,
+				game_state.entity.player.world_x,
+				game_state.entity.player.world_y,
 			)
 
 			screen_pos := camera_world_to_screen(
-				&game.state.camera,
-				Vec2{game.state.entity.player.world_x, game.state.entity.player.world_y},
+				&game_state.camera,
+				Vec2{game_state.entity.player.world_x, game_state.entity.player.world_y},
 				Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 			)
 
@@ -1248,9 +1262,9 @@ game_draw :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 		sdl3.SetRenderScale(r.ptr, 1.5, 1.5)
 		sdl3.SetRenderDrawColor(r.ptr, 255, 255, 255, 255)
 
-		switch game.state.mode {
+		switch game_state.mode {
 		case .Playing:
-			sdl3.RenderDebugTextFormat(r.ptr, 10, 10, "Score: %d", game.state.score)
+			sdl3.RenderDebugTextFormat(r.ptr, 10, 10, "Score: %d", game_state.score)
 		case .Win:
 			sdl3.RenderDebugTextFormat(r.ptr, 10, 40, "You Win!")
 		case .Lose:
@@ -1286,19 +1300,19 @@ game_draw_debug_feedback :: proc(game: ^Game_Instance, r: ^SDL_Renderer) {
 }
 
 game_bind_control_to_key :: proc(
-	game: ^Game_Instance,
+	game_cfg: ^Game_Config,
 	ctrl: Game_Input_Action_Type,
 	key: sdl3.Keycode,
 ) {
-	game.cfg.input.key_bindings[ctrl] = key
+	game_cfg.input.key_bindings[ctrl] = key
 }
 
 game_bind_control_to_mouse_button :: proc(
-	game: ^Game_Instance,
+	game_cfg: ^Game_Config,
 	ctrl: Game_Input_Action_Type,
 	button: sdl3.MouseButtonFlag,
 ) {
-	game.cfg.input.button_bindings[ctrl] = button
+	game_cfg.input.button_bindings[ctrl] = button
 }
 
 // game_draw_tilemap_tile :: proc(game: ^Game_Instance, r: ^SDL_Renderer, cmd: struct {
@@ -1330,13 +1344,13 @@ game_bind_control_to_mouse_button :: proc(
 // 	sdl3.RenderTexture(r.ptr, cmd.tilemap.texture, src, dst)
 // }
 
-game_draw_animation :: proc(game: ^Game_Instance, r: ^SDL_Renderer, cmd: struct {
+game_draw_animation :: proc(game_state: ^Game_State, game_cfg: ^Game_Config, r: ^SDL_Renderer, cmd: struct {
 		anim:         SDL_Animation,
 		dest:         sdl3.FRect,
 		rotation_deg: f32,
 		mirror_x:     bool,
 	}) {
-	elapsed_ms: u64 = game.state.frame_count
+	elapsed_ms: u64 = game_state.frame_count
 	frame := (elapsed_ms / cast(u64)cmd.anim.delay_ms) % cast(u64)len(cmd.anim.frame)
 	// when DEBUG_FRAME {
 	// 	log.debugf("animation {} frame: {}", cmd.anim.name, frame)
@@ -1356,7 +1370,7 @@ game_draw_animation :: proc(game: ^Game_Instance, r: ^SDL_Renderer, cmd: struct 
 
 	// Convert world offset to screen space
 	screen_offset := camera_world_size_to_screen(
-		&game.state.camera,
+		&game_state.camera,
 		cmd.anim.world_offset,
 		Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 	)
@@ -1385,7 +1399,7 @@ game_draw_animation :: proc(game: ^Game_Instance, r: ^SDL_Renderer, cmd: struct 
 	)
 }
 
-game_draw_sprite :: proc(game: ^Game_Instance, r: ^SDL_Renderer, cmd: struct {
+game_draw_sprite :: proc(game_state: ^Game_State, r: ^SDL_Renderer, cmd: struct {
 		sprite:       Game_Sprite,
 		dest:         sdl3.FRect,
 		rotation_deg: f32,
@@ -1403,7 +1417,7 @@ game_draw_sprite :: proc(game: ^Game_Instance, r: ^SDL_Renderer, cmd: struct {
 
 	// Convert world offset to screen space
 	screen_offset := camera_world_size_to_screen(
-		&game.state.camera,
+		&game_state.camera,
 		cmd.sprite.world_offset,
 		Vec2{cast(f32)RenderTargetSize.x, cast(f32)RenderTargetSize.y},
 	)
@@ -1435,11 +1449,11 @@ game_draw_sprite :: proc(game: ^Game_Instance, r: ^SDL_Renderer, cmd: struct {
 	)
 }
 
-game_entity_do_behavior :: proc(game: ^Game_Instance) {
+game_entity_do_behavior :: proc(game_cfg: ^Game_Config, game_state: ^Game_State) {
 
-	curr_time := cast(f64)game.state.frame_count * game_frame_step_sec(game)
+	curr_time := cast(f64)game_state.frame_count * game_frame_step_sec(game_cfg)
 
-	for &e in game.state.entity_pool.entities {
+	for &e in game_state.entity_pool.entities {
 		if !(.Is_Active in e.flags) {continue}
 
 		when DEBUG_GAME {log.debugf("Updating entity: {}", e)}
@@ -1456,7 +1470,7 @@ game_entity_do_behavior :: proc(game: ^Game_Instance) {
 				if range_activated_missile_check_trigger(
 					&v.behavior,
 					{e.position.x, e.position.y},
-					{game.state.entity.player.world_x, game.state.entity.player.world_y},
+					{game_state.entity.player.world_x, game_state.entity.player.world_y},
 					curr_time,
 				) {
 					when DEBUG_FRAME {log.debug("Enemy missile triggered!")}
@@ -1464,9 +1478,9 @@ game_entity_do_behavior :: proc(game: ^Game_Instance) {
 			case .active:
 				if range_activated_missile_is_lifetime_expired(v.behavior, curr_time) {
 					when DEBUG_FRAME {log.debug("Enemy missile lifetime expired!")}
-					entity_pool_destroy_entity(&game.state.entity_pool, e)
+					entity_pool_destroy_entity(&game_state.entity_pool, e)
 					event_queue_publish(
-						&game.state.event_queue,
+						&game_state.event_queue,
 						.EntityDestroyed,
 						EventPayloadEntityDestroyed{e.id},
 					)
@@ -1484,9 +1498,9 @@ game_entity_do_behavior :: proc(game: ^Game_Instance) {
 
 		case Entity_Missile:
 			if behavior_missile_lifetime_is_expired(v.behavior, curr_time) {
-				entity_pool_destroy_entity(&game.state.entity_pool, e)
+				entity_pool_destroy_entity(&game_state.entity_pool, e)
 				event_queue_publish(
-					&game.state.event_queue,
+					&game_state.event_queue,
 					.EntityDestroyed,
 					EventPayloadEntityDestroyed{e.id},
 				)
@@ -1502,7 +1516,7 @@ game_entity_do_behavior :: proc(game: ^Game_Instance) {
 
 		case Entity_Archer:
 			// Update facing direction based on player position
-			player_direction_x := game.state.entity.player.world_x - e.position.x
+			player_direction_x := game_state.entity.player.world_x - e.position.x
 			if player_direction_x < 0 {
 				v.facing = .left
 			}
@@ -1512,60 +1526,60 @@ game_entity_do_behavior :: proc(game: ^Game_Instance) {
 
 			range_activated_missile_spawner_update(
 				&v.behavior,
-				&game.state.entity_pool,
-				&game.state.entity_prototype_pool,
+				&game_state.entity_pool,
+				&game_state.entity_prototype_pool,
 				curr_time,
 				Vec2{e.position.x, e.position.y},
-				Vec2{game.state.entity.player.world_x, game.state.entity.player.world_y},
+				Vec2{game_state.entity.player.world_x, game_state.entity.player.world_y},
 			)
 		}
 	}
 }
 
-game_update_timers :: proc(game: ^Game_Instance, sdl: ^SDL, asset: ^data.Asset_Manager) {
-	frame_step_sec := f32(game_frame_step_sec(game))
+game_update_timers :: proc(game_cfg: ^Game_Config, game_state: ^Game_State, sdl: ^SDL, asset: ^data.Asset_Manager) {
+	frame_step_sec := f32(game_frame_step_sec(game_cfg))
 
-	#partial switch game.state.mode {
+	#partial switch game_state.mode {
 	case .Win:
-		game.state.timers.win_lose_reset_timer -= frame_step_sec
+		game_state.timers.win_lose_reset_timer -= frame_step_sec
 	case .Lose:
-		game.state.timers.win_lose_reset_timer -= frame_step_sec
+		game_state.timers.win_lose_reset_timer -= frame_step_sec
 	}
 
-	game.state.timers.enemy_spawn_timer -= frame_step_sec
+	game_state.timers.enemy_spawn_timer -= frame_step_sec
 
-	if game.state.entity.player.action == .dashing {
-		game.state.timers.player_dash_timer -= frame_step_sec
+	if game_state.entity.player.action == .dashing {
+		game_state.timers.player_dash_timer -= frame_step_sec
 	} else {
-		game.state.timers.player_dash_cooldown -= frame_step_sec
-		if game.state.timers.player_dash_cooldown < 0 {game.state.timers.player_dash_cooldown = 0}
+		game_state.timers.player_dash_cooldown -= frame_step_sec
+		if game_state.timers.player_dash_cooldown < 0 {game_state.timers.player_dash_cooldown = 0}
 	}
 
 	//
 
-	if game.state.timers.enemy_spawn_timer <= 0 {
-		game.state.timers.enemy_spawn_timer += game.cfg.timers.enemy_spawn_hz
+	if game_state.timers.enemy_spawn_timer <= 0 {
+		game_state.timers.enemy_spawn_timer += game_cfg.timers.enemy_spawn_hz
 
 		// Spawn an enemy at a random position
 		enemy_pos := Vec2 {
 			lerp(
-				game.state.level.playable_area.min.x,
-				game.state.level.playable_area.max.x,
+				game_state.level.playable_area.min.x,
+				game_state.level.playable_area.max.x,
 				rand.float32(),
 			),
 			lerp(
-				game.state.level.playable_area.min.y,
-				game.state.level.playable_area.max.y,
+				game_state.level.playable_area.min.y,
+				game_state.level.playable_area.max.y,
 				rand.float32(),
 			),
 		}
 
 		dst_to_player := vec2_dst(
 			enemy_pos,
-			Vec2{game.state.entity.player.world_x, game.state.entity.player.world_y},
+			Vec2{game_state.entity.player.world_x, game_state.entity.player.world_y},
 		)
 
-		if dst_to_player >= game.state.entity.enemy.behavior.cfg.trigger_radius * 1.1 {
+		if dst_to_player >= game_state.entity.enemy.behavior.cfg.trigger_radius * 1.1 {
 
 			e := Entity {
 				position = Part_World_Position{enemy_pos.x, enemy_pos.y, 0},
@@ -1580,7 +1594,7 @@ game_update_timers :: proc(game: ^Game_Instance, sdl: ^SDL, asset: ^data.Asset_M
 					// Center the sprite on the entity position
 					world_offset = Vec2{96, 96},
 				},
-				variant = Entity_Archer{behavior = {cfg = game.state.entity.archer.behavior.cfg}},
+				variant = Entity_Archer{behavior = {cfg = game_state.entity.archer.behavior.cfg}},
 			}
 			// e := Entity {
 			// 	position = Part_World_Position{enemy_pos.x, enemy_pos.y, 0},
@@ -1595,19 +1609,19 @@ game_update_timers :: proc(game: ^Game_Instance, sdl: ^SDL, asset: ^data.Asset_M
 			// 		// Center the sprite on the entity position
 			// 		world_offset = Vec2{32, 32},
 			// 	},
-			// 	variant = Entity_Enemy{behavior = {cfg = game.state.entity.enemy.behavior.cfg}},
+			// 	variant = Entity_Enemy{behavior = {cfg = game_state.entity.enemy.behavior.cfg}},
 			// }
-			entity_pool_create_entity(&game.state.entity_pool, e)
+			entity_pool_create_entity(&game_state.entity_pool, e)
 		}
 	}
 
-	#partial switch game.state.mode {
+	#partial switch game_state.mode {
 	case .Win:
-		if game.state.timers.win_lose_reset_timer <=
-		   0 {game_reset(game, sdl, asset, game.head.assets)}
+		if game_state.timers.win_lose_reset_timer <=
+		   0 {game_reset(game_cfg, game_state, &Game_Head{}, sdl, asset, &Game_Assets{})}
 	case .Lose:
-		if game.state.timers.win_lose_reset_timer <=
-		   0 {game_reset(game, sdl, asset, game.head.assets)}
+		if game_state.timers.win_lose_reset_timer <=
+		   0 {game_reset(game_cfg, game_state, &Game_Head{}, sdl, asset, &Game_Assets{})}
 	}
 
 
