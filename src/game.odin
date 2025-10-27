@@ -493,7 +493,11 @@ game_update :: proc(sdl: ^SDL, game: ^Game_Instance, asset_manager: ^data.Asset_
 	// Check for dash input BEFORE movement calculation
 	if .player_move_dash in game.state.input[0] &&
 	   game.state.timers.player_dash_cooldown <= 0 &&
-	   game.state.entity.player.action != .dashing {
+	   game.state.entity.player.action != .dashing &&
+	   (.player_move_left in game.state.input[0] ||
+			   .player_move_right in game.state.input[0] ||
+			   .player_move_up in game.state.input[0] ||
+			   .player_move_down in game.state.input[0]) {
 		// Calculate dash direction from current input
 		dash_x := resolve_axis_intent(
 			game.state.input,
