@@ -1423,3 +1423,10 @@ It would be cool to have them not despawn and instead return to their ready
 state after some cooldown.
 Falling off cliff is a kill condition for this entity.
 Concept: Frog like pouncing behavior.
+
+# Tue Oct 28 2025
+
+- [ ] Mounted enemy type
+  - Pursue the player when they are in range
+  - Knock the player off their mount when they hit the player
+

@@ -19,6 +19,10 @@ Game_Assets :: struct {
 	animation_archer_idle:    SDL_Animation,
 	animation_archer_run:     SDL_Animation,
 	animation_archer_shoot:   SDL_Animation,
+	//
+	animation_sheep_grass:    SDL_Animation,
+	animation_sheep_idle:     SDL_Animation,
+	animation_sheep_move:     SDL_Animation,
 
 	// Sprites
 	sprite_archer_arrow:      Game_Sprite,
@@ -93,6 +97,10 @@ animations_init_into :: proc(assets: ^Game_Assets, s: ^SDL) {
 	assets.animation_archer_idle = asset_animation_load(s, animation_data["archer_idle"])
 	assets.animation_archer_run = asset_animation_load(s, animation_data["archer_run"])
 	assets.animation_archer_shoot = asset_animation_load(s, animation_data["archer_shoot"])
+
+	assets.animation_sheep_grass = asset_animation_load(s, animation_data["sheep_grass"])
+	assets.animation_sheep_idle = asset_animation_load(s, animation_data["sheep_idle"])
+	assets.animation_sheep_move = asset_animation_load(s, animation_data["sheep_move"])
 }
 
 animations_deinit_from :: proc(assets: ^Game_Assets, s: ^SDL) {
@@ -105,5 +113,13 @@ animations_deinit_from :: proc(assets: ^Game_Assets, s: ^SDL) {
 	asset_animation_unload(assets.animation_player_guard)
 	asset_animation_unload(assets.animation_player_attack1)
 	asset_animation_unload(assets.animation_player_attack2)
+
+	asset_animation_unload(assets.animation_archer_idle)
+	asset_animation_unload(assets.animation_archer_run)
+	asset_animation_unload(assets.animation_archer_shoot)
+
+	asset_animation_unload(assets.animation_sheep_grass)
+	asset_animation_unload(assets.animation_sheep_idle)
+	asset_animation_unload(assets.animation_sheep_move)
 }
 

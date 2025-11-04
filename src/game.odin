@@ -26,19 +26,19 @@ Game_Config :: struct {
 
 	// Timer configuration (maps to: timer_config table)
 	timers:    struct {
-		win_lose_reset_time:  f32, // How long to wait after winning or losing to reset the game
-		enemy_spawn_hz:       f32, // How frequently to spawn enemies (seconds between spawns)
-		player_dash_time:     f32, // How long the dash lasts
-		player_dash_cooldown: f32, // How long between player dashes
+		win_lose_reset_time:   f32, // How long to wait after winning or losing to reset the game
+		enemy_spawn_hz:        f32, // How frequently to spawn enemies (seconds between spawns)
+		player_dash_time:      f32, // How long the dash lasts
+		player_dash_cooldown:  f32, // How long between player dashes
+		player_mount_cooldown: f32, // How long between player mount toggle
 	},
 
 	// Entity templates/archetypes (maps to: entity_templates table)
 	entities:  struct {
 		player: struct {
-			move_speed_x: f32,
-			move_speed_y: f32,
-			dash_speed_x: f32,
-			dash_speed_y: f32,
+			move_speed:         Vec2,
+			move_speed_mounted: Vec2,
+			dash_speed:         Vec2,
 		},
 		enemy:  struct {
 			behavior: Behavior_Range_Activated_Missile,
@@ -83,12 +83,14 @@ Game_State :: struct {
 
 	//
 	timers:                struct {
-		win_lose_reset_timer: f32,
-		enemy_spawn_timer:    f32,
+		win_lose_reset_timer:  f32,
+		enemy_spawn_timer:     f32,
 		// Time left during the player dash
-		player_dash_timer:    f32,
+		player_dash_timer:     f32,
 		// time left before the player can dash again
-		player_dash_cooldown: f32,
+		player_dash_cooldown:  f32,
+		// Time left before the player can toggle mount again
+		player_mount_cooldown: f32,
 	},
 
 	//
@@ -126,6 +128,10 @@ Game_State :: struct {
 			facing:         enum {
 				right,
 				left,
+			},
+			mode:           enum {
+				default,
+				mounted,
 			},
 			dash_direction: Vec2,
 		},
@@ -167,6 +173,7 @@ Game_Input_Action_Type :: enum {
 	player_move_left,
 	player_move_right,
 	player_move_dash,
+	player_toggle_mount,
 
 	//
 	app_capture_screen,
@@ -224,6 +231,7 @@ game_init :: proc(
 	game_cfg.timers.win_lose_reset_time = 10 // 10 seconds
 	game_cfg.timers.player_dash_time = 0.46 // 0.2 seconds (12 frames at 60Hz)
 	game_cfg.timers.player_dash_cooldown = 1.0 // 1 second cooldown between dashes 
+	game_cfg.timers.player_mount_cooldown = 0.5 // 0.5 second cooldown between mount toggles
 
 	// Load level-1 using asset manager
 	level_path := "data/levels/level-1.json"
@@ -295,11 +303,7 @@ game_init :: proc(
 	game_bind_control_to_key(game_cfg, .player_move_left, sdl3.K_A)
 	game_bind_control_to_key(game_cfg, .player_move_right, sdl3.K_D)
 	game_bind_control_to_key(game_cfg, .player_move_dash, sdl3.K_J)
-
-	// game_bind_control_to_key(game_cfg, .player_move_up, sdl3.K_I)
-	// game_bind_control_to_key(game_cfg, .player_move_down, sdl3.K_K)
-	// game_bind_control_to_key(game_cfg, .player_move_left, sdl3.K_J)
-	// game_bind_control_to_key(game_cfg, .player_move_right, sdl3.K_L)
+	game_bind_control_to_key(game_cfg, .player_toggle_mount, sdl3.K_K)
 
 	// game_bind_control_to_mouse_button(game_cfg, .editor_place_player, .LEFT)
 	// game_bind_control_to_mouse_button(game_cfg, .editor_place_enemy, .RIGHT)
@@ -307,10 +311,9 @@ game_init :: proc(
 	game_bind_control_to_key(game_cfg, .editor_zoom_in, sdl3.K_EQUALS)
 	game_bind_control_to_key(game_cfg, .editor_zoom_out, sdl3.K_MINUS)
 
-	game_cfg.entities.player.move_speed_x = 4
-	game_cfg.entities.player.move_speed_y = 4
-	game_cfg.entities.player.dash_speed_x = 12
-	game_cfg.entities.player.dash_speed_y = 12
+	game_cfg.entities.player.move_speed = Vec2{4, 4}
+	game_cfg.entities.player.move_speed_mounted = Vec2{8, 7}
+	game_cfg.entities.player.dash_speed = Vec2{12, 12}
 
 	game_cfg.rendering.tile_screen_size = {32, 32}
 
@@ -413,7 +416,11 @@ game_update :: proc(
 
 	game_update_timers(game_cfg, game_state, sdl, asset_manager)
 
-	event_queue_process(game_state, &game_state.event_queue, cast(f32)game_frame_step_sec(game_cfg))
+	event_queue_process(
+		game_state,
+		&game_state.event_queue,
+		cast(f32)game_frame_step_sec(game_cfg),
+	)
 
 	switch game_state.mode {
 	case .Playing:
@@ -496,45 +503,70 @@ game_update :: proc(
 
 	when DEBUG_FRAME {log.debugf("Player delta: {}, {}", player_delta.x, player_delta.y)}
 
-	// Check for dash input BEFORE movement calculation
-	if .player_move_dash in game_state.input[0] &&
-	   game_state.timers.player_dash_cooldown <= 0 &&
-	   game_state.entity.player.action != .dashing &&
-	   (.player_move_left in game_state.input[0] ||
-			   .player_move_right in game_state.input[0] ||
-			   .player_move_up in game_state.input[0] ||
-			   .player_move_down in game_state.input[0]) {
-		// Calculate dash direction from current input
-		dash_x := resolve_axis_intent(
-			game_state.input,
-			.player_move_left,
-			.player_move_right,
-			player_delta.x,
-		)
-		dash_y := resolve_axis_intent(
-			game_state.input,
-			.player_move_up,
-			.player_move_down,
-			player_delta.y,
-		)
+	switch game_state.entity.player.mode {
 
-		// If no directional input, use previous movement direction
-		if dash_x == 0 && dash_y == 0 {
-			game_state.entity.player.dash_direction = vec2_norm_safe(player_delta)
-		} else {
-			game_state.entity.player.dash_direction = vec2_norm_safe(Vec2{dash_x, dash_y})
-		}
-
-		when DEBUG_GAME {
-			log.debugf(
-				"Player dash started! Direction: ({}, {})",
-				game_state.entity.player.dash_direction.x,
-				game_state.entity.player.dash_direction.y,
+	case .default:
+		// Check for dash input BEFORE movement calculation
+		if .player_move_dash in game_state.input[0] &&
+		   game_state.timers.player_dash_cooldown <= 0 &&
+		   game_state.entity.player.action != .dashing &&
+		   (.player_move_left in game_state.input[0] ||
+				   .player_move_right in game_state.input[0] ||
+				   .player_move_up in game_state.input[0] ||
+				   .player_move_down in game_state.input[0]) {
+			// Calculate dash direction from current input
+			dash_x := resolve_axis_intent(
+				game_state.input,
+				.player_move_left,
+				.player_move_right,
+				player_delta.x,
 			)
+			dash_y := resolve_axis_intent(
+				game_state.input,
+				.player_move_up,
+				.player_move_down,
+				player_delta.y,
+			)
+
+			// If no directional input, use previous movement direction
+			if dash_x == 0 && dash_y == 0 {
+				game_state.entity.player.dash_direction = vec2_norm_safe(player_delta)
+			} else {
+				game_state.entity.player.dash_direction = vec2_norm_safe(Vec2{dash_x, dash_y})
+			}
+
+			when DEBUG_GAME {
+				log.debugf(
+					"Player dash started! Direction: ({}, {})",
+					game_state.entity.player.dash_direction.x,
+					game_state.entity.player.dash_direction.y,
+				)
+			}
+
+			game_state.entity.player.action = .dashing
+			game_state.timers.player_dash_timer = game_cfg.timers.player_dash_time
 		}
 
-		game_state.entity.player.action = .dashing
-		game_state.timers.player_dash_timer = game_cfg.timers.player_dash_time
+		if .player_toggle_mount in game_state.input[0] &&
+		   game_state.timers.player_mount_cooldown <= 0 &&
+		   game_state.entity.player.action != .dashing {
+			game_state.entity.player.mode = .mounted
+			game_state.timers.player_mount_cooldown = game_cfg.timers.player_mount_cooldown
+
+			// apply a slight vertical bump to the player to give illusion of mounting
+			game_state.entity.player.world_y -= game_state.entity.player.screen_h * 0.25
+		}
+
+	case .mounted:
+		if .player_toggle_mount in game_state.input[0] &&
+		   game_state.timers.player_mount_cooldown <= 0 {
+			when DEBUG_GAME {log.debug("Player unmounted!")}
+			game_state.entity.player.mode = .default
+			game_state.timers.player_mount_cooldown = game_cfg.timers.player_mount_cooldown
+
+			// apply a slight vertical bump to the player to give illusion of mounting
+			game_state.entity.player.world_y += game_state.entity.player.screen_h * 0.25
+		}
 	}
 
 	player_desire_move_x: f32
@@ -542,36 +574,70 @@ game_update :: proc(
 	player_final_move_x: f32
 	player_final_move_y: f32
 	{
-		#partial switch game_state.entity.player.action {
-		case .idle, .running:
-			player_desire_move_x = resolve_axis_intent(
-				game_state.input,
-				.player_move_left,
-				.player_move_right,
-				player_delta.x,
-			)
-			player_desire_move_y = resolve_axis_intent(
-				game_state.input,
-				.player_move_up,
-				.player_move_down,
-				player_delta.y,
-			)
 
-			n := vec2_norm_safe(Vec2{player_desire_move_x, player_desire_move_y})
-			player_final_move_x, player_final_move_y = n.x, n.y
+		switch game_state.entity.player.mode {
 
-			player_final_move_x =
-			cast(f32)(cast(f64)player_desire_move_x *
-				cast(f64)game_cfg.entities.player.move_speed_x)
-			player_final_move_y =
-			cast(f32)(cast(f64)player_desire_move_y *
-				cast(f64)game_cfg.entities.player.move_speed_y)
-		case .dashing:
-			// Use the stored dash direction
-			player_final_move_x =
-				game_state.entity.player.dash_direction.x * game_cfg.entities.player.dash_speed_x
-			player_final_move_y =
-				game_state.entity.player.dash_direction.y * game_cfg.entities.player.dash_speed_y
+		case .default:
+			#partial switch game_state.entity.player.action {
+			case .idle, .running:
+				player_desire_move_x = resolve_axis_intent(
+					game_state.input,
+					.player_move_left,
+					.player_move_right,
+					player_delta.x,
+				)
+				player_desire_move_y = resolve_axis_intent(
+					game_state.input,
+					.player_move_up,
+					.player_move_down,
+					player_delta.y,
+				)
+
+				n := vec2_norm_safe(Vec2{player_desire_move_x, player_desire_move_y})
+				player_final_move_x, player_final_move_y = n.x, n.y
+
+				player_final_move_x =
+				cast(f32)(cast(f64)player_desire_move_x *
+					cast(f64)game_cfg.entities.player.move_speed.x)
+				player_final_move_y =
+				cast(f32)(cast(f64)player_desire_move_y *
+					cast(f64)game_cfg.entities.player.move_speed.y)
+			case .dashing:
+				// Use the stored dash direction
+				player_final_move_x =
+					game_state.entity.player.dash_direction.x *
+					game_cfg.entities.player.dash_speed.x
+				player_final_move_y =
+					game_state.entity.player.dash_direction.y *
+					game_cfg.entities.player.dash_speed.y
+			}
+		case .mounted:
+			#partial switch game_state.entity.player.action {
+			case .idle, .running:
+				player_desire_move_x = resolve_axis_intent(
+					game_state.input,
+					.player_move_left,
+					.player_move_right,
+					player_delta.x,
+				)
+				player_desire_move_y = resolve_axis_intent(
+					game_state.input,
+					.player_move_up,
+					.player_move_down,
+					player_delta.y,
+				)
+
+				n := vec2_norm_safe(Vec2{player_desire_move_x, player_desire_move_y})
+				player_final_move_x, player_final_move_y = n.x, n.y
+
+				player_final_move_x =
+				cast(f32)(cast(f64)player_desire_move_x *
+					cast(f64)game_cfg.entities.player.move_speed_mounted.x)
+				player_final_move_y =
+				cast(f32)(cast(f64)player_desire_move_y *
+					cast(f64)game_cfg.entities.player.move_speed_mounted.y)
+			}
+
 		}
 	}
 
@@ -594,7 +660,7 @@ game_update :: proc(
 
 	switch game_state.entity.player.action {
 	case .idle:
-		if player_final_move_x > 0 || player_final_move_y > 0 {
+		if player_final_move_x != 0 || player_final_move_y != 0 {
 			game_state.entity.player.action = .running
 		}
 	case .running:
@@ -613,12 +679,6 @@ game_update :: proc(
 	case .guard:
 	case .attack:
 	}
-
-	// if player_final_move_x == 0 && player_final_move_y == 0 {
-	// 	game_state.entity.player.action = .idle
-	// } else {
-	// 	game_state.entity.player.action = .running
-	// }
 
 	if player_final_move_x < 0 {
 		game_state.entity.player.facing = .left
@@ -994,31 +1054,85 @@ game_draw :: proc(
 
 			mirror_x := false if game_state.entity.player.facing == .right else true
 
-			switch game_state.entity.player.action {
-			case .idle:
-				game_draw_animation(
-					game_state,
-					game_cfg,
-					r,
-					{game_head.assets.animation_player_idle, dst, 0, mirror_x},
-				)
-			case .running:
-				game_draw_animation(
-					game_state,
-					game_cfg,
-					r,
-					{game_head.assets.animation_player_run, dst, 0, mirror_x},
-				)
-			case .dashing:
-				game_draw_animation(
-					game_state,
-					game_cfg,
-					r,
-					{game_head.assets.animation_player_dash, dst, 0, mirror_x},
-				)
-			case .guard:
-			case .attack:
+			switch game_state.entity.player.mode {
+			case .default:
+				switch game_state.entity.player.action {
+				case .idle:
+					game_draw_animation(
+						game_state,
+						game_cfg,
+						r,
+						{game_head.assets.animation_player_idle, dst, 0, mirror_x},
+					)
+				case .running:
+					game_draw_animation(
+						game_state,
+						game_cfg,
+						r,
+						{game_head.assets.animation_player_run, dst, 0, mirror_x},
+					)
+				case .dashing:
+					game_draw_animation(
+						game_state,
+						game_cfg,
+						r,
+						{game_head.assets.animation_player_dash, dst, 0, mirror_x},
+					)
+				case .guard:
+				case .attack:
+				}
+			case .mounted:
+				sheep_dst := sdl3.FRect {
+					screen_pos.x - (player_screen_size.x * 0.15),
+					screen_pos.y + (player_screen_size.y * 0.1),
+					player_screen_size.x,
+					player_screen_size.y,
+				}
+				switch game_state.entity.player.action {
+				case .idle:
+					game_draw_animation(
+						game_state,
+						game_cfg,
+						r,
+						{game_head.assets.animation_sheep_idle, sheep_dst, 0, mirror_x},
+					)
+					game_draw_animation(
+						game_state,
+						game_cfg,
+						r,
+						{game_head.assets.animation_player_idle, dst, 0, mirror_x},
+					)
+				case .running:
+					game_draw_animation(
+						game_state,
+						game_cfg,
+						r,
+						{game_head.assets.animation_sheep_move, sheep_dst, 0, mirror_x},
+					)
+					game_draw_animation(
+						game_state,
+						game_cfg,
+						r,
+						{game_head.assets.animation_player_idle, dst, 0, mirror_x},
+					)
+				case .dashing:
+					game_draw_animation(
+						game_state,
+						game_cfg,
+						r,
+						{game_head.assets.animation_sheep_move, sheep_dst, 0, mirror_x},
+					)
+					game_draw_animation(
+						game_state,
+						game_cfg,
+						r,
+						{game_head.assets.animation_player_idle, dst, 0, mirror_x},
+					)
+				case .guard:
+				case .attack:
+				}
 			}
+
 		}
 	}
 
@@ -1315,41 +1429,17 @@ game_bind_control_to_mouse_button :: proc(
 	game_cfg.input.button_bindings[ctrl] = button
 }
 
-// game_draw_tilemap_tile :: proc(game: ^Game_Instance, r: ^SDL_Renderer, cmd: struct {
-// 		tilemap:  SDL_Tilemap,
-// 		tile_idx: u32,
-// 		dest:     sdl3.FRect,
-// 	}) {
-//
-// 	clip: sdl3.Rect
-// 	sdl3.GetSurfaceClipRect(cmd.tilemap.tile[cmd.tile_idx], &clip)
-//
-// 	src: Maybe(^sdl3.FRect) = &sdl3.FRect {
-// 		cast(f32)clip.x,
-// 		cast(f32)clip.y,
-// 		cast(f32)clip.w,
-// 		cast(f32)clip.h,
-// 	}
-//
-// 	dst_local := cmd.dest
-// 	dst: Maybe(^sdl3.FRect) = &dst_local
-//
-// 	// when DEBUG_FRAME {log.debugf(
-// 	// 		"Render tilemap tile {}: src: {}, dest: {}",
-// 	// 		cmd.tile_idx,
-// 	// 		src,
-// 	// 		dst,
-// 	// 	)}
-//
-// 	sdl3.RenderTexture(r.ptr, cmd.tilemap.texture, src, dst)
-// }
-
-game_draw_animation :: proc(game_state: ^Game_State, game_cfg: ^Game_Config, r: ^SDL_Renderer, cmd: struct {
+game_draw_animation :: proc(
+	game_state: ^Game_State,
+	game_cfg: ^Game_Config,
+	r: ^SDL_Renderer,
+	cmd: struct {
 		anim:         SDL_Animation,
 		dest:         sdl3.FRect,
 		rotation_deg: f32,
 		mirror_x:     bool,
-	}) {
+	},
+) {
 	elapsed_ms: u64 = game_state.frame_count
 	frame := (elapsed_ms / cast(u64)cmd.anim.delay_ms) % cast(u64)len(cmd.anim.frame)
 	// when DEBUG_FRAME {
@@ -1536,7 +1626,12 @@ game_entity_do_behavior :: proc(game_cfg: ^Game_Config, game_state: ^Game_State)
 	}
 }
 
-game_update_timers :: proc(game_cfg: ^Game_Config, game_state: ^Game_State, sdl: ^SDL, asset: ^data.Asset_Manager) {
+game_update_timers :: proc(
+	game_cfg: ^Game_Config,
+	game_state: ^Game_State,
+	sdl: ^SDL,
+	asset: ^data.Asset_Manager,
+) {
 	frame_step_sec := f32(game_frame_step_sec(game_cfg))
 
 	#partial switch game_state.mode {
@@ -1553,6 +1648,11 @@ game_update_timers :: proc(game_cfg: ^Game_Config, game_state: ^Game_State, sdl:
 	} else {
 		game_state.timers.player_dash_cooldown -= frame_step_sec
 		if game_state.timers.player_dash_cooldown < 0 {game_state.timers.player_dash_cooldown = 0}
+	}
+
+	game_state.timers.player_mount_cooldown -= frame_step_sec
+	if game_state.timers.player_mount_cooldown < 0 {
+		game_state.timers.player_mount_cooldown = 0
 	}
 
 	//

@@ -124,5 +124,47 @@
             "x": 96,
             "y": 96
         }
+    },
+    {
+        "name": "sheep_grass",
+        "path": "assets/Tiny_Swords/Decorations/Sheep/Sheep_Grass.png",
+        "frame_count": 12,
+        "delay_ms": 10,
+        "size": {
+            "x": 128,
+            "y": 128
+        },
+        "world_offset": {
+            "x": 64,
+            "y": 64
+        }
+    },
+    {
+        "name": "sheep_idle",
+        "path": "assets/Tiny_Swords/Decorations/Sheep/Sheep_Idle.png",
+        "frame_count": 6,
+        "delay_ms": 10,
+        "size": {
+            "x": 128,
+            "y": 128
+        },
+        "world_offset": {
+            "x": 64,
+            "y": 64
+        }
+    },
+    {
+        "name": "sheep_move",
+        "path": "assets/Tiny_Swords/Decorations/Sheep/Sheep_Move.png",
+        "frame_count": 4,
+        "delay_ms": 10,
+        "size": {
+            "x": 128,
+            "y": 128
+        },
+        "world_offset": {
+            "x": 64,
+            "y": 64
+        }
     }
 ]
