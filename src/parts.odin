@@ -13,3 +13,8 @@ Part_Sprite :: struct {
 	world_size:   Vec2,
 	world_offset: Vec2,
 }
+
+Part_Velocity :: struct {
+	current:  Vec2,
+	previous: Vec2,
+}
