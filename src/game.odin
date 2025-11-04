@@ -6,6 +6,7 @@ import "core:encoding/json"
 import "core:log"
 import "core:math"
 import "core:math/rand"
+import "core:slice"
 import os "core:os/os2"
 import "data"
 import sdl3 "vendor:sdl3"
@@ -844,8 +845,29 @@ game_draw :: proc(
 			// Get player entity for references during drawing
 			player_entity := entity_pool_get_entity(&game_state.entity_pool, game_state.player_entity_id)
 
+			// Collect active entities with their indices for depth sorting
+			Entity_Draw_Item :: struct {
+				entity: ^Entity,
+				y_pos:  f32,
+			}
+
+			draw_list := make([dynamic]Entity_Draw_Item, 0, len(game_state.entity_pool.entities), context.temp_allocator)
+			defer delete(draw_list)
+
 			for &e in game_state.entity_pool.entities {
-				if !(.Is_Active in e.flags) {continue}
+				if .Is_Active in e.flags {
+					append(&draw_list, Entity_Draw_Item{&e, e.position.y})
+				}
+			}
+
+			// Sort by Y position (top to bottom) for proper depth perception
+			slice.sort_by_key(draw_list[:], proc(item: Entity_Draw_Item) -> f32 {
+				return item.y_pos
+			})
+
+			// Draw entities in sorted order
+			for draw_item in draw_list {
+				e := draw_item.entity
 
 				#partial switch &v in e.variant {
 				case Entity_Player:
