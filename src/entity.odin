@@ -19,6 +19,7 @@ Entity :: struct {
 	position:  Part_World_Position,
 	collision: Part_World_Collision,
 	sprite:    Part_Sprite,
+	velocity:  Part_Velocity,
 
 	// TODO
 	// Fields in scratch are zeroed every frame
@@ -33,16 +34,21 @@ Entity_Variant :: union {
 }
 
 Entity_Player :: struct {
-	facing: enum {
+	facing:         enum {
 		right,
 		left,
 	},
-	action: enum {
+	action:         enum {
 		idle,
 		running,
+		dashing,
 		guard,
 		attack,
 	},
+	dash_direction: Vec2,
+	movement:       Behavior_Player_Movement,
+	dash:           Behavior_Player_Dash,
+	mount:          Behavior_Player_Mount,
 }
 
 Entity_Enemy :: struct {

@@ -188,3 +188,260 @@ range_activated_missile_is_lifetime_expired :: proc(
 	return current_time - m.trigger_time > cast(f64)m.cfg.lifetime_sec
 }
 
+// Player movement behavior
+// Calculates velocity based on input, mode, and action
+// Handles different speeds for default/mounted modes and dashing
+
+Behavior_Player_Movement :: struct {
+	cfg: struct {
+		move_speed:         Vec2,
+		move_speed_mounted: Vec2,
+		dash_speed:         Vec2,
+	},
+}
+
+behavior_player_movement_calculate :: proc(
+	b: ^Behavior_Player_Movement,
+	input: Game_Input_Buffer,
+	mount_mode: enum {
+		default,
+		mounted,
+	},
+	action: enum {
+		idle,
+		running,
+		dashing,
+		guard,
+		attack,
+	},
+	prev_delta: Vec2,
+	dash_direction: Vec2,
+) -> (
+	velocity: Vec2,
+	facing: enum {
+		right,
+		left,
+	},
+) {
+	new_facing := facing
+
+	// Determine velocity based on mode and action
+	switch mount_mode {
+	case .default:
+		#partial switch action {
+		case .idle, .running:
+			// Normal movement with default speed
+			desire_x := resolve_axis_intent(input, .player_move_left, .player_move_right, prev_delta.x)
+			desire_y := resolve_axis_intent(input, .player_move_up, .player_move_down, prev_delta.y)
+
+			normalized := vec2_norm_safe(Vec2{desire_x, desire_y})
+			velocity = Vec2 {
+				normalized.x * b.cfg.move_speed.x,
+				normalized.y * b.cfg.move_speed.y,
+			}
+
+		case .dashing:
+			// Use dash direction and dash speed
+			velocity = Vec2 {
+				dash_direction.x * b.cfg.dash_speed.x,
+				dash_direction.y * b.cfg.dash_speed.y,
+			}
+		}
+
+	case .mounted:
+		#partial switch action {
+		case .idle, .running:
+			// Normal movement with mounted speed
+			desire_x := resolve_axis_intent(input, .player_move_left, .player_move_right, prev_delta.x)
+			desire_y := resolve_axis_intent(input, .player_move_up, .player_move_down, prev_delta.y)
+
+			normalized := vec2_norm_safe(Vec2{desire_x, desire_y})
+			velocity = Vec2 {
+				normalized.x * b.cfg.move_speed_mounted.x,
+				normalized.y * b.cfg.move_speed_mounted.y,
+			}
+		}
+	}
+
+	// Update facing based on velocity
+	if velocity.x < 0 {
+		new_facing = .left
+	}
+	if velocity.x > 0 {
+		new_facing = .right
+	}
+
+	return velocity, new_facing
+}
+
+// Player dash behavior
+// Manages dash state, timing, direction, and cooldown
+// Dash can only be activated with movement input and when not on cooldown
+
+Behavior_Player_Dash :: struct {
+	cfg:             struct {
+		dash_time:     f32,
+		cooldown_time: f32,
+	},
+	state:           enum {
+		ready,
+		dashing,
+		cooldown,
+	},
+	dash_direction:  Vec2,
+	dash_timer:      f32,
+	cooldown_timer:  f32,
+}
+
+behavior_player_dash_try_start :: proc(
+	b: ^Behavior_Player_Dash,
+	input: Game_Input_Buffer,
+	movement_delta: Vec2,
+	mount_mode: enum {
+		default,
+		mounted,
+	},
+	dt: f32,
+) -> bool {
+	// Can only dash if ready (not currently dashing or on cooldown)
+	if b.state != .ready {
+		return false
+	}
+
+	// Check if dash button is pressed
+	if !(.player_move_dash in input[0]) {
+		return false
+	}
+
+	// Require movement input (prevent standing dash)
+	has_movement_input :=
+		.player_move_left in input[0] ||
+		.player_move_right in input[0] ||
+		.player_move_up in input[0] ||
+		.player_move_down in input[0]
+
+	if !has_movement_input {
+		return false
+	}
+
+	// Dashing not allowed in mounted mode (based on original logic)
+	if mount_mode == .mounted {
+		return false
+	}
+
+	// Calculate dash direction from current input
+	dash_x := resolve_axis_intent(input, .player_move_left, .player_move_right, movement_delta.x)
+	dash_y := resolve_axis_intent(input, .player_move_up, .player_move_down, movement_delta.y)
+
+	// If no directional input (shouldn't happen due to check above), use previous movement direction
+	if dash_x == 0 && dash_y == 0 {
+		b.dash_direction = vec2_norm_safe(movement_delta)
+	} else {
+		b.dash_direction = vec2_norm_safe(Vec2{dash_x, dash_y})
+	}
+
+	// Start dashing
+	b.state = .dashing
+	b.dash_timer = b.cfg.dash_time
+
+	when DEBUG_GAME {
+		log.debugf(
+			"Player dash started! Direction: ({}, {})",
+			b.dash_direction.x,
+			b.dash_direction.y,
+		)
+	}
+
+	return true
+}
+
+behavior_player_dash_update :: proc(b: ^Behavior_Player_Dash, dt: f32) {
+	switch b.state {
+	case .ready:
+		// Nothing to update when ready
+	case .dashing:
+		b.dash_timer -= dt
+		if b.dash_timer <= 0 {
+			b.state = .cooldown
+			b.cooldown_timer = b.cfg.cooldown_time
+		}
+	case .cooldown:
+		b.cooldown_timer -= dt
+		if b.cooldown_timer <= 0 {
+			b.cooldown_timer = 0
+			b.state = .ready
+		}
+	}
+}
+
+behavior_player_dash_is_active :: proc(b: Behavior_Player_Dash) -> bool {
+	return b.state == .dashing
+}
+
+// Player mount behavior
+// Manages mount/unmount state, cooldown, and vertical offset
+// Mounting changes movement speed and visual (player + sheep rendering)
+
+Behavior_Player_Mount :: struct {
+	cfg:             struct {
+		cooldown_time: f32,
+		mount_y_bump:  f32,
+	},
+	mode:            enum {
+		default,
+		mounted,
+	},
+	cooldown_timer:  f32,
+}
+
+behavior_player_mount_try_toggle :: proc(
+	b: ^Behavior_Player_Mount,
+	input: Game_Input_Buffer,
+	can_toggle: bool, // Usually: not dashing
+	dt: f32,
+) -> (
+	toggled: bool,
+	y_offset: f32,
+) {
+	// Check cooldown
+	if b.cooldown_timer > 0 {
+		return false, 0
+	}
+
+	// Check if toggle input pressed
+	if !(.player_toggle_mount in input[0]) {
+		return false, 0
+	}
+
+	// Check additional conditions
+	if !can_toggle {
+		return false, 0
+	}
+
+	// Toggle mode
+	offset: f32 = 0
+	if b.mode == .default {
+		b.mode = .mounted
+		offset = -b.cfg.mount_y_bump // Move up when mounting
+		when DEBUG_GAME {log.debug("Player mounted!")}
+	} else {
+		b.mode = .default
+		offset = b.cfg.mount_y_bump // Move down when unmounting
+		when DEBUG_GAME {log.debug("Player unmounted!")}
+	}
+
+	// Start cooldown
+	b.cooldown_timer = b.cfg.cooldown_time
+
+	return true, offset
+}
+
+behavior_player_mount_update :: proc(b: ^Behavior_Player_Mount, dt: f32) {
+	if b.cooldown_timer > 0 {
+		b.cooldown_timer -= dt
+		if b.cooldown_timer < 0 {
+			b.cooldown_timer = 0
+		}
+	}
+}
+
