@@ -1,5 +1,5 @@
 [tools]
-"asdf:jtakakura/asdf-odin" = "dev-2025-08"
+"asdf:jtakakura/asdf-odin" = "dev-2025-11"
 
 [tasks.bootstrap]
 description = "Build the build tool"
@@ -8,6 +8,6 @@ sources = ["src/tools/build.odin"]
 outputs = ["build"]
 
 [tasks.build]
-description = "Build the project in dev mode"
 run = "$MISE_PROJECT_ROOT/build"
+description = "Run the build tool"
 depends = ["bootstrap"]

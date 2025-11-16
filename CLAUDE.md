@@ -1,2 +1,3 @@
 - Run `mise build -dev -run` to run the dev build
 - Run `mise build -dev -run -run-arg:"-run-for:30"` to check for general application correctness
+- Ignore files in `src/depr/`

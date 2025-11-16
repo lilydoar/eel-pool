@@ -464,3 +464,4 @@ sdl_texture_deinit :: proc(t: ^SDL_Texture) {
 	if t.texture != nil {sdl3.DestroyTexture(t.texture)}
 	if t.surface != nil {sdl3.DestroySurface(t.surface)}
 }
+
