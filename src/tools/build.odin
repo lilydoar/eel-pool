@@ -201,7 +201,6 @@ docs :: proc(cfg: Config) {
 	if !ok {cmd_failed = true}
 }
 
-
 tests :: proc() {
 	log.info("Running tests")
 	log.warn("tests not implemented")
@@ -295,3 +294,4 @@ release :: proc(opt: Options, cfg: Config) {
 		if !ok {cmd_failed = true}
 	}
 }
+
